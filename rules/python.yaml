@@ -1,0 +1,157 @@
+# Default Security Rules for Python Analysis
+
+sources:
+  # HTTP Request Parameters
+  - pattern: "request.args.get"
+    type: "HTTP_PARAM"
+    severity: "HIGH"
+  - pattern: "request.form"
+    type: "HTTP_FORM"
+    severity: "HIGH"
+  - pattern: "request.values"
+    type: "HTTP_REQUEST"
+    severity: "HIGH"
+  - pattern: "request.json"
+    type: "HTTP_JSON"
+    severity: "HIGH"
+  - pattern: "request.data"
+    type: "HTTP_DATA"
+    severity: "HIGH"
+  
+  # User Input
+  - pattern: "input("
+    type: "USER_INPUT"
+    severity: "MEDIUM"
+  
+  # File Operations
+  - pattern: "open("
+    type: "FILE_READ"
+    severity: "LOW"
+  
+  # System Arguments
+  - pattern: "sys.argv"
+    type: "COMMAND_LINE_ARGS"
+    severity: "MEDIUM"
+  
+  # Environment Variables
+  - pattern: "os.environ"
+    type: "ENVIRONMENT_VAR"
+    severity: "LOW"
+
+sinks:
+  sqli:
+    - pattern: ".execute("
+      type: "SQL_INJECTION"
+      severity: "CRITICAL"
+      description: "SQL query execution without parameterization"
+    
+    - pattern: ".executemany("
+      type: "SQL_INJECTION"
+      severity: "CRITICAL"
+      description: "Batch SQL execution"
+    
+    - pattern: ".raw("
+      type: "SQL_INJECTION"
+      severity: "CRITICAL"
+      description: "Raw SQL query (Django ORM)"
+  
+  rce:
+    - pattern: "os.system("
+      type: "COMMAND_INJECTION"
+      severity: "CRITICAL"
+      description: "Direct system command execution"
+    
+    - pattern: "subprocess.call("
+      type: "COMMAND_INJECTION"
+      severity: "CRITICAL"
+      description: "Subprocess command execution"
+    
+    - pattern: "subprocess.run("
+      type: "COMMAND_INJECTION"
+      severity: "CRITICAL"
+      description: "Subprocess command execution"
+    
+    - pattern: "subprocess.Popen("
+      type: "COMMAND_INJECTION"
+      severity: "CRITICAL"
+      description: "Subprocess with shell access"
+    
+    - pattern: "eval("
+      type: "CODE_INJECTION"
+      severity: "CRITICAL"
+      description: "Dynamic code evaluation"
+    
+    - pattern: "exec("
+      type: "CODE_INJECTION"
+      severity: "CRITICAL"
+      description: "Dynamic code execution"
+    
+    - pattern: "__import__("
+      type: "CODE_INJECTION"
+      severity: "HIGH"
+      description: "Dynamic module import"
+  
+  path_traversal:
+    - pattern: "open("
+      type: "PATH_TRAVERSAL"
+      severity: "HIGH"
+      description: "File access with potentially malicious path"
+    
+    - pattern: "os.path.join("
+      type: "PATH_TRAVERSAL"
+      severity: "MEDIUM"
+      description: "Path construction - check for directory traversal"
+    
+    - pattern: "pathlib.Path("
+      type: "PATH_TRAVERSAL"
+      severity: "MEDIUM"
+      description: "Path construction - check for directory traversal"
+
+sanitizers:
+  # SQL Sanitization
+  - pattern: "escape_string("
+    mitigates: ["SQL_INJECTION"]
+    description: "MySQL string escaping"
+  
+  - pattern: "quote("
+    mitigates: ["SQL_INJECTION"]
+    description: "SQL identifier quoting"
+  
+  # Command Injection Sanitization
+  - pattern: "shlex.quote("
+    mitigates: ["COMMAND_INJECTION"]
+    description: "Shell argument escaping"
+  
+  - pattern: "shlex.split("
+    mitigates: ["COMMAND_INJECTION"]
+    description: "Safe shell argument parsing"
+  
+  # Path Traversal Sanitization
+  - pattern: "os.path.abspath("
+    mitigates: ["PATH_TRAVERSAL"]
+    description: "Convert to absolute path"
+  
+  - pattern: "os.path.realpath("
+    mitigates: ["PATH_TRAVERSAL"]
+    description: "Resolve symbolic links and normalize"
+  
+  - pattern: "os.path.normpath("
+    mitigates: ["PATH_TRAVERSAL"]
+    description: "Normalize path"
+  
+  # General Sanitization
+  - pattern: "html.escape("
+    mitigates: []
+    description: "HTML entity escaping"
+  
+  - pattern: "re.escape("
+    mitigates: []
+    description: "Regex special character escaping"
+
+# Safe Patterns (functions that return sanitized data)
+safe_patterns:
+  - "str.isalnum()"
+  - "str.isdigit()"
+  - "int("
+  - "float("
+  - "bool("

@@ -1,0 +1,52 @@
+[tool.poetry]
+name = "aegis-sast"
+version = "1.0.0"
+description = "AI-Powered Static Application Security Testing CLI Tool for Pentesters"
+authors = ["PhucQuan <phucquan@example.com>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/PhucQuan/aegis-sast"
+repository = "https://github.com/PhucQuan/aegis-sast"
+keywords = ["security", "sast", "static-analysis", "pentesting", "vulnerability-detection", "ai"]
+packages = [{include = "aegis_sast"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+tree-sitter = "^0.21.0"
+tree-sitter-python = "^0.21.0"
+click = "^8.1.0"
+google-generativeai = "^0.8.0"
+pydantic = "^2.0.0"
+pydantic-settings = "^2.0.0"
+diskcache = "^5.6.0"
+tqdm = "^4.66.0"
+rich = "^13.7.0"
+pyyaml = "^6.0"
+tenacity = "^8.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
+black = "^24.0.0"
+ruff = "^0.1.0"
+
+[tool.poetry.scripts]
+aegis-sast = "aegis_sast.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --cov=aegis_sast --cov-report=term-missing"
