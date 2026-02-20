@@ -135,5 +135,25 @@ def _auto_register_plugins():
         from aegis_sast.plugins.python_plugin import PythonPlugin
         _registry.register(PythonPlugin())
     except ImportError:
-        # Plugin not yet available
+        pass
+
+    # Import and register JavaScript plugin
+    try:
+        from aegis_sast.plugins.javascript_plugin import JavaScriptPlugin
+        _registry.register(JavaScriptPlugin())
+    except ImportError:
+        pass
+
+    # Import and register Java plugin
+    try:
+        from aegis_sast.plugins.java_plugin import JavaPlugin
+        _registry.register(JavaPlugin())
+    except ImportError:
+        pass
+
+    # Import and register PHP plugin
+    try:
+        from aegis_sast.plugins.php_plugin import PHPPlugin
+        _registry.register(PHPPlugin())
+    except ImportError:
         pass

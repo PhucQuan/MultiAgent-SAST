@@ -5,6 +5,7 @@ Provides command-line interface for security scanning.
 """
 
 import sys
+import asyncio
 from pathlib import Path
 import click
 from rich.console import Console
@@ -15,6 +16,9 @@ from rich.table import Table
 from aegis_sast.core.config import get_config, set_config, AegisConfig
 from aegis_sast.core.registry import get_registry
 from aegis_sast.plugins.python_plugin import PythonPlugin
+from aegis_sast.plugins.javascript_plugin import JavaScriptPlugin
+from aegis_sast.plugins.java_plugin import JavaPlugin
+from aegis_sast.plugins.php_plugin import PHPPlugin
 from aegis_sast.analysis.rule_engine import RuleEngine
 from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
 from aegis_sast.ai.gemini_client import GeminiClient
@@ -77,6 +81,18 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
         registry.register(PythonPlugin())
     except ValueError:
         pass  # Already registered
+    try:
+        registry.register(JavaScriptPlugin())
+    except ValueError:
+        pass
+    try:
+        registry.register(JavaPlugin())
+    except ValueError:
+        pass
+    try:
+        registry.register(PHPPlugin())
+    except ValueError:
+        pass
     
     # Load rules
     rule_engine = RuleEngine(config.custom_rules_path)
@@ -129,24 +145,33 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
     if ai_client and scan_result.vulnerabilities:
         console.print(f"\n[yellow]🤖 AI Verification:[/yellow] {len(scan_result.vulnerabilities)} findings\n")
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console
-        ) as progress:
-            verify_task = progress.add_task("Verifying vulnerabilities...", total=len(scan_result.vulnerabilities))
-            
-            for vuln in scan_result.vulnerabilities:
-                # Get AI verification
-                ai_result = ai_client.verify_vulnerability(
-                    vuln_type=vuln.vuln_type,
-                    source_code=vuln.dataflow.source.location.code_snippet,
-                    dataflow_path=vuln.dataflow.get_path_summary(),
-                    sink_code=vuln.dataflow.sink.location.code_snippet
-                )
+        async def verify_all():
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                verify_task = progress.add_task("Verifying vulnerabilities...", total=len(scan_result.vulnerabilities))
                 
-                vuln.ai_verification = ai_result
-                progress.advance(verify_task)
+                tasks = []
+                for vuln in scan_result.vulnerabilities:
+                    tasks.append(ai_client.async_verify_vulnerability(
+                        vuln_type=vuln.vuln_type,
+                        source_code=vuln.dataflow.source.location.code_snippet,
+                        dataflow_path=vuln.dataflow.get_path_summary(),
+                        sink_code=vuln.dataflow.sink.location.code_snippet
+                    ))
+                
+                # Run tasks concurrently
+                results = await asyncio.gather(*tasks)
+                
+                # Update vulnerabilities with results
+                for i, result in enumerate(results):
+                    scan_result.vulnerabilities[i].ai_verification = result
+                    progress.advance(verify_task)
+        
+        # Run async verification
+        asyncio.run(verify_all())
     
     # Display summary
     console.print("\n" + "="*60 + "\n")

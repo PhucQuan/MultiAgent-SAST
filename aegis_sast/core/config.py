@@ -11,6 +11,9 @@ import os
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class AegisConfig(BaseSettings):
@@ -29,7 +32,7 @@ class AegisConfig(BaseSettings):
         description="Gemini API key for AI verification"
     )
     gemini_model: str = Field(
-        default="gemini-1.5-flash",
+        default="gemini-2.5-flash",
         description="Gemini model to use"
     )
     
@@ -131,10 +134,11 @@ class AegisConfig(BaseSettings):
     def validate_ai_config(self):
         """Validate AI configuration at runtime."""
         if self.enable_ai_verification and not self.gemini_api_key:
-            raise ValueError(
-                "Gemini API key is required when AI verification is enabled. "
-                "Set GEMINI_API_KEY environment variable or disable AI verification."
-            )
+            from rich.console import Console
+            c = Console()
+            c.print("[yellow]⚠️ Warning: Gemini API key is required when AI verification is enabled.[/yellow]")
+            c.print("[yellow]Set GEMINI_API_KEY environment variable. Disabling AI verification for now.[/yellow]")
+            self.enable_ai_verification = False
 
 
 # Global config instance

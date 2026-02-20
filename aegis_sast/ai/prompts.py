@@ -39,14 +39,59 @@ def get_verification_prompt(
         },
         VulnerabilityType.CODE_INJECTION: {
             "name": "Code Injection",
-            "risk": "Attackers can execute arbitrary Python code",
-            "check": "Verify if user input flows into eval/exec without validation"
+            "risk": "Attackers can execute arbitrary code in the runtime",
+            "check": "Verify if user input flows into eval/exec/Function without validation"
         },
         VulnerabilityType.PATH_TRAVERSAL: {
             "name": "Path Traversal",
             "risk": "Attackers can access files outside intended directory",
             "check": "Verify if user input flows into file operations without path validation"
-        }
+        },
+        VulnerabilityType.XSS: {
+            "name": "Cross-Site Scripting (XSS)",
+            "risk": "Attackers can inject malicious scripts into web pages viewed by other users",
+            "check": "Verify if user input is rendered in HTML/JS context without HTML escaping (htmlspecialchars, escape, etc.)"
+        },
+        VulnerabilityType.SSRF: {
+            "name": "Server-Side Request Forgery (SSRF)",
+            "risk": "Attacker can make the server send requests to internal network services or arbitrary URLs",
+            "check": "Verify if user-supplied URL is used in HTTP request functions without a whitelist/validation (requests.get, axios.get, curl, etc.)"
+        },
+        VulnerabilityType.NOSQL_INJECTION: {
+            "name": "NoSQL Injection",
+            "risk": "Attackers can manipulate NoSQL queries (MongoDB, etc.) to access or modify data",
+            "check": "Verify if user input is passed directly into a MongoDB/NoSQL find/query operation without sanitization"
+        },
+        VulnerabilityType.XXE: {
+            "name": "XML External Entity (XXE)",
+            "risk": "Attackers can read internal files or make server-side requests via malicious XML",
+            "check": "Verify if XML is parsed from user input without disabling external entity resolution"
+        },
+        VulnerabilityType.IDOR: {
+            "name": "Insecure Direct Object Reference (IDOR)",
+            "risk": "Attacker can access/modify resources of other users by manipulating object IDs",
+            "check": "Verify if user-supplied ID is used to fetch a database record without ownership check"
+        },
+        VulnerabilityType.SSTI: {
+            "name": "Server-Side Template Injection (SSTI)",
+            "risk": "Attackers can inject template directives that execute arbitrary code on the server",
+            "check": "Verify if user input flows into a template engine (Jinja2, Twig, Smarty) constructor or render function"
+        },
+        VulnerabilityType.INSECURE_DESERIALIZATION: {
+            "name": "Insecure Deserialization",
+            "risk": "Attackers can achieve remote code execution by providing tampered serialized objects",
+            "check": "Verify if untrusted data is deserialized via pickle.loads, yaml.unsafe_load, ObjectInputStream.readObject, or unserialize() without integrity check"
+        },
+        VulnerabilityType.MASS_ASSIGNMENT: {
+            "name": "Mass Assignment",
+            "risk": "Attackers can set unauthorized model attributes (e.g., is_admin=True) by injecting extra fields",
+            "check": "Verify if user-provided dict/JSON is passed directly into model.update() or model.create() without an allowlist of permitted fields"
+        },
+        VulnerabilityType.OPEN_REDIRECT: {
+            "name": "Open Redirect",
+            "risk": "Attackers can redirect users to attacker-controlled URLs, enabling phishing attacks",
+            "check": "Verify if user-supplied URL/path is used in redirect() without a whitelist or domain check"
+        },
     }
     
     desc = vuln_descriptions.get(

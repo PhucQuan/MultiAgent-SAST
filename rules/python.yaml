@@ -107,6 +107,105 @@ sinks:
       severity: "MEDIUM"
       description: "Path construction - check for directory traversal"
 
+  xss:
+    - pattern: "render_template_string("
+      type: "XSS"
+      severity: "HIGH"
+      description: "Reflected Cross-Site Scripting via template rendering"
+    
+    - pattern: "Markup("
+      type: "XSS"
+      severity: "HIGH"
+      description: "Bypassing HTML escaping with Markup"
+
+  ssrf:
+    - pattern: "requests.get("
+      type: "SSRF"
+      severity: "HIGH"
+      description: "Server-Side Request Forgery via HTTP GET"
+      
+    - pattern: "urllib.request.urlopen("
+      type: "SSRF"
+      severity: "HIGH"
+      description: "Server-Side Request Forgery via urlopen"
+
+  nosqli:
+    - pattern: "collection.find("
+      type: "NOSQL_INJECTION"
+      severity: "CRITICAL"
+      description: "NoSQL DB Query without sanitization"
+      
+    - pattern: "db.users.find("
+      type: "NOSQL_INJECTION"
+      severity: "CRITICAL"
+      description: "NoSQL DB Query without sanitization"
+      
+    - pattern: "db.find("
+      type: "NOSQL_INJECTION"
+      severity: "CRITICAL"
+      description: "NoSQL DB Query without sanitization"
+
+  xxe:
+    - pattern: "ElementTree.parse("
+      type: "XXE"
+      severity: "HIGH"
+      description: "XML External Entity parsing"
+      
+    - pattern: "etree.fromstring("
+      type: "XXE"
+      severity: "HIGH"
+      description: "XML External Entity parsing via lxml"
+
+  idor:
+    - pattern: "User.query.get("
+      type: "IDOR"
+      severity: "MEDIUM"
+      description: "Insecure Direct Object Reference via explicit DB get"
+      
+    - pattern: "session.query("
+      type: "IDOR"
+      severity: "MEDIUM"
+      description: "Query execution without ownership check"
+
+  ssti:
+    - pattern: "Template("
+      type: "SSTI"
+      severity: "CRITICAL"
+      description: "Server-Side Template Injection via Jinja2 Template"
+      
+  deserialization:
+    - pattern: "pickle.loads("
+      type: "INSECURE_DESERIALIZATION"
+      severity: "CRITICAL"
+      description: "Untrusted data deserialization via pickle"
+      
+    - pattern: "yaml.unsafe_load("
+      type: "INSECURE_DESERIALIZATION"
+      severity: "CRITICAL"
+      description: "Untrusted data deserialization via yaml"
+      
+    - pattern: "yaml.load("
+      type: "INSECURE_DESERIALIZATION"
+      severity: "HIGH"
+      description: "Potentially unsafe yaml load depending on Loader"
+
+  mass_assignment:
+    - pattern: ".update(**"
+      type: "MASS_ASSIGNMENT"
+      severity: "HIGH"
+      description: "Unfiltered mass assignment updating attributes"
+      
+    - pattern: ".create(**"
+      type: "MASS_ASSIGNMENT"
+      severity: "HIGH"
+      description: "Unfiltered mass assignment creating models"
+
+  open_redirect:
+    - pattern: "redirect("
+      type: "OPEN_REDIRECT"
+      severity: "MEDIUM"
+      description: "Unvalidated URL redirection"
+
 sanitizers:
   # SQL Sanitization
   - pattern: "escape_string("

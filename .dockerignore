@@ -1,0 +1,9 @@
+test_projects/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.vscode/
+tests/
+reports/

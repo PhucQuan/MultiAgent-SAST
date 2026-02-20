@@ -13,22 +13,30 @@ import json
 class RuleEngine:
     """Manages security rules for vulnerability detection."""
     
-    def __init__(self, rules_path: Optional[Path] = None):
+    def __init__(self, rules_path: Optional[Path] = None, language: str = "python"):
         """
         Initialize rule engine.
         
         Args:
-            rules_path: Path to custom rules file (YAML/JSON)
+            rules_path: Path to custom rules file (YAML/JSON).
+            language: Language name (python/javascript/java/php) for auto rule loading.
         """
         self.rules: Dict[str, Any] = {}
+        self.language = language
         
         if rules_path:
             self.load_rules(rules_path)
         else:
-            # Load default Python rules
-            default_rules = Path(__file__).parent.parent.parent / "rules" / "python.yaml"
-            if default_rules.exists():
-                self.load_rules(default_rules)
+            # Load rules matching the specific language
+            rules_dir = Path(__file__).parent.parent.parent / "rules"
+            lang_rules = rules_dir / f"{language}.yaml"
+            if lang_rules.exists():
+                self.load_rules(lang_rules)
+            else:
+                # Fallback to python rules
+                default_rules = rules_dir / "python.yaml"
+                if default_rules.exists():
+                    self.load_rules(default_rules)
     
     def load_rules(self, rules_path: Path):
         """
@@ -40,7 +48,6 @@ class RuleEngine:
         if not rules_path.exists():
             raise FileNotFoundError(f"Rules file not found: {rules_path}")
         
-        # Determine file type
         extension = rules_path.suffix.lower()
         
         try:

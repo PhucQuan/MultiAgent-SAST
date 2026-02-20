@@ -5,10 +5,12 @@ Handles communication with Google's Gemini API for AI-based analysis.
 """
 
 import json
+import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from aegis_sast.core.config import get_config
@@ -28,10 +30,12 @@ class GeminiClient:
         # Configure Gemini API
         if self.config.enable_ai_verification:
             self.config.validate_ai_config()
-            genai.configure(api_key=self.config.gemini_api_key)
-            self.model = genai.GenerativeModel(self.config.gemini_model)
+            self.client = genai.Client(api_key=self.config.gemini_api_key)
         else:
-            self.model = None
+            self.client = None
+            
+        # Semaphore to limit concurrent API calls
+        self.semaphore = asyncio.Semaphore(10)
     
     @retry(
         stop=stop_after_attempt(3),
@@ -47,12 +51,84 @@ class GeminiClient:
         Returns:
             API response text
         """
-        if not self.model:
+        if not self.config.enable_ai_verification or not self.client:
             raise RuntimeError("AI verification is disabled")
         
-        response = self.model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model=self.config.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2, # Low temperature for more deterministic analysis
+                response_mime_type="application/json"
+            )
+        )
         return response.text
     
+    async def async_verify_vulnerability(
+        self,
+        vuln_type: VulnerabilityType,
+        source_code: str,
+        dataflow_path: list,
+        sink_code: str
+    ) -> Optional[AIVerification]:
+        """Async version of verify_vulnerability."""
+        async with self.semaphore:
+            # Check cache first (still synchronous is fine for diskcache)
+            cached_result = self.cache.get(source_code, dataflow_path, sink_code)
+            if cached_result:
+                return self._parse_verification_result(
+                    cached_result,
+                    from_cache=True
+                )
+            
+            # Generate prompt
+            prompt = get_verification_prompt(
+                vuln_type=vuln_type,
+                source_code=source_code,
+                dataflow_path=dataflow_path,
+                sink_code=sink_code
+            )
+            
+            try:
+                # Call API in a thread pool since genai is currently blocking
+                if hasattr(asyncio, 'to_thread'):
+                    response_text = await asyncio.to_thread(self._call_api, prompt)
+                else:
+                    loop = asyncio.get_event_loop()
+                    response_text = await loop.run_in_executor(None, self._call_api, prompt)
+                
+                # Parse JSON response
+                import re
+                
+                # Check if it's wrapped in a json codeblock
+                json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+                if json_match:
+                    response_text = json_match.group(1).strip()
+                else:
+                    # Try to extract anything looking like a JSON object if markdown blocks are missing or wrong
+                    obj_match = re.search(r'(\{.*?\})', response_text, re.DOTALL)
+                    if obj_match:
+                        response_text = obj_match.group(1).strip()
+                    else:
+                        response_text = response_text.strip()
+                
+                # If still not starting with {, there's an issue
+                if not response_text.startswith('{'):
+                    raise ValueError(f"Gemini did not return JSON: {response_text[:50]}")
+                
+                result = json.loads(response_text)
+                self.cache.set(source_code, dataflow_path, sink_code, result)
+                return self._parse_verification_result(result)
+                
+            except Exception as e:
+                return AIVerification(
+                    is_vulnerable=True,
+                    confidence=0.5,
+                    explanation=f"AI verification failed: {str(e)}",
+                    recommendation="Manual review required",
+                    model_used=self.config.gemini_model
+                )
+
     def verify_vulnerability(
         self,
         vuln_type: VulnerabilityType,
@@ -96,11 +172,23 @@ class GeminiClient:
             response_text = self._call_api(prompt)
             
             # Parse JSON response
-            # Extract JSON from markdown code blocks if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            import re
+            
+            # Check if it's wrapped in a json codeblock
+            json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+            if json_match:
+                response_text = json_match.group(1).strip()
+            else:
+                # Try to extract anything looking like a JSON object if markdown blocks are missing or wrong
+                obj_match = re.search(r'(\{.*?\})', response_text, re.DOTALL)
+                if obj_match:
+                    response_text = obj_match.group(1).strip()
+                else:
+                    response_text = response_text.strip()
+            
+            # If still not starting with {, there's an issue
+            if not response_text.startswith('{'):
+                raise ValueError(f"Gemini did not return JSON: {response_text[:50]}")
             
             result = json.loads(response_text)
             
