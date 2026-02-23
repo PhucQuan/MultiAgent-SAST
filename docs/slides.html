@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aegis-SAST – Project Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0b0f1a;
+    --surface:  #111827;
+    --card:     #1a2233;
+    --border:   #243048;
+    --accent:   #3b82f6;
+    --accent2:  #8b5cf6;
+    --green:    #10b981;
+    --red:      #ef4444;
+    --orange:   #f59e0b;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg); font-family: 'Inter', sans-serif; color: var(--text); }
+
+  /* ── Slide container ── */
+  .deck { width: 100vw; height: 100vh; position: relative; }
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    padding: 56px 72px;
+    opacity: 0; transform: translateX(60px);
+    transition: opacity .45s ease, transform .45s ease;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .slide.active { opacity: 1; transform: translateX(0); pointer-events: all; }
+  .slide.prev   { opacity: 0; transform: translateX(-60px); }
+
+  /* ── Background decoration ── */
+  .slide::before {
+    content: '';
+    position: absolute; top: -200px; right: -200px;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(59,130,246,.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* ── Typography ── */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(59,130,246,.15); border: 1px solid rgba(59,130,246,.35);
+    color: var(--accent); border-radius: 20px;
+    padding: 4px 14px; font-size: .72rem; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: clamp(2rem, 4.5vw, 3.4rem); font-weight: 900; line-height: 1.1; }
+  h2 { font-size: clamp(1.4rem, 2.8vw, 2rem); font-weight: 700; margin-bottom: 28px; }
+  .gradient { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { color: var(--muted); font-size: 1.05rem; line-height: 1.7; max-width: 680px; margin-top: 16px; }
+
+  /* ── Cards / Grids ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: attr(data-accent);
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  }
+  .card[data-accent="blue"]::before   { background: var(--accent); }
+  .card[data-accent="purple"]::before { background: var(--accent2); }
+  .card[data-accent="green"]::before  { background: var(--green); }
+  .card[data-accent="orange"]::before { background: var(--orange); }
+  .card[data-accent="red"]::before    { background: var(--red); }
+  .card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 12px; }
+  .card p, .card li { font-size: .88rem; color: var(--muted); line-height: 1.65; }
+  .card ul { padding-left: 16px; }
+  .card li { margin-bottom: 5px; }
+
+  /* ── Code block ── */
+  pre {
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 24px;
+    font-family: 'JetBrains Mono', monospace; font-size: .82rem;
+    line-height: 1.75; color: #c9d1d9; overflow-x: auto;
+  }
+  .kw  { color: #ff7b72; }
+  .fn  { color: #d2a8ff; }
+  .str { color: #a5d6ff; }
+  .cm  { color: #6e7681; font-style: italic; }
+  .src { color: #f0883e; font-weight: 600; }
+  .snk { color: #ef4444; font-weight: 600; }
+  .arrow { color: var(--accent2); }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th { background: rgba(59,130,246,.1); color: var(--accent); padding: 10px 14px; text-align: left; font-weight: 600; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 2px 10px; border-radius: 6px; font-size: .75rem; font-weight: 600;
+  }
+  .badge.crit { background: rgba(239,68,68,.15); color: #ef4444; }
+  .badge.high { background: rgba(245,158,11,.15); color: #f59e0b; }
+  .badge.med  { background: rgba(59,130,246,.15); color: #3b82f6; }
+  .badge.yes  { background: rgba(16,185,129,.15); color: #10b981; }
+  .badge.no   { background: rgba(100,116,139,.12); color: #64748b; }
+
+  /* ── Stat numbers ── */
+  .stats { display: flex; gap: 28px; margin: 24px 0; }
+  .stat { text-align: center; }
+  .stat-num { font-size: 2.4rem; font-weight: 900; line-height: 1; }
+  .stat-lbl { font-size: .75rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .08em; }
+
+  /* ── Flow diagram ── */
+  .flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+  .fbox {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 18px;
+    font-size: .82rem; font-weight: 600; white-space: nowrap;
+  }
+  .fbox.src-box { border-color: var(--orange); color: var(--orange); }
+  .fbox.snk-box { border-color: var(--red);    color: var(--red); }
+  .fbox.san-box { border-color: var(--green);  color: var(--green); }
+  .fbox.ai-box  { border-color: var(--accent2);color: var(--accent2); }
+  .farrow { color: var(--muted); font-size: 1.2rem; }
+
+  /* ── Progress dots ── */
+  #progress {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 99;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border); transition: all .3s;
+    cursor: pointer;
+  }
+  .dot.active { background: var(--accent); width: 24px; border-radius: 4px; }
+
+  /* ── Nav buttons ── */
+  #nav { position: fixed; bottom: 24px; right: 36px; display: flex; gap: 10px; z-index: 99; }
+  .nav-btn {
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px;
+    padding: 8px 20px; font-size: .85rem; font-weight: 600;
+    cursor: pointer; transition: all .2s;
+  }
+  .nav-btn:hover { background: var(--accent); border-color: var(--accent); }
+
+  /* ── Slide number ── */
+  #slide-num {
+    position: fixed; top: 24px; right: 36px;
+    color: var(--muted); font-size: .8rem;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Logo ── */
+  .logo { font-size: .95rem; font-weight: 700; color: var(--accent); margin-bottom: 40px; display: flex; align-items: center; gap: 8px; }
+  .logo span { font-size: 1.1rem; }
+
+  /* ── Tag row ── */
+  .tags { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+  .tag { background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 6px; padding: 5px 14px; font-size: .8rem; color: var(--muted); }
+
+  /* ── Limitation item ── */
+  .limit-item { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+  .limit-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+  .limit-title { font-size: .9rem; font-weight: 700; margin-bottom: 4px; }
+  .limit-desc  { font-size: .83rem; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div id="slide-num">1 / 7</div>
+
+<div class="deck">
+
+  <!-- ════════════════ SLIDE 1: TITLE ════════════════ -->
+  <section class="slide active" id="s1">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">🎓 Internship Portfolio Project</div>
+    <h1><span class="gradient">Aegis-SAST</span></h1>
+    <h1>AI-Powered Static Code</h1>
+    <h1>Security Scanner</h1>
+    <p class="sub">
+      Phát hiện lỗ hổng bảo mật trong source code bằng cách kết hợp
+      <strong>AST Taint Analysis</strong> và <strong>Gemini AI Verification</strong>.
+      Hỗ trợ Python, JavaScript, Java, PHP — bao phủ OWASP Top 10 2021.
+    </p>
+    <div class="tags">
+      <div class="tag">🐍 Python</div>
+      <div class="tag">🟨 JavaScript</div>
+      <div class="tag">☕ Java</div>
+      <div class="tag">🐘 PHP</div>
+      <div class="tag">OWASP Top 10</div>
+      <div class="tag">Tree-sitter AST</div>
+      <div class="tag">Gemini AI</div>
+      <div class="tag">Inter-procedural Taint</div>
+    </div>
+  </section>
+
+  <!-- ════════════════ SLIDE 2: VẤN ĐỀ ════════════════ -->
+  <section class="slide" id="s2">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">📌 Vấn đề</div>
+    <h2>Tại sao cần một tool SAST?</h2>
+    <div class="grid-2" style="align-items:start; gap:24px;">
+      <div>
+        <div class="card" data-accent="red" style="margin-bottom:16px;">
+          <h3>❌ Cách thủ công (Manual Review)</h3>
+          <ul>
+            <li>Tốn thời gian, không scalable</li>
+            <li>Dễ bỏ sót khi codebase lớn</li>
+            <li>Phụ thuộc kinh nghiệm reviewer</li>
+            <li>Không thể chạy trong CI/CD</li>
+          </ul>
+        </div>
+        <div class="card" data-accent="orange">
+          <h3>⚠️ SAST thuần regex</h3>
+          <ul>
+            <li>False positive rất cao</li>
+            <li>Không hiểu luồng dữ liệu</li>
+            <li>Không phân biệt safe vs unsafe context</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card" data-accent="green" style="height:100%;">
+        <h3>✅ Aegis-SAST: Taint Analysis + AI</h3>
+        <div class="flow" style="margin-top:12px; flex-direction:column; align-items:flex-start;">
+          <div class="flow">
+            <div class="fbox src-box">Source (user input)</div>
+            <div class="farrow">→</div>
+            <div class="fbox">Variable tracking</div>
+          </div>
+          <div class="flow">
+            <div class="fbox">Variable tracking</div>
+            <div class="farrow">→</div>
+            <div class="fbox snk-box">Sink (dangerous fn)</div>
+          </div>
+          <div class="flow">
+            <div class="fbox snk-box">Finding</div>
+            <div class="farrow">→</div>
+            <div class="fbox ai-box">AI Verify (Gemini)</div>
+          </div>
+        </div>
+        <ul style="margin-top:20px;">
+          <li>Hiểu ngữ nghĩa luồng dữ liệu (taint)</li>
+          <li>AI lọc false positive tự động</li>
+          <li>Xuyên file (inter-procedural)</li>
+          <li>Integrate vào CI/CD qua CLI</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ SLIDE 3: KIẾN TRÚC ════════════════ -->
+  <section class="slide" id="s3">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">🏗️ Kiến trúc hệ thống</div>
+    <h2>2-Layer Architecture</h2>
+    <div class="grid-2" style="gap:20px; align-items:start;">
+      <div>
+        <div class="card" data-accent="blue" style="margin-bottom:16px;">
+          <h3>Layer 1 — Static Analysis</h3>
+          <div class="flow" style="flex-direction:column; align-items:flex-start; gap:8px;">
+            <div class="fbox src-box" style="width:100%;">📥 Source Files (.py .js .java .php)</div>
+            <div class="farrow" style="align-self:center;">↓</div>
+            <div class="fbox" style="width:100%;">🔧 Tree-sitter AST Parser</div>
+            <div class="farrow" style="align-self:center;">↓</div>
+            <div class="fbox" style="width:100%;">📋 Rule Engine (YAML)</div>
+            <div class="farrow" style="align-self:center;">↓</div>
+            <div class="fbox" style="width:100%;">🔗 Call Graph + Taint Engine</div>
+            <div class="farrow" style="align-self:center;">↓</div>
+            <div class="fbox snk-box" style="width:100%;">⚠️ Vulnerability Findings</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" data-accent="purple" style="margin-bottom:16px;">
+          <h3>Layer 2 — AI Verification</h3>
+          <ul>
+            <li>Mỗi finding được gửi cho Gemini AI</li>
+            <li>AI xác nhận: đây có phải lỗi thật không?</li>
+            <li>AI đề xuất cách fix cụ thể</li>
+            <li>Confidence score được gắn vào report</li>
+          </ul>
+        </div>
+        <div class="card" data-accent="green">
+          <h3>Cross-file Taint (Level-B)</h3>
+          <pre style="font-size:.72rem; padding:12px 16px; margin-top:8px;">
+<span class="cm"># utils.py</span>
+<span class="kw">def</span> <span class="fn">get_cmd</span>():
+    <span class="kw">return</span> <span class="src">request.args.get('cmd')</span>
+
+<span class="cm"># app.py</span>
+<span class="kw">from</span> utils <span class="kw">import</span> get_cmd
+cmd = get_cmd()  <span class="cm"># ← synthetic source</span>
+<span class="snk">os.system(cmd)</span>  <span class="cm"># ← DETECTED!</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ SLIDE 4: TÍNH NĂNG ════════════════ -->
+  <section class="slide" id="s4">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">⚡ Tính năng</div>
+    <h2>OWASP Top 10 Coverage</h2>
+    <div style="overflow-x:auto; flex:1; display:flex; flex-direction:column; justify-content:center;">
+      <table>
+        <thead>
+          <tr>
+            <th>Vulnerability</th>
+            <th>Severity</th>
+            <th>Python</th>
+            <th>JavaScript</th>
+            <th>Java</th>
+            <th>PHP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>SQL Injection</td><td><span class="badge crit">CRITICAL</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>Command Injection (RCE)</td><td><span class="badge crit">CRITICAL</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>Path Traversal / LFI</td><td><span class="badge high">HIGH</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>Cross-Site Scripting (XSS)</td><td><span class="badge high">HIGH</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>SSRF</td><td><span class="badge high">HIGH</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>Insecure Deserialization</td><td><span class="badge crit">CRITICAL</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>Code Injection / SSTI</td><td><span class="badge crit">CRITICAL</span></td><td><span class="badge yes">✓</span></td><td><span class="badge no">—</span></td><td><span class="badge no">—</span></td><td><span class="badge no">—</span></td></tr>
+          <tr><td>NoSQL Injection</td><td><span class="badge crit">CRITICAL</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge no">—</span></td><td><span class="badge no">—</span></td></tr>
+          <tr><td>XXE</td><td><span class="badge high">HIGH</span></td><td><span class="badge yes">✓</span></td><td><span class="badge no">—</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td></tr>
+          <tr><td>Open Redirect</td><td><span class="badge med">MEDIUM</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge yes">✓</span></td><td><span class="badge no">—</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ════════════════ SLIDE 5: KỸ THUẬT NỔI BẬT ════════════════ -->
+  <section class="slide" id="s5">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">🧠 Kỹ thuật nổi bật</div>
+    <h2>What We Built</h2>
+    <div class="grid-3" style="flex:1; align-items:stretch;">
+      <div class="card" data-accent="blue">
+        <h3>🌳 AST-Based Analysis</h3>
+        <p>Dùng Tree-sitter để parse code thành Abstract Syntax Tree. Không dùng regex — hiểu cấu trúc ngôn ngữ thật sự, tránh nhiễu.</p>
+        <pre style="margin-top:12px; font-size:.72rem; padding:10px 14px;">
+<span class="fn">expr</span> = request.<span class="fn">args</span>.<span class="fn">get</span>(<span class="str">'id'</span>)
+        </pre>
+      </div>
+      <div class="card" data-accent="purple">
+        <h3>🔗 Taint Propagation</h3>
+        <p>Theo dõi luồng dữ liệu từ source → qua assignments/aliases → đến sink. Biết được <em>đường đi</em> của data.</p>
+        <pre style="margin-top:12px; font-size:.72rem; padding:10px 14px;">
+<span class="src">uid</span> = req.args.get(<span class="str">'id'</span>)
+q   = <span class="str">"WHERE id="</span> + <span class="src">uid</span>
+<span class="snk">db.execute(q)</span>  <span class="cm"># ← CAUGHT</span>
+        </pre>
+      </div>
+      <div class="card" data-accent="green">
+        <h3>📂 Cross-file Tracking</h3>
+        <p>FunctionIndex + ImportResolver cho phép theo dõi taint <em>xuyên file</em> qua static imports. Level-B inter-procedural.</p>
+        <pre style="margin-top:12px; font-size:.72rem; padding:10px 14px;">
+<span class="cm"># utils.py → source</span>
+<span class="cm"># app.py   → sink</span>
+<span class="cm"># Tool nối 2 file lại!</span>
+        </pre>
+      </div>
+      <div class="card" data-accent="orange">
+        <h3>🤖 AI Verification</h3>
+        <p>Gemini API xác nhận từng finding. Giảm false positive. Cung cấp remediation advice cụ thể theo context.</p>
+      </div>
+      <div class="card" data-accent="blue">
+        <h3>📋 YAML Rule System</h3>
+        <p>Rules được định nghĩa ngoài code trong YAML — dễ mở rộng, không cần sửa source code để thêm rule mới.</p>
+      </div>
+      <div class="card" data-accent="purple">
+        <h3>🧪 44 Unit Tests</h3>
+        <p>Test coverage đầy đủ: rule loading, AST parsing, taint analysis, cross-file detection. Tất cả pass 100%.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ SLIDE 6: KẾT QUẢ DEMO ════════════════ -->
+  <section class="slide" id="s6">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">📊 Demo Results</div>
+    <h2>Scan Results trên Example Files</h2>
+    <div class="grid-2" style="align-items:start; gap:24px; flex:1;">
+      <div>
+        <div class="card" data-accent="blue" style="margin-bottom:16px;">
+          <h3>Python — vulnerable_owasp_top10.py</h3>
+          <div class="stats" style="justify-content:flex-start; gap:20px; margin:16px 0;">
+            <div class="stat"><div class="stat-num" style="color:var(--red);">5</div><div class="stat-lbl">Critical</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--orange);">3</div><div class="stat-lbl">High</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--accent);">2</div><div class="stat-lbl">Medium</div></div>
+          </div>
+          <ul style="font-size:.83rem; color:var(--muted);">
+            <li>SQL Injection — CRITICAL</li>
+            <li>Command Injection — CRITICAL</li>
+            <li>Code Injection (eval) — CRITICAL</li>
+            <li>Insecure Deserialization — CRITICAL</li>
+            <li>NoSQL Injection — CRITICAL</li>
+            <li>XSS, SSRF, Path Traversal, SSTI…</li>
+          </ul>
+        </div>
+        <div class="card" data-accent="orange">
+          <h3>JavaScript — vulnerable_express.js</h3>
+          <div class="stats" style="justify-content:flex-start; gap:20px; margin:12px 0;">
+            <div class="stat"><div class="stat-num" style="color:var(--red);">2</div><div class="stat-lbl">Critical</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--orange);">6</div><div class="stat-lbl">High</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--accent);">1</div><div class="stat-lbl">Medium</div></div>
+          </div>
+          <p style="font-size:.83rem;">exec(), sql query, res.send() XSS, axios SSRF, fs.readFile LFI, res.redirect…</p>
+        </div>
+      </div>
+      <div class="card" data-accent="green" style="height:100%;">
+        <h3>Cross-file RCE Detection ✅</h3>
+        <pre style="margin-top:14px; font-size:.75rem; padding:14px 18px;">
+<span class="cm">$ aegis-sast scan test_projects/cross_file_app/</span>
+
+<span class="src">🔍 Scanning:</span> test_projects\cross_file_app
+<span class="cm">Files Scanned: 2</span>
+
+<span class="snk">⚠️ CRITICAL vulnerabilities found!</span>
+
+<span class="fn">VULN-001</span> | <span class="snk">COMMAND_INJECTION</span> | CRITICAL
+  Source: utils.py:14
+    <span class="src">→ request.args.get('cmd')</span>
+  Via:    get_command() return value
+  Sink:   app.py:22
+    <span class="snk">→ os.system(cmd)</span>
+
+✓ JSON report: reports/aegis_sast_report.json
+✓ MD   report: reports/aegis_sast_report.md</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ SLIDE 7: LIMITS & NEXT ════════════════ -->
+  <section class="slide" id="s7">
+    <div class="logo"><span>🔒</span> Aegis-SAST</div>
+    <div class="chip">🔭 Limitations & Future</div>
+    <h2>Giới hạn & Hướng phát triển</h2>
+    <div class="grid-2" style="align-items:start; gap:24px; flex:1;">
+      <div>
+        <div class="card" data-accent="orange">
+          <h3 style="margin-bottom:18px;">⚠️ Hiện tại (Đã biết)</h3>
+          <div class="limit-item">
+            <div class="limit-icon">📁</div>
+            <div><div class="limit-title">Dynamic imports không resolve được</div><div class="limit-desc"><code>__import__()</code>, <code>importlib</code> — Level 3+ mới xử lý được</div></div>
+          </div>
+          <div class="limit-item">
+            <div class="limit-icon">🌐</div>
+            <div><div class="limit-title">Cross-file chỉ hỗ trợ Python</div><div class="limit-desc">JS/Java/PHP vẫn chạy intra-file</div></div>
+          </div>
+          <div class="limit-item">
+            <div class="limit-icon">⚖️</div>
+            <div><div class="limit-title">Conservative taint → FP tiềm năng</div><div class="limit-desc">Nhiều return paths → đường nào cũng tính là tainted. AI layer lọc lại.</div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card" data-accent="green">
+          <h3 style="margin-bottom:18px;">🚀 Next Steps (Future)</h3>
+          <table style="font-size:.82rem;">
+            <thead><tr><th>Level</th><th>Tính năng</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge yes">Level 3</span></td><td>Context-sensitive analysis</td></tr>
+              <tr><td><span class="badge yes">Level 3</span></td><td>Cross-file JS/Java/PHP</td></tr>
+              <tr><td><span class="badge med">Mid</span></td><td>Parallel AI verification</td></tr>
+              <tr><td><span class="badge med">Mid</span></td><td>GitHub Actions integration</td></tr>
+              <tr><td><span class="badge crit">High</span></td><td>SSA-based IR engine (Level 4)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card" data-accent="blue" style="margin-top:16px;">
+          <h3>📦 Tổng kết</h3>
+          <div class="stats" style="justify-content:flex-start; gap:20px; margin:12px 0;">
+            <div class="stat"><div class="stat-num" style="color:var(--accent);">4</div><div class="stat-lbl">Languages</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--green);">13</div><div class="stat-lbl">Vuln Types</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--accent2);">44</div><div class="stat-lbl">Tests ✅</div></div>
+            <div class="stat"><div class="stat-num" style="color:var(--orange);">L2</div><div class="stat-lbl">Taint Level</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /deck -->
+
+<!-- Progress and Nav -->
+<div id="progress">
+  <div class="dot active" onclick="goTo(0)"></div>
+  <div class="dot" onclick="goTo(1)"></div>
+  <div class="dot" onclick="goTo(2)"></div>
+  <div class="dot" onclick="goTo(3)"></div>
+  <div class="dot" onclick="goTo(4)"></div>
+  <div class="dot" onclick="goTo(5)"></div>
+  <div class="dot" onclick="goTo(6)"></div>
+</div>
+
+<div id="nav">
+  <button class="nav-btn" onclick="prev()">← Prev</button>
+  <button class="nav-btn" onclick="next()">Next →</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const dots   = document.querySelectorAll('.dot');
+  const numEl  = document.getElementById('slide-num');
+  let cur = 0;
+
+  function goTo(n) {
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('prev');
+    setTimeout(() => slides[cur >= 0 ? cur : 0].classList.remove('prev'), 500);
+    dots[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(n, slides.length - 1));
+    slides[cur].classList.add('active');
+    dots[cur].classList.add('active');
+    numEl.textContent = `${cur + 1} / ${slides.length}`;
+  }
+
+  function next() { if (cur < slides.length - 1) goTo(cur + 1); }
+  function prev() { if (cur > 0) goTo(cur - 1); }
+
+  document.addEventListener('keydown', e => {
+    if      (e.key === 'ArrowRight' || e.key === 'ArrowDown'  || e.key === ' ') next();
+    else if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp') prev();
+  });
+</script>
+</body>
+</html>
