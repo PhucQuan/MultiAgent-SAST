@@ -1,1 +1,1 @@
-"""Test suite initialization."""
+# tests/__init__.py

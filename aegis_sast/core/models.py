@@ -41,6 +41,18 @@ class VulnerabilityType(str, Enum):
 
 
 @dataclass
+class FunctionEntry:
+    """Metadata for an indexed function, used by the Call Graph."""
+    name: str
+    file_path: str
+    line_number: int
+    params: List[str]
+    return_vars: List[str]          # variable names in return statements
+    calls: List[str]                # function names called inside this function
+    is_return_tainted: bool = False # set during Pass-2 taint propagation
+
+
+@dataclass
 class CodeLocation:
     """Represents a location in source code."""
     file_path: str

@@ -49,4 +49,4 @@ target-version = "py310"
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --cov=aegis_sast --cov-report=term-missing"
+addopts = "-v"

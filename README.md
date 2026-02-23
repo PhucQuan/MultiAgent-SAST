@@ -1,285 +1,305 @@
+<div align="center">
+
 # 🔒 Aegis-SAST
 
-**AI-Powered Static Application Security Testing CLI Tool**
+**AI-Powered Static Application Security Testing Tool**
 
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Status](https://img.shields.io/badge/status-beta-yellow.svg)
+*Built for penetration testers and security engineers — finds vulnerabilities before attackers do.*
 
-Aegis-SAST is a powerful CLI tool designed for Pentesters to perform static code analysis and detect security vulnerabilities (SQL Injection, RCE, Path Traversal) using **Tree-sitter** for AST parsing and **Gemini AI** for intelligent vulnerability verification.
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python)](https://python.org)
+[![Languages](https://img.shields.io/badge/Languages-Python%20%7C%20JS%20%7C%20Java%20%7C%20PHP-green)](#language-support)
+[![OWASP Top 10](https://img.shields.io/badge/OWASP-Top%2010%202021-red)](https://owasp.org/Top10/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
-
-## ✨ Features
-
-- **🎯 Hybrid Analysis**: Combines Tree-sitter pattern matching with AI verification for high accuracy
-- **🔌 Plugin Architecture**: Extensible design for multi-language support (Python first, more coming)
-- **🧠 Inter-procedural Taint Analysis**: Tracks data flow across functions and files
-- **📝 Custom Rules**: Define your own sources, sinks, and sanitizers via YAML/JSON
-- **💾 Smart Caching**: Hash-based caching reduces AI API costs by 50%+
-- **📊 Dual Reporting**: JSON for CI/CD integration + Markdown for human readers
-- **⚡ Cost-Optimized**: Only calls AI API when necessary (hybrid approach)
+</div>
 
 ---
 
-## 🎯 Supported Vulnerabilities
+## What is Aegis-SAST?
 
-| Category | Types |
-|----------|-------|
-| **Injection** | SQL Injection, Command Injection, Code Injection |
-| **Path Issues** | Path Traversal, Directory Traversal |
-| **Future** | XSS, XXE, SSRF, Deserialization |
+Aegis-SAST is a **static analysis tool** that scans source code for security vulnerabilities using a two-layer approach:
 
----
+1. **Layer 1 — Tree-sitter AST Analysis**: Parses source code into an Abstract Syntax Tree and tracks how untrusted user input (sources) flows into dangerous functions (sinks) without being sanitized — this is called **Taint Analysis**.
+2. **Layer 2 — Gemini AI Verification**: Each potential finding is verified by Google Gemini to reduce false positives and provide remediation advice.
 
-## 📋 Requirements
-
-- Python 3.10+
-- Gemini API Key ([Get one here](https://ai.google.dev/))
-- Poetry (recommended) or pip
+> This tool is designed to detect real, exploitable vulnerabilities — not just flag dangerous function names.
 
 ---
 
-## 🚀 Quick Start
+## Architecture
 
-> **⚡ New to Aegis-SAST?** Check out the [**5-Minute Quick Start Guide**](QUICKSTART.md) for a step-by-step tutorial!
+```mermaid
+graph TD
+    A[Source Files<br/>.py .js .java .php] --> B[Plugin Registry]
+    B --> C{Language Plugin}
+    C --> D[Tree-sitter AST Parser]
+    D --> E[Taint Analysis Engine]
 
-## 📦 Installation
+    F[rules/python.yaml<br/>rules/javascript.yaml<br/>rules/java.yaml<br/>rules/php.yaml] --> G[Rule Engine<br/>Sources · Sinks · Sanitizers]
+    G --> E
 
-### Step 1: Clone from GitHub
+    H[call_graph.py<br/>FunctionIndex + ImportResolver] --> E
+    E --> I[Vulnerability Findings]
+    I --> J{AI Verification<br/>Gemini API}
+    J --> K[JSON Report]
+    J --> L[Markdown Report]
+```
+
+### How Taint Analysis Works
+
+```
+Source (untrusted input)
+  │
+  │  request.args.get('id')          ← HTTP parameter
+  ▼
+Propagation (variable tracking)
+  │
+  │  user_id = request.args.get('id')
+  │  query   = f"SELECT * FROM users WHERE id={user_id}"
+  ▼
+Sink (dangerous function)
+  │
+  │  db.execute(query)               ← SQL Injection!
+  ▼
+Finding: [CRITICAL] SQL_INJECTION @ app.py:42
+```
+
+### Cross-file Tracking (Level-B Inter-procedural)
+
+```
+utils.py                         app.py
+─────────────────────            ──────────────────────────
+def get_command():               from utils import get_command
+    cmd = request.args.get('cmd')
+    return cmd                   cmd = get_command()  ← Synthetic source
+                                 os.system(cmd)       ← SINK detected!
+```
+
+---
+
+## Features
+
+### Language Support
+
+| Language | Extensions | Parser |
+|---|---|---|
+| 🐍 Python | `.py`, `.pyw` | tree-sitter-python |
+| 🟨 JavaScript / Node.js | `.js`, `.mjs`, `.cjs` | tree-sitter-javascript |
+| ☕ Java | `.java` | tree-sitter-java |
+| 🐘 PHP | `.php`, `.phtml` | tree-sitter-php |
+
+### OWASP Top 10 Coverage
+
+| Vulnerability | Python | JavaScript | Java | PHP |
+|---|:---:|:---:|:---:|:---:|
+| SQL Injection | ✅ | ✅ | ✅ | ✅ |
+| Command Injection (RCE) | ✅ | ✅ | ✅ | ✅ |
+| Code Injection | ✅ | ✅ | ✅ | ✅ |
+| Path Traversal / LFI | ✅ | ✅ | ✅ | ✅ |
+| Cross-Site Scripting (XSS) | ✅ | ✅ | ✅ | ✅ |
+| Server-Side Request Forgery | ✅ | ✅ | ✅ | ✅ |
+| XML External Entity (XXE) | ✅ | — | ✅ | ✅ |
+| NoSQL Injection | ✅ | ✅ | — | — |
+| Insecure Deserialization | ✅ | ✅ | ✅ | ✅ |
+| SSTI | ✅ | — | — | — |
+| IDOR | ✅ | — | — | — |
+| Mass Assignment | ✅ | — | — | — |
+| Open Redirect | ✅ | ✅ | ✅ | — |
+
+### Key Capabilities
+
+| Feature | Details |
+|---|---|
+| **AST-based analysis** | Uses Tree-sitter for precise, language-aware parsing — not just regex |
+| **Taint flow tracking** | Follows data from `source → variable → sink` through assignments and aliasing |
+| **Cross-file analysis** | Detects vulnerabilities that span multiple files via import tracking |
+| **Sanitizer awareness** | Recognises safe functions (e.g. `parameterized queries`, `htmlspecialchars`) and marks paths as low-risk |
+| **AI Verification** | Gemini API verifies each finding to suppress false positives |
+| **Dual reports** | JSON (for CI/CD integration) and Markdown (for human review) |
+| **Docker support** | Run without installing anything locally |
+
+---
+
+## Installation
+
+### Option 1: pip (recommended)
 
 ```bash
 # Clone the repository
-git clone https://github.com/PhucQuan/aegis-sast.git
-cd aegis-sast
-```
+git clone https://github.com/PhucQuan/SAST_tool4pentester.git
+cd SAST_tool4pentester
 
-### Step 2: Install Dependencies
-
-**Option A: Using pip (Simple)**
-
-```bash
-# Install in editable mode
+# Install
 pip install -e .
 
-# Verify installation
-aegis-sast --version
+# Set up Gemini API key (optional — tool works without AI verification)
+cp .env.example .env
+# Edit .env and add your GEMINI_API_KEY
 ```
 
-**Option B: Using Poetry (Recommended for Development)**
+### Option 2: Docker
 
 ```bash
-# Install Poetry first (if not installed)
-pip install poetry
-
-# Install all dependencies
-poetry install
-
-# Activate virtual environment
-poetry shell
-
-# Verify installation
-aegis-sast --version
+docker build -t aegis-sast .
+docker run --rm -v $(pwd)/target:/scan aegis-sast scan /scan
 ```
 
 ---
 
-### Step 3: Configure API Key
-
-1. **Copy environment template**:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. **Edit `.env` and add your Gemini API key** ([Get FREE API key](https://ai.google.dev/)):
-   ```ini
-   GEMINI_API_KEY=AIzaSyXXXXXXXXXXXXXXXXXX  # Replace with your actual key
-   GEMINI_MODEL=gemini-1.5-flash
-   
-   CACHE_ENABLED=true
-   ENABLE_AI_VERIFICATION=true
-   MAX_ANALYSIS_DEPTH=5
-   ```
-
-3. **(Optional) Customize rules**: Edit `rules/python.yaml` to define custom sources/sinks
-
-### Step 4: Test Installation
+## Quick Start
 
 ```bash
-# Test with example vulnerable code
-aegis-sast scan examples/
+# Scan a single Python file
+aegis-sast scan app.py
 
-# Expected: Should detect ~12 vulnerabilities
-# Check reports/ directory for results
+# Scan an entire project directory (all languages)
+aegis-sast scan ./my_project/
+
+# Scan without AI verification (faster)
+aegis-sast scan ./my_project/ --no-ai
+
+# Output only JSON report, to a custom directory
+aegis-sast scan ./my_project/ --output json --output-dir ./results/
 ```
 
-✅ **Installation complete!** You can now scan your own projects.
+### Example Output
+
+```
+╭─────────────────────────────────╮
+│ 🔒 Aegis-SAST Security Scanner  │
+│ AI-Powered Static Analysis Tool │
+╰─────────────────────────────────╯
+
+🔍 Scanning: examples/vulnerable_sqli.py
+
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Metric         ┃     Value ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Files Scanned  │         1 │
+│ Total Findings │         5 │
+│ 🔴 Critical    │         3 │
+│ 🟠 High        │         1 │
+│ 🟡 Medium      │         1 │
+└────────────────┴───────────┘
+
+⚠️  CRITICAL vulnerabilities found!
+```
 
 ---
 
-## 📖 Usage
+## How to Use Results
 
-### Scan Your Project
+Each report (JSON and Markdown) contains for every finding:
+
+- **Vulnerability type** (e.g. `SQL_INJECTION`)
+- **Severity** (`CRITICAL` / `HIGH` / `MEDIUM` / `LOW`)
+- **Source location** — the file and line where untrusted input enters
+- **Sink location** — the file and line of the dangerous function
+- **AI confidence score** and **remediation recommendation** (when AI is enabled)
+
+---
+
+## Configuration
+
+| CLI Flag | Default | Description |
+|---|---|---|
+| `--no-ai` | AI enabled | Disable Gemini AI verification |
+| `--max-depth` | `5` | Maximum taint propagation depth |
+| `--output` | `json,markdown` | Output format(s) |
+| `--output-dir` | `reports/` | Directory for report files |
+| `--rules` | auto | Path to custom rules YAML file |
+
+---
+
+## Writing Custom Rules
+
+Rules are defined in YAML files under `rules/`. Here is the structure:
+
+```yaml
+sources:
+  - pattern: "request.args.get"
+    type: "HTTP_PARAM"
+    severity: "HIGH"
+
+sinks:
+  sqli:
+    - pattern: ".execute("
+      type: "SQL_INJECTION"
+      severity: "CRITICAL"
+      description: "Raw SQL execution"
+
+sanitizers:
+  - pattern: "parameterize("
+    mitigates: ["SQL_INJECTION"]
+    description: "Safe parameterized query"
+```
+
+To add a new language: create `rules/<language>.yaml` and implement `aegis_sast/plugins/<language>_plugin.py`.
+
+---
+
+## Limitations
+
+> [!NOTE]
+> Understanding the limitations helps interpret results accurately.
+
+| Limitation | Explanation |
+|---|---|
+| **Intra-project analysis only** | Cross-file tracking works within the same project directory via explicit imports. Third-party library internals are not traversed. |
+| **No dynamic analysis** | `__import__()`, `importlib`, runtime reflection are not resolved — only static `from X import Y` statements. |
+| **Conservative taint** | When a function has multiple return paths, all are treated as tainted if any is tainted (may cause false positives). |
+| **Python cross-file only** | Cross-file tracking currently only supports Python. JS/Java/PHP work intra-file. |
+| **Not a WAF replacement** | This tool finds code patterns; it does not test a running application. |
+
+---
+
+## Project Structure
+
+```
+aegis_sast/
+├── ai/
+│   ├── gemini_client.py        # Gemini API integration
+│   └── prompts.py              # Vulnerability-specific prompt templates
+├── analysis/
+│   ├── call_graph.py           # FunctionIndex + ImportResolver (cross-file)
+│   ├── rule_engine.py          # YAML rule loader
+│   └── vulnerability_detector.py  # Main scan orchestrator
+├── core/
+│   ├── models.py               # Data models (Vulnerability, TaintSource, etc.)
+│   ├── plugin_interface.py     # Abstract base for language plugins
+│   └── registry.py             # Plugin auto-registration
+└── plugins/
+    ├── python_plugin.py        # Python / Flask / Django
+    ├── javascript_plugin.py    # Node.js / Express
+    ├── java_plugin.py          # Java / Spring
+    └── php_plugin.py           # PHP / Laravel
+rules/
+    ├── python.yaml
+    ├── javascript.yaml
+    ├── java.yaml
+    └── php.yaml
+```
+
+---
+
+## Development
 
 ```bash
-# Scan a specific file
-aegis-sast scan /path/to/your/file.py
+# Run unit tests
+pytest tests/ -v
 
-# Scan entire project directory
-aegis-sast scan /path/to/your/project
-
-# Scan current directory
-aegis-sast scan .
-```
-
-### Quick Test with Examples
-
-```bash
-# Test the tool on example vulnerable code
-aegis-sast scan examples/
-
-# Scan specific example
-aegis-sast scan examples/vulnerable_sqli.py
-```
-
-### Advanced Options
-
-```bash
-# Disable AI verification (faster, less accurate)
-aegis-sast scan /path/to/project --no-ai
-
-# Use custom security rules
-aegis-sast scan /path/to/project --rules custom_rules.yaml
-
-# Specify output formats
-aegis-sast scan /path/to/project -o json          # JSON only
-aegis-sast scan /path/to/project -o json -o markdown  # Both
-
-# Custom output directory
-aegis-sast scan /path/to/project --output-dir ./security-reports
-
-# Adjust analysis depth (default: 5)
-aegis-sast scan /path/to/project --max-depth 10
-```
-
-### View Help
-
-```bash
-aegis-sast --help
-aegis-sast scan --help
+# Run against example vulnerable files
+aegis-sast scan examples/ --no-ai
 ```
 
 ---
 
-## 📊 Example Output
+## License
 
-### Markdown Report
-
-```markdown
-# 🔒 Aegis-SAST Security Report
-
-**Target**: /home/user/vulnerable_app
-**Date**: 2026-02-05 17:20:00
-**Total Findings**: 8 (🔴 2 Critical | 🟠 3 High | 🟡 3 Medium)
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-## 🔴 Critical Vulnerabilities
-
-### VULN-001: SQL Injection in `app.py:42`
-
-**Type**: SQL_INJECTION  
-**Severity**: CRITICAL
-
-**Dataflow**:
-1. `request.args.get('user_id')` at line 40 → **SOURCE**
-2. `query = f"SELECT * FROM users WHERE id={user_id}"` at line 41
-3. `cursor.execute(query)` at line 42 → **SINK**
-
-**AI Analysis**:
-❌ **Vulnerable**: User input directly concatenated into SQL query
-
-**Recommendation**:
-Use parameterized queries: `cursor.execute("SELECT * FROM users WHERE id=?", (user_id,))`
-```
-
----
-
-## 🏗️ Architecture
-
-```
-aegis-sast/
-├── aegis_sast/
-│   ├── core/              # Core models, config, plugin interface
-│   ├── analysis/          # Taint engine, rule engine
-│   ├── plugins/           # Language-specific analyzers
-│   ├── ai/                # Gemini client, caching
-│   ├── reporting/         # JSON/Markdown exporters
-│   └── utils/             # File scanning, logging
-├── rules/                 # Default security rules
-└── tests/                 # Unit & integration tests
-```
-
-**Design Patterns**:
-- **Strategy Pattern**: Plugin architecture for language support
-- **Factory Pattern**: Plugin registry and auto-discovery
-- **Repository Pattern**: Cache management
-
----
-
-## 🔧 Development
-
-### Run Tests
-
-```bash
-poetry run pytest tests/ -v --cov=aegis_sast
-```
-
-### Code Formatting
-
-```bash
-poetry run black aegis_sast/
-poetry run ruff check aegis_sast/
-```
-
----
-
-## 🛣️ Roadmap
-
-- [x] Python language support
-- [x] Inter-procedural taint analysis
-- [x] Gemini AI integration with caching
-- [x] JSON & Markdown reports
-- [ ] JavaScript/TypeScript plugin
-- [ ] PHP plugin
-- [ ] VSCode extension
-- [ ] CI/CD integration templates
-- [ ] Web dashboard
-
----
-
-## 📝 License
-
-MIT License - See [LICENSE](LICENSE) file
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
-
----
-
-## 📧 Contact
-
-- **Author**: PhucQuan
-- **GitHub**: [PhucQuan/FintechLab_Pentest]
-- **Issues**: [GitHub Issues](https://github.com/yourusername/aegis-sast/issues)
-
----
-
-**⚠️ Disclaimer**: This tool is for educational and authorized security testing only. Always obtain proper authorization before testing any system.
+<div align="center">
+  <sub>Built as a Penetration Testing portfolio project · Python · Tree-sitter · Gemini AI</sub>
+</div>

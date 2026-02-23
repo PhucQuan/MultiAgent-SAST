@@ -238,107 +238,226 @@ class PythonPlugin(ILanguagePlugin):
         source: TaintSource,
         sinks: List[TaintSink],
         sanitizers: List[Sanitizer],
-        max_depth: int = 5
+        max_depth: int = 5,
+        # ---- Cross-file helpers (injected by VulnerabilityDetector) ----
+        call_graph=None,          # aegis_sast.analysis.call_graph.FunctionIndex
+        import_resolver=None,     # aegis_sast.analysis.call_graph.ImportResolver
+        visited_funcs: Optional[Set[str]] = None,  # recursion guard
     ) -> List[DataFlowPath]:
         """
-        Track dataflow from source to sinks using inter-procedural taint analysis.
-        
-        This is a simplified implementation. A production version would need:
-        - Symbol table for variable tracking
-        - Function call graph
-        - Interprocedural analysis across files
-        - More sophisticated taint propagation rules
+        Track dataflow from a taint source to potential sinks.
+
+        Level-B inter-procedural support:
+          - When a tainted variable is passed to a locally-imported function
+            we resolve that function to its definition file, parse it and
+            check whether its return value propagates the taint.
+          - Recursion is prevented via *visited_funcs*.
+          - Multiple return paths: conservative — if ANY path taints the
+            return variable, the whole call is treated as tainted.
         """
-        paths = []
-        
-        # Build a simple variable tracking map
-        tainted_vars = {source.variable_name}
-        
-        # Read source code
-        with open(file_path, 'r', encoding='utf-8') as f:
-            source_lines = f.readlines()
-        
-        # Find the function scope for the source
-        def find_source_node(node):
+        import re as _re
+
+        paths: List[DataFlowPath] = []
+        tainted_vars: Set[str] = {source.variable_name}
+
+        if visited_funcs is None:
+            visited_funcs = set()
+
+        # Build import map for *this* file so we can resolve callees.
+        import_map: Dict[str, Path] = {}
+        if import_resolver is not None:
+            import_map = import_resolver.resolve_imports(file_path)
+
+        # Read source lines for snippet extraction
+        with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+            source_lines = fh.readlines()
+
+        # ------------------------------------------------------------------
+        # Helpers
+        # ------------------------------------------------------------------
+
+        def _words(text: str) -> List[str]:
+            return _re.findall(r"\b\w+\b", text)
+
+        def _is_tainted(text: str) -> bool:
+            words = _words(text)
+            return any(tv in words for tv in tainted_vars)
+
+        def _find_source_node(node: Node) -> Optional[Node]:
             if node.start_point[0] + 1 == source.location.line_number:
-                if source.pattern in node.text.decode('utf-8'):
+                if source.pattern in node.text.decode("utf-8", errors="replace"):
                     return node
             for child in node.children:
-                res = find_source_node(child)
-                if res: return res
+                res = _find_source_node(child)
+                if res:
+                    return res
             return None
-            
-        source_ast_node = find_source_node(ast.root_node)
-        
-        # Traverse up to find function scope
-        scope_node = ast.root_node
-        if source_ast_node:
-            curr = source_ast_node
+
+        def _find_scope(start: Optional[Node]) -> Node:
+            if start is None:
+                return ast.root_node
+            curr: Optional[Node] = start
             while curr:
-                if curr.type in ["function_definition", "class_definition"]:
-                    scope_node = curr
-                    break
+                if curr.type in ("function_definition", "class_definition"):
+                    return curr
                 curr = curr.parent
-        
-        # Track taint propagation through assignments
-        def analyze_assignments(node: Node, depth: int = 0):
+            return ast.root_node
+
+        def _is_callee_return_tainted(
+            callee_name: str, caller_args: str
+        ) -> bool:
+            """
+            Resolve *callee_name* through the import map, parse its file,
+            and determine whether the callee taints its return value when
+            given tainted arguments.
+            """
+            if callee_name in visited_funcs:
+                return False  # recursion guard
+            if callee_name not in import_map:
+                return False
+            callee_file = import_map[callee_name]
+
+            # Also need the FunctionIndex entry to know parameter names
+            if call_graph is None:
+                return False
+            entry = call_graph.get(callee_name)
+            if entry is None:
+                return False
+
+            visited_funcs.add(callee_name)
+
+            # Map caller tainted variables → callee parameter names
+            callee_tainted: Set[str] = set()
+            arg_words = _words(caller_args)
+            for idx, param in enumerate(entry.params):
+                # If ANY tainted var appears in the call args, mark the
+                # corresponding parameter as tainted (positional heuristic).
+                if any(tv in arg_words for tv in tainted_vars):
+                    callee_tainted.add(param)
+
+            if not callee_tainted:
+                return False
+
+            # Parse the callee file and check return vars
+            try:
+                callee_bytes = callee_file.read_bytes()
+            except OSError:
+                return False
+
+            callee_ast = self.parser.parse(callee_bytes)
+
+            try:
+                with open(callee_file, "r", encoding="utf-8", errors="replace") as fh:
+                    callee_lines = fh.readlines()
+            except OSError:
+                return False
+
+            # Run a lightweight intra-procedural analysis inside the callee
+            # to propagate taint through assignments and check returns.
+            tainted_in_callee = set(callee_tainted)
+
+            def _scan_callee(node: Node) -> bool:
+                """Return True if any return statement is tainted."""
+                nonlocal tainted_in_callee
+
+                # We only care about the function body that matches entry.name
+                if node.type == "function_definition":
+                    name_node = node.children[0] if node.children else None
+                    for child in node.children:
+                        if child.type == "identifier":
+                            name_node = child
+                            break
+                    if name_node and name_node.text.decode("utf-8", errors="replace") != callee_name:
+                        return False  # different function, skip
+
+                if node.type == "assignment":
+                    lhs = node.children[0] if node.children else None
+                    rhs = node.children[2] if len(node.children) > 2 else None
+                    if lhs and rhs:
+                        rhs_text = rhs.text.decode("utf-8", errors="replace")
+                        if any(tv in _words(rhs_text) for tv in tainted_in_callee):
+                            tainted_in_callee.add(
+                                lhs.text.decode("utf-8", errors="replace").strip()
+                            )
+
+                if node.type == "return_statement":
+                    for child in node.children:
+                        if child.type not in ("return", "comment"):
+                            ret_text = child.text.decode("utf-8", errors="replace")
+                            if any(tv in _words(ret_text) for tv in tainted_in_callee):
+                                return True  # conservative: tainted return
+
+                for child in node.children:
+                    if _scan_callee(child):
+                        return True
+                return False
+
+            return _scan_callee(callee_ast.root_node)
+
+        # ------------------------------------------------------------------
+        # Main analysis loop
+        # ------------------------------------------------------------------
+
+        source_ast_node = _find_source_node(ast.root_node)
+        scope_node = _find_scope(source_ast_node)
+
+        def analyze_node(node: Node, depth: int = 0) -> None:
             if depth > max_depth:
                 return
-            
-            # Case 1: Track Variable Re-assignment
-            # If `a = request.args.get()`, and later `b = a`, then `b` becomes tainted.
+
+            # ---- Assignment: propagate taint ----
             if node.type == "assignment":
-                # Find left side (target variable) and right side (value)
-                left_node = node.children[0] if len(node.children) > 0 else None
+                left_node = node.children[0] if node.children else None
                 right_node = node.children[2] if len(node.children) > 2 else None
-                
+
                 if left_node and right_node:
-                    left_text = left_node.text.decode('utf-8').strip()
-                    right_text = right_node.text.decode('utf-8')
-                    
-                    # If the right side contains any known tainted variable, the left side is tainted
-                    # Better check: split by non-word chars to avoid matching substrings (e.g., 'a' in 'var')
-                    import re
-                    words = re.findall(r'\b\w+\b', right_text)
-                    if any(tvar in words for tvar in tainted_vars) or any(tvar in right_text for tvar in tainted_vars):
+                    left_text = left_node.text.decode("utf-8", errors="replace").strip()
+                    right_text = right_node.text.decode("utf-8", errors="replace")
+
+                    # Direct alias propagation  (b = a, c = b …)
+                    if _is_tainted(right_text):
                         tainted_vars.add(left_text)
-            
-            # Case 2: Check if tainted variables reach Sinks
+                    else:
+                        # Cross-file: lhs = imported_func(tainted_arg)
+                        if right_node.type == "call":
+                            func_node = right_node.child_by_field_name("function")
+                            args_node = right_node.child_by_field_name("arguments")
+                            if func_node and args_node:
+                                callee_name = func_node.text.decode("utf-8", errors="replace").strip()
+                                args_text = args_node.text.decode("utf-8", errors="replace")
+                                if _is_tainted(args_text) and _is_callee_return_tainted(
+                                    callee_name, args_text
+                                ):
+                                    tainted_vars.add(left_text)
+
+            # ---- Call: check if tainted vars reach a known sink ----
             elif node.type == "call":
-                call_text = node.text.decode('utf-8')
-                
-                # Check if arguments contain tainted variables
-                import re
-                words = re.findall(r'\b\w+\b', call_text)
-                if any(tvar in words for tvar in tainted_vars) or any(tvar in call_text for tvar in tainted_vars):
-                    # Check if this node is exactly one of our parsed sinks
+                call_text = node.text.decode("utf-8", errors="replace")
+
+                if _is_tainted(call_text):
                     for sink in sinks:
-                        # Match by line number to ensure it's the exact same sink node
                         if sink.location.line_number == node.start_point[0] + 1:
-                            
-                            # Check if the path goes through a sanitizer
-                            path_sanitizers = []
-                            for san in sanitizers:
-                                # Simplistic effective check: sanitizer is between source and sink
-                                if source.location.line_number < san.location.line_number < sink.location.line_number:
-                                    path_sanitizers.append(san)
-                            
-                            dataflow_path = DataFlowPath(
-                                source=source,
-                                sink=sink,
-                                intermediate_steps=[],  # Still simplified, but logic is better
-                                sanitizers=path_sanitizers
+                            path_sanitizers = [
+                                s for s in sanitizers
+                                if source.location.line_number
+                                < s.location.line_number
+                                < sink.location.line_number
+                            ]
+                            paths.append(
+                                DataFlowPath(
+                                    source=source,
+                                    sink=sink,
+                                    intermediate_steps=[],
+                                    sanitizers=path_sanitizers,
+                                )
                             )
-                            
-                            paths.append(dataflow_path)
-            
-            # Recurse into children
+
             for child in node.children:
-                analyze_assignments(child, depth + 1)
-        
-        analyze_assignments(scope_node)
-        
+                analyze_node(child, depth + 1)
+
+        analyze_node(scope_node)
         return paths
+
     
     # Helper methods
     
