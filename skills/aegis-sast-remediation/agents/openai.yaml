@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aegis Remediation Planner"
+  short_description: "Turn confirmed findings into safe patch plans"
+  default_prompt: "Use $aegis-sast-remediation to plan a minimal, framework-correct fix for a confirmed vulnerability."
+
+policy:
+  allow_implicit_invocation: true
+

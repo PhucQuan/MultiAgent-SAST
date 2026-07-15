@@ -115,7 +115,7 @@ class AegisConfig(BaseSettings):
     @classmethod
     def validate_output_formats(cls, v: List[str]) -> List[str]:
         """Validate output formats."""
-        valid_formats = ["json", "markdown", "html"]
+        valid_formats = ["json", "markdown", "sarif", "html"]
         for fmt in v:
             if fmt.lower() not in valid_formats:
                 raise ValueError(f"Output format '{fmt}' not supported. Valid: {valid_formats}")

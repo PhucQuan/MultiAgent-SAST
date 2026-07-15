@@ -27,6 +27,7 @@ wheels/
 *.egg
 
 # Virtual environments
+.venv/
 venv/
 ENV/
 env/
@@ -45,11 +46,11 @@ poetry.lock
 *.log
 aegis_sast.log
 
-# Reports
+# Reports and generated scan artifacts
 reports/
-*.json
-*.md
-!README.md
+*.sarif
+benchmarks/results/
+datasets/generated/
 
 # Testing
 .coverage

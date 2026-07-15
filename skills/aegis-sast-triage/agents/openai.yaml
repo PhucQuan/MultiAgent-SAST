@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aegis Finding Triage"
+  short_description: "Normalize findings and reduce false positives"
+  default_prompt: "Use $aegis-sast-triage to turn raw scanner findings into evidence-based security results."
+
+policy:
+  allow_implicit_invocation: true
+

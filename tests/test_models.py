@@ -9,14 +9,16 @@ from datetime import datetime
 
 from aegis_sast.core.models import (
     Severity,
+    TriageStatus,
     VulnerabilityType,
     CodeLocation,
     TaintSource,
     TaintSink,
     Sanitizer,
     DataFlowPath,
+    AIVerification,
     Vulnerability,
-    ScanResult
+    ScanResult,
 )
 
 
@@ -119,6 +121,62 @@ def test_vulnerability_to_dict():
     assert result["severity"] == "CRITICAL"
     assert result["file"] == "/test/file.py"
     assert result["line"] == 20
+    assert result["triage_status"] == "needs-review"
+    assert result["language"] == "python"
+    assert result["evidence"]["source"]["line"] == 10
+    assert result["evidence"]["sink"]["line"] == 20
+
+
+def test_vulnerability_to_normalized_finding_with_ai():
+    """Test normalized finding generation with AI triage data."""
+    source_loc = CodeLocation("/test/file.py", 8, 0, "user = input()")
+    step_loc = CodeLocation("/test/file.py", 12, 4, "cmd = user.strip()")
+    sink_loc = CodeLocation("/test/file.py", 18, 0, "os.system(cmd)")
+    sanitizer_loc = CodeLocation("/test/file.py", 14, 4, "safe = shlex.quote(cmd)")
+
+    source = TaintSource(source_loc, "USER_INPUT", "user", "input(")
+    sink = TaintSink(
+        sink_loc,
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+    )
+    sanitizer = Sanitizer(
+        sanitizer_loc,
+        "SHELL_ESCAPE",
+        "shlex.quote",
+        mitigates=[VulnerabilityType.COMMAND_INJECTION],
+    )
+    dataflow = DataFlowPath(
+        source=source,
+        sink=sink,
+        intermediate_steps=[step_loc],
+        sanitizers=[sanitizer],
+    )
+    ai = AIVerification(
+        is_vulnerable=True,
+        confidence=0.91,
+        explanation="Tainted data can still reach the shell sink.",
+        recommendation="Use a safe subprocess invocation.",
+        model_used="gemini-test",
+    )
+    vuln = Vulnerability(
+        id="VULN-002",
+        vuln_type=VulnerabilityType.COMMAND_INJECTION,
+        severity=Severity.HIGH,
+        dataflow=dataflow,
+        ai_verification=ai,
+    )
+
+    normalized = vuln.to_normalized_finding()
+    payload = normalized.to_dict()
+
+    assert normalized.triage_status == TriageStatus.CONFIRMED
+    assert normalized.language == "python"
+    assert payload["confidence"] == pytest.approx(0.91)
+    assert payload["evidence"]["intermediate_steps"][0]["line"] == 12
+    assert payload["evidence"]["sanitizers"][0]["function"] == "shlex.quote"
+    assert payload["metadata"]["is_sanitized"] is True
 
 
 def test_scan_result_summary():

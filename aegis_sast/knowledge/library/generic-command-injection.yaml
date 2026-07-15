@@ -1,0 +1,29 @@
+card_id: generic-command-injection
+title: Generic Command Injection Triage Guidance
+cwe_id: CWE-78
+owasp_category: A03:2021-Injection
+finding_type: COMMAND_INJECTION
+sources:
+  - command line parameter
+  - web request parameter
+  - uploaded file metadata
+sinks:
+  - os.system
+  - Runtime.exec
+  - child_process.exec
+  - subprocess with shell execution
+sanitizers:
+  - allowlisted command dispatcher
+  - shell escaping
+  - structured subprocess arguments
+false_positive_patterns:
+  - subprocess launched without shell and with fixed executable path
+  - command value chosen from a strict allowlist
+  - shell escaping applied before reaching the sink and no re-concatenation afterwards
+remediation_notes:
+  - avoid shell execution when structured process APIs are available
+  - use fixed command arrays instead of dynamic shell strings
+  - validate user-controlled command fragments against a strict allowlist
+metadata:
+  priority: high
+  category: generic

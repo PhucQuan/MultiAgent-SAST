@@ -1,0 +1,31 @@
+card_id: javascript-node-express
+title: JavaScript Node and Express Triage Notes
+language: javascript
+sources:
+  - req.query
+  - req.body
+  - req.params
+sinks:
+  - child_process.exec
+  - child_process.execSync
+  - res.send
+  - fs.readFile
+  - axios.get
+sanitizers:
+  - validator middleware
+  - escaping helper
+  - path normalize plus base directory check
+false_positive_patterns:
+  - request field validated by middleware before the sink
+  - command execution replaced with execFile or spawn and fixed args
+  - rendered output uses a template engine with auto-escaping
+remediation_notes:
+  - validate request data early in middleware
+  - use execFile or spawn instead of shell-based exec
+  - normalize and constrain user-controlled file paths
+metadata:
+  frameworks:
+    - express
+    - koa
+    - node
+  category: language

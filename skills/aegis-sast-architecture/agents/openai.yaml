@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aegis Architecture Mapper"
+  short_description: "Map attack surface, trust boundaries, and flows"
+  default_prompt: "Use $aegis-sast-architecture to map the repository architecture, data flows, and trust boundaries."
+
+policy:
+  allow_implicit_invocation: true
+

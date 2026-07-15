@@ -45,6 +45,32 @@ graph TD
     J --> L[Markdown Report]
 ```
 
+## Repository Layout
+
+The repository is now organized to separate product code, research assets, and
+developer fixtures more clearly:
+
+```text
+aegis_sast/        core scanner, plugins, analysis, triage, orchestration, integrations
+benchmarks/        baseline comparison plans and evaluation fixtures
+datasets/          synthetic or labeled research datasets
+docs/thesis/       graduation-thesis and defense documents
+examples/          user-facing demo samples
+refs/              third-party reference snapshots
+scripts/           workflow utilities and future benchmark helpers
+skills/            local skill pack for agent-oriented development
+test_projects/     quick local scan targets for manual debugging
+tests/             unit and regression tests
+```
+
+Design direction:
+
+- `aegis_sast/analysis` remains the deterministic core
+- `aegis_sast/triage` holds normalized finding and review decisions
+- `aegis_sast/orchestration` is reserved for workflow and LangGraph-style state
+- `aegis_sast/knowledge` is reserved for YAML knowledge cards and loaders
+- `aegis_sast/integrations` contains CI-facing export formats such as SARIF
+
 ### How Taint Analysis Works
 
 ```
@@ -115,7 +141,7 @@ def get_command():               from utils import get_command
 | **Cross-file analysis** | Detects vulnerabilities that span multiple files via import tracking |
 | **Sanitizer awareness** | Recognises safe functions (e.g. `parameterized queries`, `htmlspecialchars`) and marks paths as low-risk |
 | **AI Verification** | Gemini API verifies each finding to suppress false positives |
-| **Dual reports** | JSON (for CI/CD integration) and Markdown (for human review) |
+| **Reports and CI** | JSON, Markdown, and SARIF export for CI/CD and code scanning workflows |
 | **Docker support** | Run without installing anything locally |
 
 ---
@@ -160,6 +186,9 @@ aegis-sast scan ./my_project/ --no-ai
 
 # Output only JSON report, to a custom directory
 aegis-sast scan ./my_project/ --output json --output-dir ./results/
+
+# Export SARIF for GitHub code scanning or CI pipelines
+aegis-sast scan ./my_project/ --output sarif --output-dir ./results/
 ```
 
 ### Example Output
@@ -205,7 +234,7 @@ Each report (JSON and Markdown) contains for every finding:
 |---|---|---|
 | `--no-ai` | AI enabled | Disable Gemini AI verification |
 | `--max-depth` | `5` | Maximum taint propagation depth |
-| `--output` | `json,markdown` | Output format(s) |
+| `--output` | `json,markdown` | Output format(s): `json`, `markdown`, `sarif` |
 | `--output-dir` | `reports/` | Directory for report files |
 | `--rules` | auto | Path to custom rules YAML file |
 

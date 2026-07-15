@@ -1,48 +1,34 @@
-"""
-JSON exporter for machine-readable vulnerability reports.
-
-Exports scan results in JSON format for CI/CD integration.
-"""
+"""JSON exporter for machine-readable vulnerability and triage reports."""
 
 import json
-from pathlib import Path
 from datetime import datetime
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 from aegis_sast.core.models import ScanResult, Vulnerability
+from aegis_sast.triage.schema import TriageRecord
 
 
 class JSONExporter:
     """Exports vulnerability reports in JSON format."""
-    
+
     def __init__(self, output_dir: Path):
-        """
-        Initialize JSON exporter.
-        
-        Args:
-            output_dir: Directory to save reports
-        """
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-    
-    def export(self, scan_result: ScanResult, filename: str = None) -> Path:
-        """
-        Export scan results to JSON file.
-        
-        Args:
-            scan_result: ScanResult object
-            filename: Optional custom filename
-            
-        Returns:
-            Path to exported file
-        """
+
+    def export(
+        self,
+        scan_result: ScanResult,
+        filename: str = None,
+        triage_records: Optional[List[TriageRecord]] = None,
+    ) -> Path:
+        """Export scan results to a JSON report file."""
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"aegis_sast_report_{timestamp}.json"
-        
+
         output_path = self.output_dir / filename
-        
-        # Build JSON structure
+
         report = {
             "scan_metadata": {
                 "tool": "aegis-sast",
@@ -50,22 +36,48 @@ class JSONExporter:
                 "timestamp": scan_result.start_time.isoformat(),
                 "target": scan_result.target_path,
                 "duration_seconds": scan_result.duration,
-                "files_scanned": scan_result.files_scanned
+                "files_scanned": scan_result.files_scanned,
             },
-            "findings": [
-                self._vulnerability_to_dict(vuln)
-                for vuln in scan_result.vulnerabilities
-            ],
+            "findings": self._build_findings(scan_result, triage_records),
             "summary": scan_result.get_summary(),
-            "errors": scan_result.errors
+            "errors": scan_result.errors,
         }
-        
-        # Write to file
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        
+
+        if triage_records:
+            report["triage_summary"] = self._build_triage_summary(triage_records)
+
+        with open(output_path, "w", encoding="utf-8") as file_handle:
+            json.dump(report, file_handle, indent=2, ensure_ascii=False)
+
         return output_path
-    
-    def _vulnerability_to_dict(self, vuln: Vulnerability) -> dict:
-        """Convert Vulnerability object to dictionary."""
+
+    def _build_findings(
+        self,
+        scan_result: ScanResult,
+        triage_records: Optional[List[TriageRecord]],
+    ) -> List[dict]:
+        """Build the findings payload, optionally using triage records."""
+        if triage_records:
+            return [self._triage_record_to_dict(record) for record in triage_records]
+        return [self._vulnerability_to_dict(vuln) for vuln in scan_result.vulnerabilities]
+
+    @staticmethod
+    def _vulnerability_to_dict(vuln: Vulnerability) -> dict:
+        """Convert a vulnerability object to a dictionary."""
         return vuln.to_dict()
+
+    @staticmethod
+    def _triage_record_to_dict(record: TriageRecord) -> dict:
+        """Convert a triage record to a JSON-friendly dictionary."""
+        payload = record.finding.to_dict()
+        payload["triage_decision"] = record.decision.to_dict()
+        return payload
+
+    @staticmethod
+    def _build_triage_summary(triage_records: List[TriageRecord]) -> dict:
+        """Count triage decisions by final status."""
+        summary = {}
+        for record in triage_records:
+            status = record.decision.status.value
+            summary[status] = summary.get(status, 0) + 1
+        return summary

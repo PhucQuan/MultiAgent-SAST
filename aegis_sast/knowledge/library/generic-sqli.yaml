@@ -1,0 +1,28 @@
+card_id: generic-sqli
+title: Generic SQL Injection Triage Guidance
+cwe_id: CWE-89
+owasp_category: A03:2021-Injection
+finding_type: SQL_INJECTION
+sources:
+  - user controlled query parameter
+  - request body field
+  - URL parameter
+sinks:
+  - execute
+  - executemany
+  - query
+sanitizers:
+  - parameterized query
+  - prepared statement
+  - bound parameter
+false_positive_patterns:
+  - query executed with a separate parameters tuple or list
+  - placeholder-based statement with values bound outside the SQL string
+  - trusted integer conversion before use in a numeric clause
+remediation_notes:
+  - replace string concatenation with parameterized queries
+  - avoid formatting SQL strings with user input
+  - validate and constrain dynamic table or column choices with an allowlist
+metadata:
+  priority: high
+  category: generic

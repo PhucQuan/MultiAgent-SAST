@@ -1,0 +1,30 @@
+card_id: python-web-and-db
+title: Python Web and Database Triage Notes
+language: python
+sources:
+  - request.args.get
+  - request.form.get
+  - request.json.get
+  - input
+sinks:
+  - os.system
+  - subprocess.run
+  - cursor.execute
+  - requests.get
+sanitizers:
+  - shlex.quote
+  - parameterized cursor.execute
+  - pathlib resolve and prefix check
+false_positive_patterns:
+  - subprocess.run called with a fixed executable and shell disabled
+  - cursor.execute called with placeholders and a parameters tuple
+  - path resolved against an allowlisted base directory before use
+remediation_notes:
+  - prefer structured subprocess argument lists
+  - use parameterized queries in DB-API drivers
+  - normalize and validate filesystem paths before file access
+metadata:
+  frameworks:
+    - flask
+    - django
+  category: language

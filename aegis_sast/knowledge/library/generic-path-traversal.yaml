@@ -1,0 +1,29 @@
+card_id: generic-path-traversal
+title: Generic Path Traversal Triage Guidance
+cwe_id: CWE-22
+owasp_category: A01:2021-Broken Access Control
+finding_type: PATH_TRAVERSAL
+sources:
+  - filename from request
+  - download path parameter
+  - archive extraction path
+sinks:
+  - open
+  - fs.readFile
+  - Files.readAllBytes
+  - file write API
+sanitizers:
+  - base directory join and normalize
+  - resolve and prefix check
+  - allowlisted file identifier mapping
+false_positive_patterns:
+  - path resolved and verified to stay within a trusted base directory
+  - user input mapped to a server-side identifier rather than a raw path
+  - path rejected when it contains traversal markers or escapes the root
+remediation_notes:
+  - normalize and resolve paths before file access
+  - verify the resolved path stays inside an allowlisted base directory
+  - avoid accepting raw filesystem paths from users
+metadata:
+  priority: medium
+  category: generic

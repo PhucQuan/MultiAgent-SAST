@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aegis Benchmark Lab"
+  short_description: "Benchmark Aegis against Semgrep and CodeQL"
+  default_prompt: "Use $aegis-sast-benchmark to design or run an evaluation plan for Aegis-SAST."
+
+policy:
+  allow_implicit_invocation: true
+

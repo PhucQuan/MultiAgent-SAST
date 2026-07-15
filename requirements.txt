@@ -1,0 +1,14 @@
+tree-sitter>=0.22.0
+tree-sitter-python>=0.22.0
+tree-sitter-javascript>=0.21.0
+tree-sitter-java>=0.21.0
+tree-sitter-php>=0.21.0
+click>=8.1.0
+google-genai>=0.3.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+diskcache>=5.6.0
+tqdm>=4.66.0
+rich>=13.7.0
+pyyaml>=6.0
+tenacity>=8.2.0

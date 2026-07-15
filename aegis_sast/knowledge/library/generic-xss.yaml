@@ -1,0 +1,28 @@
+card_id: generic-xss
+title: Generic Cross-Site Scripting Triage Guidance
+cwe_id: CWE-79
+owasp_category: A03:2021-Injection
+finding_type: XSS
+sources:
+  - query string field
+  - form field
+  - stored comment or profile field
+sinks:
+  - template render output
+  - raw HTML response
+  - innerHTML style DOM update
+sanitizers:
+  - context-aware HTML escaping
+  - safe templating default escaping
+  - explicit output encoding
+false_positive_patterns:
+  - template engine auto-escaping is enabled and not bypassed
+  - user input is encoded for the exact output context
+  - only plain text APIs are used for output rendering
+remediation_notes:
+  - use context-aware output encoding
+  - avoid raw HTML rendering APIs for untrusted content
+  - keep template auto-escaping enabled and avoid unsafe bypasses
+metadata:
+  priority: medium
+  category: generic

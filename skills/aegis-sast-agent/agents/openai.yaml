@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aegis SAST Agent"
+  short_description: "Plan and grow Aegis-SAST into a thesis-scale agent"
+  default_prompt: "Use $aegis-sast-agent to analyze this repository and turn it into a stronger SAST agent project."
+
+policy:
+  allow_implicit_invocation: true
+

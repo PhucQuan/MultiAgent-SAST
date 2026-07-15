@@ -5,6 +5,12 @@ This directory contains **intentionally vulnerable** Python code for testing Aeg
 > [!WARNING]
 > **DO NOT use this code in production!** These files contain security vulnerabilities for educational and testing purposes only.
 
+## How this folder differs from others
+
+- `examples/` is for user-facing demos and quick first-run scans
+- `test_projects/` is for developer smoke tests and debugging
+- `benchmarks/fixtures/` is for evaluation-grade research fixtures
+
 ## 📁 Files
 
 ### 1. `vulnerable_sqli.py` - SQL Injection Examples

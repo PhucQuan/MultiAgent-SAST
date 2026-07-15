@@ -1,174 +1,215 @@
-"""
-Markdown exporter for human-readable vulnerability reports.
+"""Markdown exporter for human-readable vulnerability and triage reports."""
 
-Creates formatted markdown reports for pentesters.
-"""
-
-from pathlib import Path
 from datetime import datetime
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
-from aegis_sast.core.models import ScanResult, Vulnerability, Severity
+from aegis_sast.core.models import ScanResult, Severity, Vulnerability
+from aegis_sast.triage.schema import TriageRecord
 
 
 class MarkdownExporter:
     """Exports vulnerability reports in Markdown format."""
-    
+
     def __init__(self, output_dir: Path):
-        """
-        Initialize Markdown exporter.
-        
-        Args:
-            output_dir: Directory to save reports
-        """
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-    
-    def export(self, scan_result: ScanResult, filename: str = None) -> Path:
-        """
-        Export scan results to Markdown file.
-        
-        Args:
-            scan_result: ScanResult object
-            filename: Optional custom filename
-            
-        Returns:
-            Path to exported file
-        """
+
+    def export(
+        self,
+        scan_result: ScanResult,
+        filename: str = None,
+        triage_records: Optional[List[TriageRecord]] = None,
+    ) -> Path:
+        """Export scan results to a Markdown report file."""
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"aegis_sast_report_{timestamp}.md"
-        
+
         output_path = self.output_dir / filename
-        
-        # Build markdown content
-        content = self._generate_report(scan_result)
-        
-        # Write to file
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
+        content = self._generate_report(scan_result, triage_records)
+
+        with open(output_path, "w", encoding="utf-8") as file_handle:
+            file_handle.write(content)
+
         return output_path
-    
-    def _generate_report(self, scan_result: ScanResult) -> str:
-        """Generate markdown report content."""
+
+    def _generate_report(
+        self,
+        scan_result: ScanResult,
+        triage_records: Optional[List[TriageRecord]] = None,
+    ) -> str:
+        """Generate Markdown report content."""
         lines = []
-        
-        # Header
-        lines.append("# 🔒 Aegis-SAST Security Report\n")
+
+        lines.append("# Aegis-SAST Security Report\n")
         lines.append(f"**Target**: `{scan_result.target_path}`  ")
         lines.append(f"**Date**: {scan_result.start_time.strftime('%Y-%m-%d %H:%M:%S')}  ")
         lines.append(f"**Duration**: {scan_result.duration:.2f}s  ")
         lines.append(f"**Files Scanned**: {scan_result.files_scanned}\n")
-        
-        # Summary
+
         summary = self._get_summary_line(scan_result)
         lines.append(f"**Total Findings**: {scan_result.total_vulnerabilities} ({summary})\n")
+        if triage_records:
+            lines.append(f"**Triage Summary**: {self._get_triage_summary_line(triage_records)}\n")
         lines.append("---\n")
-        
-        # Group vulnerabilities by severity
-        critical = [v for v in scan_result.vulnerabilities if v.severity == Severity.CRITICAL]
-        high = [v for v in scan_result.vulnerabilities if v.severity == Severity.HIGH]
-        medium = [v for v in scan_result.vulnerabilities if v.severity == Severity.MEDIUM]
-        low = [v for v in scan_result.vulnerabilities if v.severity == Severity.LOW]
-        
-        # Critical vulnerabilities
-        if critical:
-            lines.append("## 🔴 Critical Vulnerabilities\n")
-            for vuln in critical:
-                lines.append(self._format_vulnerability(vuln))
+
+        severity_groups = self._group_by_severity(scan_result, triage_records)
+        headings = [
+            ("critical", "## Critical Vulnerabilities\n"),
+            ("high", "## High Severity Vulnerabilities\n"),
+            ("medium", "## Medium Severity Vulnerabilities\n"),
+            ("low", "## Low Severity Vulnerabilities\n"),
+        ]
+
+        for key, heading in headings:
+            items = severity_groups[key]
+            if not items:
+                continue
+            lines.append(heading)
+            for item in items:
+                lines.append(self._format_item(item))
                 lines.append("---\n")
-        
-        # High vulnerabilities
-        if high:
-            lines.append("## 🟠 High Severity Vulnerabilities\n")
-            for vuln in high:
-                lines.append(self._format_vulnerability(vuln))
-                lines.append("---\n")
-        
-        # Medium vulnerabilities
-        if medium:
-            lines.append("## 🟡 Medium Severity Vulnerabilities\n")
-            for vuln in medium:
-                lines.append(self._format_vulnerability(vuln))
-                lines.append("---\n")
-        
-        # Low vulnerabilities
-        if low:
-            lines.append("## 🔵 Low Severity Vulnerabilities\n")
-            for vuln in low:
-                lines.append(self._format_vulnerability(vuln))
-                lines.append("---\n")
-        
-        # Errors
+
         if scan_result.errors:
-            lines.append("## ⚠️ Scan Errors\n")
+            lines.append("## Scan Errors\n")
             for error in scan_result.errors:
                 lines.append(f"- `{error}`\n")
             lines.append("\n")
-        
-        # Footer
+
         lines.append("---\n")
         lines.append("*Generated by Aegis-SAST v1.0.0*\n")
-        
         return "\n".join(lines)
-    
-    def _get_summary_line(self, scan_result: ScanResult) -> str:
-        """Get one-line summary with emoji indicators."""
+
+    @staticmethod
+    def _group_by_severity(
+        scan_result: ScanResult,
+        triage_records: Optional[List[TriageRecord]],
+    ) -> dict:
+        """Group either raw findings or triage records by severity."""
+        if triage_records:
+            return {
+                "critical": [r for r in triage_records if r.finding.severity == Severity.CRITICAL],
+                "high": [r for r in triage_records if r.finding.severity == Severity.HIGH],
+                "medium": [r for r in triage_records if r.finding.severity == Severity.MEDIUM],
+                "low": [r for r in triage_records if r.finding.severity == Severity.LOW],
+            }
+
+        return {
+            "critical": [v for v in scan_result.vulnerabilities if v.severity == Severity.CRITICAL],
+            "high": [v for v in scan_result.vulnerabilities if v.severity == Severity.HIGH],
+            "medium": [v for v in scan_result.vulnerabilities if v.severity == Severity.MEDIUM],
+            "low": [v for v in scan_result.vulnerabilities if v.severity == Severity.LOW],
+        }
+
+    @staticmethod
+    def _get_summary_line(scan_result: ScanResult) -> str:
+        """Get a one-line severity summary."""
         parts = []
-        
         if scan_result.critical_count > 0:
-            parts.append(f"🔴 {scan_result.critical_count} Critical")
-        
+            parts.append(f"{scan_result.critical_count} Critical")
         if scan_result.high_count > 0:
-            parts.append(f"🟠 {scan_result.high_count} High")
-        
+            parts.append(f"{scan_result.high_count} High")
         if scan_result.medium_count > 0:
-            parts.append(f"🟡 {scan_result.medium_count} Medium")
-        
+            parts.append(f"{scan_result.medium_count} Medium")
         if scan_result.low_count > 0:
-            parts.append(f"🔵 {scan_result.low_count} Low")
-        
+            parts.append(f"{scan_result.low_count} Low")
         return " | ".join(parts) if parts else "No vulnerabilities found"
-    
-    def _format_vulnerability(self, vuln: Vulnerability) -> str:
-        """Format single vulnerability as markdown."""
+
+    @staticmethod
+    def _get_triage_summary_line(triage_records: List[TriageRecord]) -> str:
+        """Get a one-line triage summary."""
+        counts = {}
+        for record in triage_records:
+            status = record.decision.status.value
+            counts[status] = counts.get(status, 0) + 1
+        parts = [f"{status}: {count}" for status, count in counts.items()]
+        return " | ".join(parts) if parts else "No triage data"
+
+    def _format_item(self, item) -> str:
+        """Format either a raw vulnerability or a triage record."""
+        if isinstance(item, TriageRecord):
+            return self._format_triage_record(item)
+        return self._format_vulnerability(item)
+
+    @staticmethod
+    def _format_vulnerability(vuln: Vulnerability) -> str:
+        """Format one raw vulnerability in Markdown."""
         lines = []
-        
-        lines.append(f"### {vuln.id}: {vuln.vuln_type.value} in `{Path(vuln.file_path).name}:{vuln.line_number}`\n")
+        lines.append(
+            f"### {vuln.id}: {vuln.vuln_type.value} in "
+            f"`{Path(vuln.file_path).name}:{vuln.line_number}`\n"
+        )
         lines.append(f"**Type**: {vuln.vuln_type.value}  ")
         lines.append(f"**Severity**: {vuln.severity.value}  ")
         lines.append(f"**File**: `{vuln.file_path}`  ")
         lines.append(f"**Line**: {vuln.line_number}\n")
-        
-        # Dataflow
+
         lines.append("**Dataflow Path**:\n")
-        path_summary = vuln.dataflow.get_path_summary()
-        for i, step in enumerate(path_summary, 1):
-            if "[SANITIZER]" in step:
-                lines.append(f"{i}. 🛡️ {step}\n")
-            elif i == 1:
-                lines.append(f"{i}. 🚪 **SOURCE**: {step}\n")
-            elif i == len(path_summary):
-                lines.append(f"{i}. ⚠️ **SINK**: {step}\n")
-            else:
-                lines.append(f"{i}. {step}\n")
-        
-        lines.append("\n")
-        
-        # AI Verification
+        for index, step in enumerate(vuln.dataflow.get_path_summary(), 1):
+            lines.append(f"{index}. {step}\n")
+
         if vuln.ai_verification:
             ai = vuln.ai_verification
-            
-            status_icon = "❌" if ai.is_vulnerable else "✅"
-            confidence_pct = int(ai.confidence * 100)
-            
-            lines.append("**AI Analysis**:\n")
-            lines.append(f"{status_icon} **{'Vulnerable' if ai.is_vulnerable else 'Not Vulnerable'}** (Confidence: {confidence_pct}%)\n\n")
-            lines.append(f"**Explanation**: {ai.explanation}\n\n")
-            lines.append(f"**Recommendation**: {ai.recommendation}\n\n")
-            lines.append(f"*Model: {ai.model_used}*\n")
-        
+            lines.append("\n**AI Analysis**:\n")
+            lines.append(
+                f"- vulnerable: `{ai.is_vulnerable}`\n"
+                f"- confidence: `{int(ai.confidence * 100)}%`\n"
+                f"- explanation: {ai.explanation}\n"
+                f"- recommendation: {ai.recommendation}\n"
+                f"- model: `{ai.model_used}`\n"
+            )
+
         lines.append("\n")
-        
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_triage_record(record: TriageRecord) -> str:
+        """Format one triage record in Markdown."""
+        finding = record.finding
+        decision = record.decision
+        lines = []
+
+        lines.append(
+            f"### {finding.id}: {finding.vulnerability_type} in "
+            f"`{Path(finding.file_path).name}:{finding.line_number}`\n"
+        )
+        lines.append(f"**Type**: {finding.vulnerability_type}  ")
+        lines.append(f"**Severity**: {finding.severity.value}  ")
+        lines.append(f"**Triage Status**: {decision.status.value}  ")
+        lines.append(f"**Confidence**: {int(decision.confidence * 100)}%  ")
+        lines.append(f"**File**: `{finding.file_path}`  ")
+        lines.append(f"**Line**: {finding.line_number}\n")
+
+        lines.append("**Evidence Path**:\n")
+        path_steps = [
+            str(finding.evidence.source),
+            *[str(step) for step in finding.evidence.intermediate_steps],
+            *[
+                f"[SANITIZER] {sanitizer.function_name} at {sanitizer.location}"
+                for sanitizer in finding.evidence.sanitizers
+            ],
+            str(finding.evidence.sink),
+        ]
+        for index, step in enumerate(path_steps, 1):
+            lines.append(f"{index}. {step}\n")
+
+        if finding.metadata.get("knowledge_card_ids"):
+            joined = ", ".join(finding.metadata["knowledge_card_ids"])
+            lines.append(f"\n**Knowledge Cards**: {joined}\n")
+
+        lines.append(f"\n**Decision**: {decision.explanation}\n")
+        if decision.recommendation:
+            lines.append(f"\n**Recommendation**: {decision.recommendation}\n")
+
+        route = decision.metadata.get("workflow_route")
+        if route:
+            lines.append(f"\n**Suggested Route**: {' -> '.join(route['steps'])}\n")
+
+        if decision.evidence_notes:
+            lines.append("\n**Evidence Notes**:\n")
+            for note in decision.evidence_notes:
+                lines.append(f"- {note}\n")
+
+        lines.append("\n")
         return "\n".join(lines)

@@ -1,0 +1,8 @@
+interface:
+  display_name: "Aegis Rule Author"
+  short_description: "Create and refine multi-language SAST rules"
+  default_prompt: "Use $aegis-sast-rule-author to add or improve detection logic, rules, and language coverage in Aegis-SAST."
+
+policy:
+  allow_implicit_invocation: true
+

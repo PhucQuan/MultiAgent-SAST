@@ -1,0 +1,30 @@
+card_id: java-web-jdbc
+title: Java Web and JDBC Triage Notes
+language: java
+sources:
+  - request.getParameter
+  - HttpServletRequest parameter
+  - @RequestParam
+sinks:
+  - Statement.executeQuery
+  - Statement.execute
+  - Runtime.getRuntime().exec
+  - Files.readAllBytes
+sanitizers:
+  - PreparedStatement
+  - Bean Validation
+  - Path normalize and startsWith root check
+false_positive_patterns:
+  - PreparedStatement used with bound parameters
+  - request input validated with a strict allowlist or Bean Validation
+  - file path normalized and verified to stay under a fixed root
+remediation_notes:
+  - replace Statement concatenation with PreparedStatement
+  - validate request inputs with allowlists and typed validators
+  - normalize file paths and enforce an application root directory
+metadata:
+  frameworks:
+    - spring
+    - servlet
+    - jdbc
+  category: language

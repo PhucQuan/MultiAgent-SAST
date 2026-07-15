@@ -1,0 +1,29 @@
+card_id: generic-ssrf
+title: Generic SSRF Triage Guidance
+cwe_id: CWE-918
+owasp_category: A10:2021-Server-Side Request Forgery
+finding_type: SSRF
+sources:
+  - URL request parameter
+  - webhook target field
+  - import or proxy URL
+sinks:
+  - requests.get
+  - axios.get
+  - URLConnection
+  - HTTP client send method
+sanitizers:
+  - allowlisted host validation
+  - scheme and hostname validation
+  - internal network blocklist with DNS and IP checks
+false_positive_patterns:
+  - outbound requests restricted to a strict allowlisted domain set
+  - URL parsed and validated before the network call
+  - destination derived from server-side configuration only
+remediation_notes:
+  - validate scheme, host, port, and resolved IP before the request
+  - enforce allowlists for external destinations
+  - block loopback, link-local, and internal address ranges
+metadata:
+  priority: medium
+  category: generic
