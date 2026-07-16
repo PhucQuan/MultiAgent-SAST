@@ -21,6 +21,7 @@ class SARIFFormatter:
         scan_result: ScanResult,
         filename: str = None,
         triage_records: Optional[List[TriageRecord]] = None,
+        workflow_metadata: Optional[Dict[str, object]] = None,
     ) -> Path:
         """Write the SARIF report to disk and return the output path."""
         if not filename:
@@ -28,7 +29,7 @@ class SARIFFormatter:
             filename = f"aegis_sast_report_{timestamp}.sarif"
 
         output_path = self.output_dir / filename
-        report = self._build_report(scan_result, triage_records)
+        report = self._build_report(scan_result, triage_records, workflow_metadata)
         with open(output_path, "w", encoding="utf-8") as file_handle:
             json.dump(report, file_handle, indent=2, ensure_ascii=False)
         return output_path
@@ -37,6 +38,7 @@ class SARIFFormatter:
         self,
         scan_result: ScanResult,
         triage_records: Optional[List[TriageRecord]],
+        workflow_metadata: Optional[Dict[str, object]],
     ) -> Dict[str, object]:
         rules = self._build_rules(scan_result.vulnerabilities, triage_records)
         results = self._build_results(scan_result.vulnerabilities, triage_records)
@@ -55,6 +57,11 @@ class SARIFFormatter:
                         }
                     },
                     "automationDetails": {"id": "aegis-sast/manual-scan"},
+                    "properties": {
+                        "workflow_summary": self._build_workflow_summary(
+                            workflow_metadata or {}
+                        )
+                    },
                     "results": results,
                 }
             ],
@@ -158,6 +165,7 @@ class SARIFFormatter:
                 "language": finding.language,
                 "recommendation": record.decision.recommendation,
                 "knowledge_cards": record.decision.metadata.get("knowledge_card_ids", []),
+                "agent_reviews": self._build_agent_reviews(record),
                 "tags": [
                     finding.vulnerability_type,
                     finding.language or "unknown-language",
@@ -256,3 +264,32 @@ class SARIFFormatter:
             Severity.INFO: "1.0",
             Severity.UNKNOWN: "0.0",
         }.get(severity, "0.0")
+
+    @staticmethod
+    def _build_agent_reviews(record: TriageRecord) -> Dict[str, object]:
+        """Extract node-level workflow reviews from finding metadata."""
+        metadata = record.finding.metadata
+        return {
+            "auditor_review": metadata.get("auditor_review"),
+            "skeptic_review": metadata.get("skeptic_review"),
+            "judge_review": metadata.get("judge_review"),
+        }
+
+    @staticmethod
+    def _build_workflow_summary(workflow_metadata: Dict[str, object]) -> Dict[str, object]:
+        """Keep the most relevant workflow metadata inside the SARIF run."""
+        keys = [
+            "scan_profile",
+            "framework_hints",
+            "knowledge_card_count",
+            "triage_summary",
+            "route_summary",
+            "auditor_summary",
+            "skeptic_summary",
+            "judge_summary",
+        ]
+        return {
+            key: workflow_metadata[key]
+            for key in keys
+            if key in workflow_metadata
+        }

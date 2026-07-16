@@ -118,6 +118,7 @@ class EvidenceBundle:
     sink: CodeLocation
     intermediate_steps: List[CodeLocation] = field(default_factory=list)
     sanitizers: List[Sanitizer] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_sanitizers(self) -> bool:
@@ -164,6 +165,7 @@ class EvidenceBundle:
                 }
                 for sanitizer in self.sanitizers
             ],
+            "metadata": self.metadata,
         }
 
 
@@ -174,6 +176,7 @@ class DataFlowPath:
     sink: TaintSink
     intermediate_steps: List[CodeLocation] = field(default_factory=list)
     sanitizers: List[Sanitizer] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     
     def is_sanitized(self) -> bool:
         """Check if the dataflow path contains effective sanitization."""
@@ -315,6 +318,7 @@ class Vulnerability:
             sink=self.dataflow.sink.location,
             intermediate_steps=list(self.dataflow.intermediate_steps),
             sanitizers=list(self.dataflow.sanitizers),
+            metadata=dict(self.dataflow.metadata),
         )
 
     def to_normalized_finding(
@@ -359,6 +363,7 @@ class Vulnerability:
                 "sink_pattern": sink.pattern,
                 "sink_function": sink.function_name,
                 "is_sanitized": self.dataflow.is_sanitized(),
+                "dataflow_metadata": dict(self.dataflow.metadata),
                 "ai_model": (
                     self.ai_verification.model_used
                     if self.ai_verification else None

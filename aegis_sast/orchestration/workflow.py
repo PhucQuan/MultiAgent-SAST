@@ -1,10 +1,11 @@
 """LangGraph-ready orchestration helpers for staged scan and triage flows."""
 
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from aegis_sast.core.models import ScanResult
 from aegis_sast.knowledge import KnowledgeLoader
+from aegis_sast.orchestration.nodes import AuditorNode, JudgeNode, SkepticValidatorNode
 from aegis_sast.orchestration.repo_intake import RepoIntake
 from aegis_sast.triage import TriageEngine
 
@@ -24,9 +25,15 @@ class ScanWorkflow:
         self,
         knowledge_loader: Optional[KnowledgeLoader] = None,
         triage_engine: Optional[TriageEngine] = None,
+        auditor_node: Optional[AuditorNode] = None,
+        skeptic_node: Optional[SkepticValidatorNode] = None,
+        judge_node: Optional[JudgeNode] = None,
     ):
         self.knowledge_loader = knowledge_loader or KnowledgeLoader()
         self.triage_engine = triage_engine or TriageEngine(self.knowledge_loader)
+        self.auditor_node = auditor_node or AuditorNode()
+        self.skeptic_node = skeptic_node or SkepticValidatorNode()
+        self.judge_node = judge_node or JudgeNode()
 
     def run(
         self,
@@ -90,18 +97,41 @@ class ScanWorkflow:
             metadata={"knowledge_card_ids": state.knowledge_refs},
         )
 
-        state.triage_records = self.triage_engine.triage_vulnerabilities(
+        raw_triage_records = self.triage_engine.triage_vulnerabilities(
             scan_result.vulnerabilities
+        )
+        cards_by_id = {card.card_id: card for card in cards}
+        (
+            state.triage_records,
+            auditor_reviews,
+            skeptic_reviews,
+            judge_reviews,
+        ) = self._run_review_nodes(
+            raw_triage_records,
+            cards_by_id,
+            state.repo_profile,
         )
         triage_summary = self.triage_engine.summarize(state.triage_records)
         route_summary = self._summarize_routes(state.triage_records)
+        auditor_summary = self._summarize_auditor_reviews(auditor_reviews)
+        skeptic_summary = self._summarize_skeptic_reviews(skeptic_reviews)
         state.metadata["triage_summary"] = triage_summary
         state.metadata["route_summary"] = route_summary
+        state.metadata["auditor_summary"] = auditor_summary
+        state.metadata["skeptic_summary"] = skeptic_summary
+        state.metadata["judge_summary"] = {
+            "finalized_findings": len(judge_reviews),
+        }
 
         state.add_trace(
             "auditor",
-            f"Applied evidence-aware triage to {len(state.triage_records)} findings.",
-            metadata={"route_summary": route_summary},
+            f"Auditor reviewed {len(auditor_reviews)} findings.",
+            metadata=auditor_summary,
+        )
+        state.add_trace(
+            "skeptic_validator",
+            f"Skeptic validator executed for {skeptic_summary['executed']} findings.",
+            metadata=skeptic_summary,
         )
         state.add_trace(
             "judge",
@@ -179,3 +209,70 @@ class ScanWorkflow:
             route_id = route.get("route_id", "unknown")
             counts[route_id] = counts.get(route_id, 0) + 1
         return counts
+
+    def _run_review_nodes(
+        self,
+        triage_records,
+        cards_by_id,
+        repo_profile: RepoProfile,
+    ) -> Tuple[List, List, List, List]:
+        """Run auditor, skeptic, and judge nodes on each triaged finding."""
+        final_records = []
+        auditor_reviews = []
+        skeptic_reviews = []
+        judge_reviews = []
+
+        for record in triage_records:
+            card_ids = record.decision.metadata.get("knowledge_card_ids", [])
+            matched_cards = [
+                cards_by_id[card_id] for card_id in card_ids if card_id in cards_by_id
+            ]
+            auditor_review = self.auditor_node.review(
+                record,
+                matched_cards,
+                repo_profile,
+            )
+            skeptic_review = self.skeptic_node.review(
+                record,
+                matched_cards,
+                auditor_review,
+            )
+            final_record, judge_review = self.judge_node.finalize(
+                record,
+                auditor_review,
+                skeptic_review,
+            )
+
+            final_records.append(final_record)
+            auditor_reviews.append(auditor_review)
+            skeptic_reviews.append(skeptic_review)
+            judge_reviews.append(judge_review)
+
+        return final_records, auditor_reviews, skeptic_reviews, judge_reviews
+
+    @staticmethod
+    def _summarize_auditor_reviews(auditor_reviews) -> Dict[str, object]:
+        """Return aggregate information from the auditor stage."""
+        if not auditor_reviews:
+            return {"reviewed": 0, "average_evidence_score": 0.0}
+
+        average_score = sum(review.evidence_score for review in auditor_reviews) / len(
+            auditor_reviews
+        )
+        return {
+            "reviewed": len(auditor_reviews),
+            "average_evidence_score": round(average_score, 3),
+        }
+
+    @staticmethod
+    def _summarize_skeptic_reviews(skeptic_reviews) -> Dict[str, object]:
+        """Return aggregate information from the skeptic stage."""
+        executed = [review for review in skeptic_reviews if review.executed]
+        with_mitigation = [
+            review for review in executed if review.mitigation_signals
+        ]
+        return {
+            "executed": len(executed),
+            "skipped": len(skeptic_reviews) - len(executed),
+            "mitigation_hits": len(with_mitigation),
+        }

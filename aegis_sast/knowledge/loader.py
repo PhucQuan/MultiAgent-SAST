@@ -54,7 +54,10 @@ class KnowledgeLoader:
         if path.suffix.lower() == ".json":
             data = json.loads(raw_text)
         elif yaml is not None:
-            data = yaml.safe_load(raw_text) or {}
+            try:
+                data = yaml.safe_load(raw_text) or {}
+            except Exception:
+                data = _simple_yaml_load(raw_text)
         else:
             data = _simple_yaml_load(raw_text)
         return KnowledgeCard(
@@ -122,7 +125,7 @@ def _simple_yaml_load(text: str) -> dict:
 
             stripped = line.strip()
             key, _, raw_value = stripped.partition(":")
-            value = raw_value.strip()
+            value = _normalize_scalar(raw_value.strip())
 
             if value:
                 data[key] = value
@@ -163,7 +166,7 @@ def _simple_yaml_load(text: str) -> dict:
             if current_indent != indent or not line.strip().startswith("- "):
                 break
 
-            item = line.strip()[2:].strip()
+            item = _normalize_scalar(line.strip()[2:].strip())
             items.append(item)
             index += 1
 
@@ -171,3 +174,10 @@ def _simple_yaml_load(text: str) -> dict:
 
     parsed, _ = parse_mapping(0, 0)
     return parsed
+
+
+def _normalize_scalar(value: str) -> str:
+    """Normalize scalar values from the fallback YAML parser."""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value

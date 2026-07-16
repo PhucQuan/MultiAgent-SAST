@@ -10,6 +10,12 @@ This directory is for operational scripts that support the thesis workflow.
 - chart generation helpers
 - dataset preparation utilities
 
+## Current examples
+
+- `manual_smoke.py`: quick CLI/workflow smoke checks
+- `manual_graph_smoke.py`: graph-core smoke checks without Tree-sitter
+- `benchmark_python_graph_ablation.py`: synthetic ablation runner for Python graph v1.2
+
 ## Guidelines
 
 - keep scripts small and task-specific

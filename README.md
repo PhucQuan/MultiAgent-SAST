@@ -71,6 +71,34 @@ Design direction:
 - `aegis_sast/knowledge` is reserved for YAML knowledge cards and loaders
 - `aegis_sast/integrations` contains CI-facing export formats such as SARIF
 
+## Recent Thesis-Scale Progress
+
+The latest thesis-focused work in `docs/thesis/20..31` has already moved the
+project beyond a simple AST demo. The main completed areas are:
+
+| Thesis docs | What is implemented now |
+|---|---|
+| `20` | knowledge cards and a triage engine seed for evidence-aware review |
+| `21` | workflow-state orchestration that is ready to map into LangGraph-style nodes |
+| `22` | repo intake, language detection, framework hints, and scan-profile routing |
+| `23` | Auditor / Skeptic / Judge node contracts plus source-context handling |
+| `24` | installation notes and lightweight smoke-test flow for unstable environments |
+| `25` | CPython-first environment guidance for Windows and native-package reliability |
+| `26` | workflow metadata exported into JSON, Markdown, and SARIF |
+| `27` | explicit Python CFG/DFG graph foundation (`python_flow_graph.py`) |
+| `28` | taint-kill, dead-path pruning, and basic `try/except/finally` control-flow support |
+| `29` | `break` / `continue`, `loop else`, local function summaries, and richer path metadata |
+| `30` | `scripts/manual_graph_smoke.py` for graph-core verification without Tree-sitter |
+| `31` | synthetic ablation benchmark for Python graph v1.2 with JSON/Markdown outputs |
+
+From an engineering perspective, the repository now has:
+
+- a normalized finding and evidence pipeline for triage/reporting
+- staged orchestration nodes that can evolve into a full agent workflow
+- enriched SARIF / Markdown / JSON outputs with workflow and graph evidence
+- an explicit Python graph-analysis core that is already testable outside the full plugin stack
+- a repeatable mini benchmark for graph ablation, not just a benchmark plan on paper
+
 ### How Taint Analysis Works
 
 ```
@@ -148,20 +176,48 @@ def get_command():               from utils import get_command
 
 ## Installation
 
-### Option 1: pip (recommended)
+### Option 1: virtualenv + requirements (recommended)
 
 ```bash
 # Clone the repository
 git clone https://github.com/PhucQuan/SAST_tool4pentester.git
 cd SAST_tool4pentester
 
-# Install
-pip install -e .
+# Check whether your interpreter is suitable
+python scripts/doctor_env.py
+
+# Windows PowerShell: prefer official CPython via the `py` launcher
+py -3.12 -m venv .venv
+
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+# Linux / macOS / Git Bash on Windows
+source .venv/bin/activate
+
+# Install runtime dependencies
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+# Optional: install AI dependencies for Gemini verification
+python -m pip install -r requirements-ai.txt
+
+# Optional: install developer tooling
+python -m pip install -r requirements-dev.txt
+
+# Optional: install the `aegis-sast` console command in editable mode
+python -m pip install -e . --no-deps
 
 # Set up Gemini API key (optional — tool works without AI verification)
 cp .env.example .env
 # Edit .env and add your GEMINI_API_KEY
 ```
+
+If you only need to run the scanner locally, `python -m aegis_sast.cli ...` is enough.
+The editable install is only needed when you want the `aegis-sast` command.
+`requirements.txt` is the core scanner stack. Gemini verification is now optional and lives in `requirements-ai.txt`.
+
+On Windows, do **not** create the environment from MSYS2/UCRT Python if you want pip-installed native packages to work reliably. If `python scripts/doctor_env.py` reports `mingw_*` or `msys64`, recreate the venv with official CPython first.
 
 ### Option 2: Docker
 
@@ -176,19 +232,22 @@ docker run --rm -v $(pwd)/target:/scan aegis-sast scan /scan
 
 ```bash
 # Scan a single Python file
-aegis-sast scan app.py
+python -m aegis_sast.cli scan app.py
 
 # Scan an entire project directory (all languages)
-aegis-sast scan ./my_project/
+python -m aegis_sast.cli scan ./my_project/
 
 # Scan without AI verification (faster)
-aegis-sast scan ./my_project/ --no-ai
+python -m aegis_sast.cli scan ./my_project/ --no-ai
 
 # Output only JSON report, to a custom directory
-aegis-sast scan ./my_project/ --output json --output-dir ./results/
+python -m aegis_sast.cli scan ./my_project/ --output json --output-dir ./results/
 
 # Export SARIF for GitHub code scanning or CI pipelines
-aegis-sast scan ./my_project/ --output sarif --output-dir ./results/
+python -m aegis_sast.cli scan ./my_project/ --output sarif --output-dir ./results/
+
+# Positive smoke sample that should produce findings
+python -m aegis_sast.cli scan examples/vulnerable_sqli.py --no-ai --output json --output markdown --output sarif --output-dir reports/manual_smoke
 ```
 
 ### Example Output
@@ -237,6 +296,8 @@ Each report (JSON and Markdown) contains for every finding:
 | `--output` | `json,markdown` | Output format(s): `json`, `markdown`, `sarif` |
 | `--output-dir` | `reports/` | Directory for report files |
 | `--rules` | auto | Path to custom rules YAML file |
+
+If `google-genai` is not installed, the CLI will automatically fall back to non-AI mode after printing a warning.
 
 ---
 
@@ -314,11 +375,23 @@ rules/
 ## Development
 
 ```bash
-# Run unit tests
-pytest tests/ -v
+# Lightweight smoke test for config + triage + workflow
+python scripts/manual_smoke.py
+
+# Graph-core smoke tests without Tree-sitter
+python scripts/manual_graph_smoke.py
+
+# Synthetic Python graph ablation benchmark
+python scripts/benchmark_python_graph_ablation.py
+
+# Check interpreter / ABI compatibility before debugging pip failures
+python scripts/doctor_env.py
+
+# Run unit tests after installing developer dependencies
+python -m pytest tests/ -v
 
 # Run against example vulnerable files
-aegis-sast scan examples/ --no-ai
+python -m aegis_sast.cli scan examples/ --no-ai
 ```
 
 ---

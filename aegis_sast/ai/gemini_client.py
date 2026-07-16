@@ -9,14 +9,19 @@ import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from google import genai
-from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from aegis_sast.core.config import get_config
 from aegis_sast.core.models import AIVerification, VulnerabilityType
 from aegis_sast.ai.prompts import get_verification_prompt
 from aegis_sast.ai.cache_manager import CacheManager
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:  # pragma: no cover - depends on optional AI install
+    genai = None
+    types = None
 
 
 class GeminiClient:
@@ -26,13 +31,19 @@ class GeminiClient:
         """Initialize Gemini client."""
         self.config = get_config()
         self.cache = CacheManager()
-        
+        self.client = None
+
         # Configure Gemini API
         if self.config.enable_ai_verification:
             self.config.validate_ai_config()
-            self.client = genai.Client(api_key=self.config.gemini_api_key)
-        else:
-            self.client = None
+            if self.config.enable_ai_verification:
+                if genai is None or types is None:
+                    raise RuntimeError(
+                        "AI verification requires the optional package "
+                        "'google-genai'. Install 'requirements-ai.txt' "
+                        "or run with '--no-ai'."
+                    )
+                self.client = genai.Client(api_key=self.config.gemini_api_key)
             
         # Semaphore to limit concurrent API calls
         self.semaphore = asyncio.Semaphore(10)

@@ -4,7 +4,7 @@ language: java
 sources:
   - request.getParameter
   - HttpServletRequest parameter
-  - @RequestParam
+  - "@RequestParam"
 sinks:
   - Statement.executeQuery
   - Statement.execute

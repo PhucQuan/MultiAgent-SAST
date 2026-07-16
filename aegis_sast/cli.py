@@ -4,6 +4,7 @@ import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.console import Console
@@ -18,7 +19,6 @@ from aegis_sast.core.models import ScanResult
 from aegis_sast.core.registry import get_registry
 from aegis_sast.integrations import SARIFFormatter
 from aegis_sast.knowledge import KnowledgeLoader
-from aegis_sast.llm import GeminiClient
 from aegis_sast.orchestration import RepoIntake, ScanWorkflow
 from aegis_sast.orchestration.state import RepoProfile
 from aegis_sast.plugins.java_plugin import JavaPlugin
@@ -88,6 +88,8 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
     ai_client = None
     if config.enable_ai_verification:
         try:
+            from aegis_sast.llm import GeminiClient
+
             ai_client = GeminiClient()
             console.print("[green]OK[/green] AI verification enabled")
         except Exception as exc:
@@ -116,6 +118,7 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
         asyncio.run(_verify_all(ai_client, scan_result))
 
     triage_records = []
+    workflow_metadata = None
     if scan_result.vulnerabilities:
         console.print(
             f"\n[yellow]Knowledge-Assisted Triage:[/yellow] "
@@ -126,6 +129,7 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
             repo_profile=repo_profile,
         )
         triage_records = workflow_state.triage_records
+        workflow_metadata = workflow_state.metadata
         _display_triage_summary(workflow_state.metadata.get("triage_summary", {}))
         _display_route_summary(workflow_state.metadata.get("route_summary", {}))
 
@@ -133,7 +137,13 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
     _display_summary(scan_result)
 
     console.print("\n[yellow]Generating reports...[/yellow]\n")
-    _export_reports(config.output_formats, config.output_dir, scan_result, triage_records)
+    _export_reports(
+        config.output_formats,
+        config.output_dir,
+        scan_result,
+        triage_records,
+        workflow_metadata=workflow_metadata,
+    )
 
     console.print("\n" + "=" * 60 + "\n")
     if scan_result.critical_count > 0:
@@ -171,7 +181,7 @@ def _run_scan(detector: VulnerabilityDetector, target: Path) -> ScanResult:
     )
 
 
-async def _verify_all(ai_client: GeminiClient, scan_result: ScanResult) -> None:
+async def _verify_all(ai_client: Any, scan_result: ScanResult) -> None:
     """Verify all findings concurrently with the configured AI client."""
     with Progress(
         SpinnerColumn(),
@@ -200,12 +210,19 @@ async def _verify_all(ai_client: GeminiClient, scan_result: ScanResult) -> None:
             progress.advance(verify_task)
 
 
-def _export_reports(output_formats, output_dir, scan_result, triage_records) -> None:
+def _export_reports(
+    output_formats,
+    output_dir,
+    scan_result,
+    triage_records,
+    workflow_metadata=None,
+) -> None:
     """Export reports in the requested formats."""
     if "json" in output_formats:
         json_path = JSONExporter(output_dir).export(
             scan_result,
             triage_records=triage_records,
+            workflow_metadata=workflow_metadata,
         )
         console.print(f"[green]OK[/green] JSON report: {json_path}")
 
@@ -213,6 +230,7 @@ def _export_reports(output_formats, output_dir, scan_result, triage_records) -> 
         markdown_path = MarkdownExporter(output_dir).export(
             scan_result,
             triage_records=triage_records,
+            workflow_metadata=workflow_metadata,
         )
         console.print(f"[green]OK[/green] Markdown report: {markdown_path}")
 
@@ -220,6 +238,7 @@ def _export_reports(output_formats, output_dir, scan_result, triage_records) -> 
         sarif_path = SARIFFormatter(output_dir).export(
             scan_result,
             triage_records=triage_records,
+            workflow_metadata=workflow_metadata,
         )
         console.print(f"[green]OK[/green] SARIF report: {sarif_path}")
 

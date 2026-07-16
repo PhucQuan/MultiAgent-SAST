@@ -28,6 +28,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv-cpython/
 venv/
 ENV/
 env/
@@ -60,3 +61,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local workspace-only artifacts
+refs/
+AGENTS.md

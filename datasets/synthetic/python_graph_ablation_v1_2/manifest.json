@@ -1,0 +1,132 @@
+{
+  "dataset_id": "python-graph-ablation-v1.2",
+  "description": "Synthetic Python cases for measuring the value of CFG/DFG reasoning, dead-path pruning, and local function summaries.",
+  "cases": [
+    {
+      "case_id": "PY-GRAPH-001",
+      "title": "Direct vulnerable flow",
+      "description": "Simple source to sink command injection should be detected by all modes.",
+      "file": "cases/001_direct_command_injection.py",
+      "expected_vulnerable": true,
+      "source": {
+        "line": 5,
+        "variable_name": "cmd",
+        "pattern": "request.args.get",
+        "source_type": "HTTP_PARAM"
+      },
+      "sink": {
+        "line": 6,
+        "function_name": "os.system",
+        "pattern": "os.system(",
+        "vulnerability_type": "COMMAND_INJECTION",
+        "arguments": ["cmd"]
+      },
+      "tags": ["direct-flow", "command-injection", "true-positive"]
+    },
+    {
+      "case_id": "PY-GRAPH-002",
+      "title": "Safe reassignment",
+      "description": "Safe overwrite should clear taint before the sink.",
+      "file": "cases/002_safe_reassignment.py",
+      "expected_vulnerable": false,
+      "source": {
+        "line": 5,
+        "variable_name": "cmd",
+        "pattern": "request.args.get",
+        "source_type": "HTTP_PARAM"
+      },
+      "sink": {
+        "line": 7,
+        "function_name": "os.system",
+        "pattern": "os.system(",
+        "vulnerability_type": "COMMAND_INJECTION",
+        "arguments": ["cmd"]
+      },
+      "tags": ["safe-overwrite", "taint-kill", "false-positive-reduction"]
+    },
+    {
+      "case_id": "PY-GRAPH-003",
+      "title": "Return dead path",
+      "description": "Sink after return should not be considered reachable.",
+      "file": "cases/003_return_dead_path.py",
+      "expected_vulnerable": false,
+      "source": {
+        "line": 5,
+        "variable_name": "cmd",
+        "pattern": "request.args.get",
+        "source_type": "HTTP_PARAM"
+      },
+      "sink": {
+        "line": 7,
+        "function_name": "os.system",
+        "pattern": "os.system(",
+        "vulnerability_type": "COMMAND_INJECTION",
+        "arguments": ["cmd"]
+      },
+      "tags": ["dead-path", "return", "false-positive-reduction"]
+    },
+    {
+      "case_id": "PY-GRAPH-004",
+      "title": "Continue skips sink",
+      "description": "Sink after continue in the same loop block should not be reachable.",
+      "file": "cases/004_continue_skips_sink.py",
+      "expected_vulnerable": false,
+      "source": {
+        "line": 5,
+        "variable_name": "cmd",
+        "pattern": "request.args.get",
+        "source_type": "HTTP_PARAM"
+      },
+      "sink": {
+        "line": 8,
+        "function_name": "os.system",
+        "pattern": "os.system(",
+        "vulnerability_type": "COMMAND_INJECTION",
+        "arguments": ["cmd"]
+      },
+      "tags": ["loop-control", "continue", "false-positive-reduction"]
+    },
+    {
+      "case_id": "PY-GRAPH-005",
+      "title": "Helper returns parameter",
+      "description": "Local function summary should recover taint through argument to return propagation.",
+      "file": "cases/005_helper_returns_parameter.py",
+      "expected_vulnerable": true,
+      "source": {
+        "line": 10,
+        "variable_name": "cmd",
+        "pattern": "request.args.get",
+        "source_type": "HTTP_PARAM"
+      },
+      "sink": {
+        "line": 12,
+        "function_name": "os.system",
+        "pattern": "os.system(",
+        "vulnerability_type": "COMMAND_INJECTION",
+        "arguments": ["prepared"]
+      },
+      "tags": ["function-summary", "inter-procedural-lite", "true-positive"]
+    },
+    {
+      "case_id": "PY-GRAPH-006",
+      "title": "Helper returns constant",
+      "description": "Local function summary should avoid tainting a helper call that always returns a constant.",
+      "file": "cases/006_helper_returns_constant.py",
+      "expected_vulnerable": false,
+      "source": {
+        "line": 9,
+        "variable_name": "cmd",
+        "pattern": "request.args.get",
+        "source_type": "HTTP_PARAM"
+      },
+      "sink": {
+        "line": 11,
+        "function_name": "os.system",
+        "pattern": "os.system(",
+        "vulnerability_type": "COMMAND_INJECTION",
+        "arguments": ["prepared"]
+      },
+      "tags": ["function-summary", "false-positive-reduction", "safe-helper"]
+    }
+  ]
+}

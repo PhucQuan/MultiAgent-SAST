@@ -6,10 +6,15 @@ Detects SQL Injection, Command Injection, and Path Traversal vulnerabilities.
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser, Node
 
+from aegis_sast.analysis.python_flow_graph import (
+    PythonDataflowAnalyzer,
+    PythonFlowGraph,
+    PythonFlowGraphBuilder,
+)
 from aegis_sast.core.plugin_interface import ILanguagePlugin
 from aegis_sast.core.models import (
     TaintSource,
@@ -27,6 +32,7 @@ class PythonPlugin(ILanguagePlugin):
     def __init__(self):
         self.language = Language(tspython.language())
         self.parser = Parser(self.language)
+        self._flow_graph_cache: Dict[str, Tuple[int, PythonFlowGraph]] = {}
     
     def get_language_name(self) -> str:
         return "python"
@@ -247,216 +253,180 @@ class PythonPlugin(ILanguagePlugin):
         """
         Track dataflow from a taint source to potential sinks.
 
-        Level-B inter-procedural support:
-          - When a tainted variable is passed to a locally-imported function
-            we resolve that function to its definition file, parse it and
-            check whether its return value propagates the taint.
-          - Recursion is prevented via *visited_funcs*.
-          - Multiple return paths: conservative — if ANY path taints the
-            return variable, the whole call is treated as tainted.
+        This implementation uses an explicit Python CFG/DFG graph for the
+        current file and keeps the older inter-procedural return-taint check
+        for local and imported helper functions.
         """
-        import re as _re
-
-        paths: List[DataFlowPath] = []
-        tainted_vars: Set[str] = {source.variable_name}
-
         if visited_funcs is None:
             visited_funcs = set()
 
-        # Build import map for *this* file so we can resolve callees.
         import_map: Dict[str, Path] = {}
         if import_resolver is not None:
             import_map = import_resolver.resolve_imports(file_path)
 
-        # Read source lines for snippet extraction
-        with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
-            source_lines = fh.readlines()
+        flow_graph = self._get_flow_graph(file_path)
 
-        # ------------------------------------------------------------------
-        # Helpers
-        # ------------------------------------------------------------------
+        def _callee_return_is_tainted(
+            callee_name: str,
+            arguments: List[str],
+            tainted_vars: Set[str],
+        ) -> bool:
+            return self._callee_return_is_tainted(
+                file_path=file_path,
+                callee_name=callee_name,
+                arguments=arguments,
+                tainted_vars=tainted_vars,
+                call_graph=call_graph,
+                import_map=import_map,
+                visited_funcs=visited_funcs,
+            )
+
+        analyzer = PythonDataflowAnalyzer(
+            flow_graph,
+            callee_taint_resolver=_callee_return_is_tainted,
+        )
+        return analyzer.trace_paths(
+            source,
+            sinks,
+            sanitizers,
+            max_nodes=max(80, max_depth * 40),
+        )
+
+    def _get_flow_graph(self, file_path: Path) -> PythonFlowGraph:
+        """Build or reuse the explicit CFG/DFG graph for one Python file."""
+        path_key = str(file_path)
+        try:
+            mtime_ns = file_path.stat().st_mtime_ns
+        except OSError:
+            mtime_ns = -1
+
+        cached = self._flow_graph_cache.get(path_key)
+        if cached and cached[0] == mtime_ns:
+            return cached[1]
+
+        source_text = file_path.read_text(encoding="utf-8", errors="replace")
+        graph = PythonFlowGraphBuilder(file_path, source_text).build()
+        self._flow_graph_cache[path_key] = (mtime_ns, graph)
+        return graph
+
+    def _callee_return_is_tainted(
+        self,
+        file_path: Path,
+        callee_name: str,
+        arguments: List[str],
+        tainted_vars: Set[str],
+        call_graph=None,
+        import_map: Optional[Dict[str, Path]] = None,
+        visited_funcs: Optional[Set[str]] = None,
+    ) -> bool:
+        """Check whether a local or imported helper may return tainted data."""
+        import re as _re
+
+        if visited_funcs is None:
+            visited_funcs = set()
+        if callee_name in visited_funcs or call_graph is None:
+            return False
+
+        entry = call_graph.get(callee_name)
+        if entry is None:
+            return False
+
+        callee_file = None
+        if import_map and callee_name in import_map:
+            callee_file = import_map[callee_name]
+        elif Path(entry.file_path) == file_path:
+            callee_file = Path(entry.file_path)
+        elif Path(entry.file_path).exists():
+            callee_file = Path(entry.file_path)
+
+        if callee_file is None or not callee_file.exists():
+            return False
 
         def _words(text: str) -> List[str]:
             return _re.findall(r"\b\w+\b", text)
 
-        def _is_tainted(text: str) -> bool:
-            words = _words(text)
-            return any(tv in words for tv in tainted_vars)
+        callee_graph = None
+        callee_summary = None
+        try:
+            callee_graph = self._get_flow_graph(callee_file)
+            callee_summary = callee_graph.get_function_summary(callee_name)
+        except Exception:
+            callee_graph = None
+            callee_summary = None
 
-        def _find_source_node(node: Node) -> Optional[Node]:
-            if node.start_point[0] + 1 == source.location.line_number:
-                if source.pattern in node.text.decode("utf-8", errors="replace"):
-                    return node
-            for child in node.children:
-                res = _find_source_node(child)
-                if res:
-                    return res
-            return None
+        param_names = list(entry.params)
+        if not param_names and callee_summary is not None:
+            param_names = list(callee_summary.parameter_names)
 
-        def _find_scope(start: Optional[Node]) -> Node:
-            if start is None:
-                return ast.root_node
-            curr: Optional[Node] = start
-            while curr:
-                if curr.type in ("function_definition", "class_definition"):
-                    return curr
-                curr = curr.parent
-            return ast.root_node
+        tainted_params: Set[str] = set()
+        for index, argument in enumerate(arguments):
+            if not any(name in _words(argument) for name in tainted_vars):
+                continue
+            if index < len(param_names):
+                tainted_params.add(param_names[index])
+            else:
+                tainted_params.update(param_names)
 
-        def _is_callee_return_tainted(
-            callee_name: str, caller_args: str
-        ) -> bool:
-            """
-            Resolve *callee_name* through the import map, parse its file,
-            and determine whether the callee taints its return value when
-            given tainted arguments.
-            """
-            if callee_name in visited_funcs:
-                return False  # recursion guard
-            if callee_name not in import_map:
-                return False
-            callee_file = import_map[callee_name]
+        if not tainted_params:
+            return False
 
-            # Also need the FunctionIndex entry to know parameter names
-            if call_graph is None:
-                return False
-            entry = call_graph.get(callee_name)
-            if entry is None:
-                return False
+        if callee_summary is not None:
+            dependent_params = set(callee_summary.dependent_parameters)
+            if dependent_params.intersection(tainted_params):
+                return True
+            return False
 
-            visited_funcs.add(callee_name)
+        visited_funcs.add(callee_name)
+        try:
+            callee_bytes = callee_file.read_bytes()
+        except OSError:
+            return False
 
-            # Map caller tainted variables → callee parameter names
-            callee_tainted: Set[str] = set()
-            arg_words = _words(caller_args)
-            for idx, param in enumerate(entry.params):
-                # If ANY tainted var appears in the call args, mark the
-                # corresponding parameter as tainted (positional heuristic).
-                if any(tv in arg_words for tv in tainted_vars):
-                    callee_tainted.add(param)
+        callee_ast = self.parser.parse(callee_bytes)
+        tainted_in_callee = set(tainted_params)
 
-            if not callee_tainted:
-                return False
+        def _scan_callee(node: Node) -> bool:
+            """Return True when a return statement can carry tainted data."""
+            nonlocal tainted_in_callee
 
-            # Parse the callee file and check return vars
-            try:
-                callee_bytes = callee_file.read_bytes()
-            except OSError:
-                return False
-
-            callee_ast = self.parser.parse(callee_bytes)
-
-            try:
-                with open(callee_file, "r", encoding="utf-8", errors="replace") as fh:
-                    callee_lines = fh.readlines()
-            except OSError:
-                return False
-
-            # Run a lightweight intra-procedural analysis inside the callee
-            # to propagate taint through assignments and check returns.
-            tainted_in_callee = set(callee_tainted)
-
-            def _scan_callee(node: Node) -> bool:
-                """Return True if any return statement is tainted."""
-                nonlocal tainted_in_callee
-
-                # We only care about the function body that matches entry.name
-                if node.type == "function_definition":
-                    name_node = node.children[0] if node.children else None
-                    for child in node.children:
-                        if child.type == "identifier":
-                            name_node = child
-                            break
-                    if name_node and name_node.text.decode("utf-8", errors="replace") != callee_name:
-                        return False  # different function, skip
-
-                if node.type == "assignment":
-                    lhs = node.children[0] if node.children else None
-                    rhs = node.children[2] if len(node.children) > 2 else None
-                    if lhs and rhs:
-                        rhs_text = rhs.text.decode("utf-8", errors="replace")
-                        if any(tv in _words(rhs_text) for tv in tainted_in_callee):
-                            tainted_in_callee.add(
-                                lhs.text.decode("utf-8", errors="replace").strip()
-                            )
-
-                if node.type == "return_statement":
-                    for child in node.children:
-                        if child.type not in ("return", "comment"):
-                            ret_text = child.text.decode("utf-8", errors="replace")
-                            if any(tv in _words(ret_text) for tv in tainted_in_callee):
-                                return True  # conservative: tainted return
-
+            if node.type == "function_definition":
+                name_node = node.children[0] if node.children else None
                 for child in node.children:
-                    if _scan_callee(child):
-                        return True
-                return False
+                    if child.type == "identifier":
+                        name_node = child
+                        break
+                if (
+                    name_node
+                    and name_node.text.decode("utf-8", errors="replace") != callee_name
+                ):
+                    return False
 
-            return _scan_callee(callee_ast.root_node)
-
-        # ------------------------------------------------------------------
-        # Main analysis loop
-        # ------------------------------------------------------------------
-
-        source_ast_node = _find_source_node(ast.root_node)
-        scope_node = _find_scope(source_ast_node)
-
-        def analyze_node(node: Node, depth: int = 0) -> None:
-            if depth > max_depth:
-                return
-
-            # ---- Assignment: propagate taint ----
             if node.type == "assignment":
-                left_node = node.children[0] if node.children else None
-                right_node = node.children[2] if len(node.children) > 2 else None
+                lhs = node.children[0] if node.children else None
+                rhs = node.children[2] if len(node.children) > 2 else None
+                if lhs and rhs:
+                    rhs_text = rhs.text.decode("utf-8", errors="replace")
+                    if any(name in _words(rhs_text) for name in tainted_in_callee):
+                        tainted_in_callee.add(
+                            lhs.text.decode("utf-8", errors="replace").strip()
+                        )
 
-                if left_node and right_node:
-                    left_text = left_node.text.decode("utf-8", errors="replace").strip()
-                    right_text = right_node.text.decode("utf-8", errors="replace")
-
-                    # Direct alias propagation  (b = a, c = b …)
-                    if _is_tainted(right_text):
-                        tainted_vars.add(left_text)
-                    else:
-                        # Cross-file: lhs = imported_func(tainted_arg)
-                        if right_node.type == "call":
-                            func_node = right_node.child_by_field_name("function")
-                            args_node = right_node.child_by_field_name("arguments")
-                            if func_node and args_node:
-                                callee_name = func_node.text.decode("utf-8", errors="replace").strip()
-                                args_text = args_node.text.decode("utf-8", errors="replace")
-                                if _is_tainted(args_text) and _is_callee_return_tainted(
-                                    callee_name, args_text
-                                ):
-                                    tainted_vars.add(left_text)
-
-            # ---- Call: check if tainted vars reach a known sink ----
-            elif node.type == "call":
-                call_text = node.text.decode("utf-8", errors="replace")
-
-                if _is_tainted(call_text):
-                    for sink in sinks:
-                        if sink.location.line_number == node.start_point[0] + 1:
-                            path_sanitizers = [
-                                s for s in sanitizers
-                                if source.location.line_number
-                                < s.location.line_number
-                                < sink.location.line_number
-                            ]
-                            paths.append(
-                                DataFlowPath(
-                                    source=source,
-                                    sink=sink,
-                                    intermediate_steps=[],
-                                    sanitizers=path_sanitizers,
-                                )
-                            )
+            if node.type == "return_statement":
+                for child in node.children:
+                    if child.type not in ("return", "comment"):
+                        ret_text = child.text.decode("utf-8", errors="replace")
+                        if any(name in _words(ret_text) for name in tainted_in_callee):
+                            return True
 
             for child in node.children:
-                analyze_node(child, depth + 1)
+                if _scan_callee(child):
+                    return True
+            return False
 
-        analyze_node(scope_node)
-        return paths
+        try:
+            return _scan_callee(callee_ast.root_node)
+        finally:
+            visited_funcs.discard(callee_name)
 
     
     # Helper methods

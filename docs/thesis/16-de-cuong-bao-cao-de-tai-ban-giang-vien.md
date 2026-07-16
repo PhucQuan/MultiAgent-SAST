@@ -12,451 +12,484 @@
 
 ## 1. Lý do chọn đề tài
 
-Phát hiện sớm lỗ hổng bảo mật trong giai đoạn phát triển phần mềm đóng vai trò quan trọng trong việc xây dựng hệ thống an toàn và tối ưu hóa chi phí khắc phục. Kiểm thử an ninh ứng dụng tĩnh (SAST — Static Application Security Testing) là một giải pháp thiết yếu hỗ trợ rà quét mã nguồn trực tiếp mà không cần triển khai hệ thống. Tuy nhiên, các công cụ SAST truyền thống (như các bộ rà quét dựa trên luật cứng hoặc phân tích luồng dữ liệu) gặp phải ba hạn chế lớn:
+Phát hiện sớm lỗ hổng bảo mật ngay trong giai đoạn phát triển phần mềm là yêu cầu quan trọng đối với quy trình phát triển an toàn. Trong các kỹ thuật hỗ trợ mục tiêu này, kiểm thử an ninh ứng dụng tĩnh (SAST - Static Application Security Testing) có lợi thế lớn vì có thể rà quét trực tiếp mã nguồn mà không cần triển khai hệ thống. Tuy nhiên, các công cụ SAST truyền thống vẫn tồn tại ba hạn chế lớn:
 
-- Số lượng cảnh báo giả (**False Positives**) còn cao, khiến nhà phát triển mất thời gian xử lý và dần mất niềm tin vào kết quả quét.
-- Thiếu khả năng giải thích vì sao một cảnh báo thực sự nguy hiểm, dẫn đến khó phân loại mức ưu tiên xử lý.
-- Thiếu khả năng đưa ra gợi ý khắc phục (**Remediation**) gắn với ngữ cảnh cụ thể của đoạn mã.
+- Tỷ lệ cảnh báo giả (false positive) còn cao, làm giảm giá trị thực tiễn của kết quả quét.
+- Nhiều công cụ đưa ra cảnh báo nhưng giải thích chưa rõ bằng chứng kỹ thuật, nên khó ưu tiên xử lý.
+- Hầu hết công cụ rule-based chỉ mạnh ở phát hiện, chưa mạnh ở bước triage, phản biện và gợi ý khắc phục theo ngữ cảnh.
 
-Trong những năm gần đây, sự trỗi dậy của Mô hình Ngôn ngữ Lớn (LLM) mở ra tiềm năng lớn trong việc đọc hiểu và phân tích mã nguồn. Dù vậy, việc áp dụng LLM trực tiếp rà quét mã nguồn (LLM-only approach) thường dẫn đến hiện tượng "ảo tưởng" (Hallucination), mất dấu ngữ cảnh khi kích thước dự án tăng, thiếu đi các bằng chứng phân tích cú pháp mang tính xác thực (deterministic), đồng thời tiêu hao lượng token rất lớn.
+Trong khi đó, các mô hình ngôn ngữ lớn (LLM) cho thấy khả năng đọc hiểu mã nguồn, diễn giải lỗi và sinh gợi ý khắc phục khá tốt. Tuy nhiên, nếu dùng LLM theo hướng quét mã nguồn thuần túy, hệ thống sẽ gặp các vấn đề quen thuộc như thiếu bằng chứng xác thực, dễ hallucination, tiêu tốn token lớn và khó ổn định khi quét dự án nhiều tệp.
 
-Từ thực tế đó, hướng tiếp cận lai ghép (**Hybrid SAST**) giữa Phân tích tĩnh và Trí tuệ nhân tạo là giải pháp tối ưu. Đề tài này tập trung nghiên cứu phát triển hệ thống Aegis-SAST từ một bộ quét dựa trên AST thành hệ thống **Agentic Hybrid SAST** toàn diện:
-
-- Dùng phân tích tĩnh để sinh finding và bằng chứng kỹ thuật.
-- Dùng Knowledge Loading để nạp tri thức lỗ hổng có cấu trúc.
-- Dùng AI Triage để phân loại, phản biện và giải thích finding.
-- Dùng Agent Orchestration để điều phối toàn bộ workflow theo các bước rõ ràng.
-- Dùng Benchmark để đo và chứng minh giá trị của hệ thống.
-
-Đây chính là lý do đề tài tập trung vào mô hình Agentic Hybrid SAST thay vì chỉ mở rộng scanner theo cách thông thường.
+Từ thực tế đó, hướng tiếp cận phù hợp hơn là **Hybrid SAST**: dùng phân tích tĩnh deterministic để sinh finding và bằng chứng kỹ thuật, sau đó dùng AI để triage, phản biện, giải thích và hỗ trợ ra quyết định. Đề tài này lựa chọn phát triển Aegis-SAST theo hướng đó, với trọng tâm không phải là thay thế scanner bằng AI, mà là xây dựng một **hệ thống SAST lai ghép có bằng chứng, có quy trình agent rõ ràng và có benchmark đối chứng**.
 
 ## 2. Cơ sở hình thành đề tài
 
-Đề tài này được hình thành trên nền project Aegis-SAST mà nhóm đã xây dựng trước đó. Đây không phải là một ý tưởng bắt đầu từ con số 0, mà là bước phát triển tiếp theo của một hệ thống quét mã nguồn đã có các thành phần nền tảng tương đối rõ ràng. Việc kế thừa trực tiếp từ project đang tồn tại giúp đề tài có hai lợi thế quan trọng:
+Đề tài được hình thành trên nền project Aegis-SAST mà nhóm đã xây dựng trước đó. Đây không phải là đề tài bắt đầu từ con số 0, mà là bước nâng cấp có định hướng nghiên cứu từ một scanner thực nghiệm đã có các thành phần kỹ thuật nền tảng.
 
-- Thứ nhất, nhóm không mất thời gian làm lại toàn bộ scanner cơ bản.
-- Thứ hai, đề tài có cơ sở kỹ thuật thật để mở rộng sang hướng nghiên cứu sâu hơn, đặc biệt ở các lớp Triage, Agent Orchestration, Knowledge Loading và Benchmark.
-
-Hiện tại, Aegis-SAST đã có những thành phần chính được liệt kê trong Bảng 1 dưới đây.
+Ở thời điểm xây dựng đề cương, Aegis-SAST đã có một số thành phần khả dụng để kế thừa:
 
 **Bảng 1. Nền tảng kỹ thuật hiện có của Aegis-SAST**
 
-| Thành phần | Hiện trạng | Ý nghĩa đối với đề tài |
+| Thành phần | Hiện trạng kỹ thuật | Ý nghĩa đối với đề tài |
 |---|---|---|
-| CLI Scanner | Đã có | Có điểm vào thống nhất cho toàn bộ pipeline |
+| CLI Scanner | Đã có điểm vào quét thống nhất | Thuận lợi cho việc tích hợp toàn bộ pipeline |
 | Plugin đa ngôn ngữ | Python, JavaScript, Java, PHP | Tạo nền cho định hướng multi-language |
-| Rule Engine | YAML rules | Thuận lợi cho mở rộng rule và coverage |
 | AST Parsing | Tree-sitter | Hỗ trợ phân tích theo cấu trúc mã nguồn |
-| Taint Analysis | Đã có | Phù hợp với nhóm lỗi injection và traversal |
-| Cross-file Analysis | Có cho Python | Là điểm mạnh kỹ thuật hiện tại |
-| AI Verification | Đã có seed ban đầu | Là cơ sở để phát triển thành AI Triage |
-| Reporting | JSON, Markdown | Có đầu ra để mở rộng benchmark và SARIF |
+| Rule Engine | Quy tắc YAML | Thuận lợi cho mở rộng coverage |
+| Taint-style Analysis | Đã có ở mức source -> sink | Phù hợp cho nhóm lỗi injection và traversal |
+| Cross-file Analysis | Đã có cho Python | Là điểm mạnh kỹ thuật hiện tại của project |
+| Workflow triage nền tảng | Đã có seed theo các bước intake, knowledge, auditor, skeptic, judge | Tạo nền để nâng thành workflow LangGraph hoàn chỉnh |
+| Reporting | Đã có JSON, Markdown và SARIF seed | Thuận lợi cho benchmark và tích hợp CI/CD |
 
-Tuy nhiên, nếu nhìn dưới góc độ một đề tài báo cáo lớn hoặc một đề tài nghiên cứu khoa học, project hiện tại vẫn còn những khoảng trống cần giải quyết:
+Tuy nhiên, nếu xét theo yêu cầu của một đề tài nghiên cứu khoa học hoặc khóa luận tốt nghiệp quy mô lớn, project hiện tại vẫn còn những khoảng trống kỹ thuật quan trọng:
 
-- Finding chưa được chuẩn hóa đủ sâu để phục vụ benchmark và triage.
-- AI mới ở mức verification, chưa phải một workflow agent hoàn chỉnh.
-- Chưa có lớp tri thức lỗ hổng có cấu trúc.
-- Chưa có SARIF và CI-oriented reporting.
-- Chưa có benchmark đủ mạnh với baseline như Semgrep hay CodeQL.
-- Chưa có một lớp orchestration rõ ràng để điều phối scanner, knowledge và AI.
+- Bằng chứng finding chưa đủ sâu để phục vụ benchmark và triage ở mức nghiên cứu.
+- Phân tích sâu hiện mới mạnh chủ yếu ở Python; JavaScript, Java và PHP mới ở mức intra-file.
+- Chưa có lớp `DFG-lite` và `CFG-lite` tường minh cho Python để tăng chất lượng dataflow/control-flow reasoning.
+- Workflow triage mới là nền tảng thực thi ban đầu, chưa hoàn thiện thành mô hình agent có đánh giá phân rã đầy đủ.
+- Benchmark đối chứng với Semgrep và CodeQL chưa được triển khai thành một bộ thực nghiệm hệ thống.
 
-Từ nền tảng đó, đề tài này được lựa chọn như một bước phát triển tiếp theo để biến Aegis-SAST từ một scanner kỹ thuật thành một prototype nghiên cứu có cấu trúc, có số liệu và có khả năng trình bày học thuật.
+Từ nền tảng đang có và các khoảng trống đó, đề tài được xác định như một bước phát triển tiếp theo nhằm chuyển Aegis-SAST từ một scanner cấp portfolio thành một **prototype nghiên cứu có kiến trúc rõ, có số liệu đối chứng và có đóng góp kỹ thuật cụ thể**.
 
 ## 3. Mục tiêu của đề tài
 
 ### 3.1. Mục tiêu tổng quát
 
-Xây dựng hệ thống Aegis-SAST lai ghép giữa Phân tích tĩnh (SAST) deterministic dựa trên cấu trúc cây cú pháp (AST) và Trí tuệ nhân tạo điều phối dạng đa tác nhân (Multi-Agent), nhằm tự động phát hiện, phân loại lỗi và giải thích lỗ hổng với tỷ lệ cảnh báo giả ở mức tối thiểu.
+Đề xuất, thiết kế và phát triển hệ thống Aegis-SAST theo mô hình Agentic Hybrid SAST lai ghép giữa phân tích tĩnh deterministic và AI triage có điều phối, nhằm phát hiện, phân loại, giải thích lỗ hổng mã nguồn và giảm false positive một cách có kiểm chứng.
 
 ### 3.2. Mục tiêu cụ thể
 
-1. Thiết kế **Normalized Finding Schema** cho toàn bộ pipeline, bao gồm cấu trúc **Evidence Bundle** (chứa thông tin source, sink, dataflow, code snippets).
-2. Duy trì hỗ trợ đa ngôn ngữ nhưng phân tầng độ sâu phân tích theo từng ngôn ngữ (xem chi tiết tại Bảng 3 — Ma trận ngôn ngữ).
-3. Xây dựng tầng tri thức bảo mật cục bộ (**Knowledge Cards**) ánh xạ trực tiếp với các phân loại lỗi CWE/OWASP cho các lỗ hổng ưu tiên.
-4. Thiết kế và cài đặt quy trình điều phối đa tác nhân (**Agentic Loop**) sử dụng LangGraph để thực hiện các nhiệm vụ: Lập kế hoạch ngữ cảnh (Planner), Đánh giá an toàn (Auditor), Biện luận phản bác (Skeptic/Validator) và Trọng tài ra quyết định (Judge).
-5. Nâng cấp khả năng xuất báo cáo theo chuẩn quốc tế **SARIF** (Static Analysis Results Interchange Format) để tích hợp trực tiếp vào quy trình CI/CD.
-6. Phát triển AI Triage với các trạng thái confirmed, likely, needs-review, suppressed.
-7. Thực nghiệm đánh giá hệ thống bằng các chỉ số Precision, Recall, F1-Score, False-Positive Reduction và chất lượng explanation trên các bộ dữ liệu chuẩn, so sánh với công cụ baseline Semgrep.
+1. Chuẩn hóa `Normalized Finding Schema` cho toàn bộ pipeline, trong đó `Evidence Bundle` phải thể hiện rõ source, sink, sanitizer, path summary, snippet và metadata phục vụ benchmark.
+2. Nâng độ sâu phân tích cho Python bằng cách bổ sung `DFG-lite` và `CFG-lite` nhằm cải thiện reasoning về luồng dữ liệu và đường đi điều khiển.
+3. Duy trì kiến trúc đa ngôn ngữ cho Python, JavaScript, Java và PHP, nhưng phân tầng rõ độ sâu phân tích theo từng ngôn ngữ.
+4. Xây dựng kho tri thức cục bộ (`Knowledge Cards`) ánh xạ với CWE, OWASP, sanitizer rubric, false-positive pattern và remediation hint.
+5. Thiết kế workflow triage bằng LangGraph với các vai trò Planner, KnowledgeLoader, Auditor, SkepticValidator, Judge và Reporter.
+6. Nâng cấp đầu ra báo cáo theo các định dạng JSON, Markdown và SARIF để phục vụ tích hợp CI/CD và so sánh baseline.
+7. Xây dựng bộ thực nghiệm định lượng với các chỉ số Precision, Recall, F1-Score, False-Positive Reduction, Runtime và Token Usage.
+8. So sánh hệ thống đề xuất với baseline Semgrep, và nếu đủ thời gian thì mở rộng thêm một phạm vi hẹp với CodeQL.
 
 **Bảng 2. Hệ thống mục tiêu của đề tài**
 
 | Nhóm mục tiêu | Nội dung |
 |---|---|
-| Mục tiêu hệ thống | Củng cố scanner core, schema và reporting |
+| Mục tiêu hệ thống | Củng cố scanner core, schema, evidence và reporting |
+| Mục tiêu kỹ thuật | Bổ sung DFG-lite và CFG-lite cho Python |
 | Mục tiêu AI | Triage finding dựa trên evidence và knowledge context |
-| Mục tiêu Agent | Build workflow có trạng thái bằng LangGraph |
+| Mục tiêu agent | Xây workflow có trạng thái bằng LangGraph |
 | Mục tiêu đánh giá | So sánh với baseline và lượng hóa hiệu quả |
-| Mục tiêu học thuật | Tạo đầu ra phù hợp cho báo cáo và nghiên cứu khoa học |
+| Mục tiêu học thuật | Tạo đầu ra phù hợp cho báo cáo, khóa luận và NCKH |
 
 ## 4. Câu hỏi nghiên cứu
 
-Đề tài tập trung trả lời các câu hỏi sau:
+Đề tài tập trung trả lời các câu hỏi nghiên cứu sau:
 
-1. Việc kết hợp phân tích tĩnh với AI Triage có giúp giảm False Positive so với chỉ dùng phân tích tĩnh hay không?
-2. Việc nạp tri thức lỗ hổng (Knowledge Loading) có giúp AI Triage ổn định và hữu ích hơn hay không?
-3. Việc tổ chức agent theo workflow có trạng thái bằng LangGraph có hiệu quả hơn cách gọi AI theo prompt đơn lẻ hay không?
-4. Việc sử dụng bằng chứng luồng dữ liệu (Dataflow Evidence) có giúp quá trình triage chính xác hơn hay không?
+1. Việc kết hợp phân tích tĩnh với AI triage có giúp giảm false positive so với chỉ dùng phân tích tĩnh hay không?
+2. Việc nạp tri thức bảo mật có cấu trúc (Knowledge Loading) có giúp quá trình triage ổn định và hữu ích hơn hay không?
+3. Việc bổ sung bằng chứng `DFG-lite` và `CFG-lite` cho Python có giúp finding đáng tin cậy hơn và cải thiện Precision hay không?
+4. Workflow có trạng thái bằng LangGraph có ổn định hơn cách gọi LLM theo prompt tuyến tính đơn lẻ hay không?
 
 **Bảng 3. Hệ thống câu hỏi nghiên cứu**
 
 | Mã câu hỏi | Nội dung |
 |---|---|
-| RQ1 | AI Triage có giúp giảm False Positive so với static analysis đơn thuần hay không? |
-| RQ2 | Knowledge Loading có giúp explanation và remediation tốt hơn hay không? |
-| RQ3 | Workflow agent bằng LangGraph có ổn định hơn prompt tuyến tính hay không? |
-| RQ4 | Evidence về dataflow có giúp triage đáng tin cậy hơn hay không? |
+| RQ1 | AI triage có giúp giảm false positive so với static analysis đơn thuần hay không? |
+| RQ2 | Knowledge Loading có giúp explanation và triage ổn định hơn hay không? |
+| RQ3 | DFG-lite và CFG-lite có làm tăng chất lượng evidence và Precision cho Python hay không? |
+| RQ4 | Workflow LangGraph có cho đầu ra nhất quán hơn single-prompt verification hay không? |
 
 ## 5. Phương pháp nghiên cứu
 
 ### 5.1. Nghiên cứu tài liệu và khảo sát hệ thống tham khảo
 
-Khảo cứu các công trình nghiên cứu khoa học hàng đầu thế giới về:
+Đề tài khảo sát các nhóm công trình và hệ thống sau:
 
-- Phân tích tĩnh dựa trên đồ thị (AST, CFG, DFG, Call Graph).
-- Kiến trúc Agent tương tác trong công nghệ an toàn phần mềm.
-- Các hệ thống query-based analysis (Semgrep, CodeQL).
-- Các mô hình agent hỗ trợ kiểm thử bảo mật.
-- Các nghiên cứu về LLM-based vulnerability triage và repair.
+- Các kỹ thuật phân tích tĩnh dựa trên AST, DFG, CFG và Call Graph.
+- Các công cụ SAST tiêu biểu như Semgrep và CodeQL.
+- Các hướng tiếp cận sử dụng LLM cho vulnerability triage, explanation và repair.
+- Các mô hình điều phối agent có trạng thái cho bài toán phân tích mã nguồn.
 
 ### 5.2. Phân tích, thiết kế và cài đặt hệ thống
 
-- Kế thừa và cải tiến bộ nhân quét tĩnh có sẵn của Aegis-SAST.
-- Xây dựng schema cho finding, triage và knowledge.
-- Thiết kế workflow agent bằng LangGraph.
-- Cài đặt các thành phần detection, normalization, triage và reporting.
+Đề tài kế thừa scanner Aegis-SAST hiện có và phát triển theo các hướng:
 
-### 5.3. Thực nghiệm, đánh giá và nghiên cứu phân rã (Ablation Study)
+- Chuẩn hóa schema finding và evidence.
+- Bổ sung DFG-lite và CFG-lite cho Python.
+- Xây dựng workflow triage có trạng thái bằng LangGraph.
+- Tổ chức lại knowledge layer, reporting layer và benchmark harness.
 
-Đề tài thực hiện các nhóm so sánh sau:
+### 5.3. Thực nghiệm, đánh giá và nghiên cứu phân rã
 
-1. Phân tích tĩnh thuần túy so với phân tích tĩnh kết hợp AI Triage.
+Đề tài thực hiện bốn nhóm thực nghiệm chính:
+
+1. Static-only so với Static + AI Triage.
 2. AI Triage không có Knowledge so với AI Triage có Knowledge.
-3. Prompt đơn lẻ tuyến tính so với workflow agent bằng LangGraph.
-4. Hệ thống đề xuất so với baseline Semgrep.
-5. Benchmark sâu trên Python và benchmark mở rộng trên JavaScript, Java, PHP.
-
-Ngoài ra, đề tài thực hiện **Nghiên cứu phân rã (Ablation Study)** bằng cách đo hiệu năng của AI Triage khi có và không có Knowledge Loading, hoặc khi dùng Prompt đơn lẻ so với LangGraph Workflow, nhằm chứng minh tính hiệu quả của từng thành phần đề xuất một cách độc lập.
+3. Single-prompt verification so với LangGraph workflow.
+4. Python AST/taint baseline so với Python có thêm DFG-lite và CFG-lite.
 
 **Bảng 4. Các nhóm thực nghiệm chính**
 
 | Nhóm thực nghiệm | Mục đích |
 |---|---|
-| Static-only vs Static + AI Triage (E1) | Đo tác động trực tiếp của AI Triage lên False Positive |
-| AI không Knowledge vs có Knowledge (E2) | Đo tác động của Knowledge Loading lên chất lượng explanation |
-| Prompt đơn lẻ vs LangGraph workflow (E3) | Đo tác động của Agent Orchestration lên độ ổn định |
-| Aegis-SAST vs Semgrep | So sánh với baseline rule-based |
-| Python sâu vs đa ngôn ngữ mở rộng | Kiểm tra mức độ phù hợp của chiến lược phân tầng ngôn ngữ |
+| E1. Static-only vs Static + AI Triage | Đo tác động trực tiếp của AI triage lên false positive |
+| E2. Không Knowledge vs Có Knowledge | Đo tác động của Knowledge Loading lên explanation và triage |
+| E3. Single-prompt vs LangGraph workflow | Đo tác động của agent orchestration lên độ ổn định |
+| E4. AST/Taint vs AST/Taint + DFG-lite/CFG-lite | Đo tác động của evidence sâu lên Precision và path reasoning |
+| Baseline Aegis-SAST vs Semgrep | So sánh với công cụ rule-based phổ biến |
 
 ## 6. Đối tượng và phạm vi nghiên cứu
 
 ### 6.1. Đối tượng nghiên cứu
 
-- Các thuật toán phân tích tĩnh mã nguồn.
-- Cơ chế phân tích taint flow xuyên hàm (Cross-file).
-- Các mô hình điều phối AI Agent hỗ trợ phân tích mã nguồn bảo mật.
-- Finding sinh ra từ quá trình phân tích tĩnh.
-- Tri thức về các nhóm lỗ hổng web phổ biến.
-- Đầu ra triage và báo cáo cuối.
+- Các kỹ thuật phân tích tĩnh mã nguồn.
+- Cơ chế dataflow/control-flow reasoning phục vụ SAST.
+- Workflow AI agent hỗ trợ triage finding bảo mật.
+- Tri thức có cấu trúc về CWE, OWASP và sanitizer.
+- Hệ thống benchmark đối chứng cho bài toán false-positive reduction.
 
 ### 6.2. Phạm vi nghiên cứu
 
-- **Ngôn ngữ trọng tâm:** Tập trung phân tích sâu và phân tích xuyên file (Cross-file) cho ngôn ngữ **Python**. Hỗ trợ rà quét ở mức tệp đơn (Intra-file) đối với **JavaScript, Java và PHP** để chứng minh tính đa ngôn ngữ của kiến trúc.
-- **Nhóm lỗ hổng ưu tiên:** SQL Injection, Command Injection, Path Traversal, XSS, SSRF.
-- **Công cụ đối chứng chính:** Semgrep.
-- **Công cụ đối chứng mở rộng:** CodeQL trong phạm vi hẹp nếu đủ thời gian.
+- **Ngôn ngữ trọng tâm:** Python là ngôn ngữ phân tích sâu, có mục tiêu triển khai taint reasoning, cross-file, DFG-lite, CFG-lite và benchmark chính.
+- **Ngôn ngữ mở rộng:** JavaScript, Java và PHP được giữ ở mức intra-file, pattern-level/AST-level để chứng minh khả năng mở rộng đa ngôn ngữ của kiến trúc.
+- **Nhóm lỗ hổng ưu tiên:** SQL Injection, Command Injection, Path Traversal, XSS và SSRF.
+- **Baseline chính:** Semgrep.
+- **Baseline mở rộng:** CodeQL trong phạm vi hẹp nếu đủ thời gian.
 
-**Bảng 5. Ma trận phân tầng ngôn ngữ (Language Matrix)**
+**Bảng 5. Ma trận phân tầng ngôn ngữ**
 
-| Ngôn ngữ | Mức phân tích | Taint Analysis | Cross-file | Agent Triage | Benchmark |
+| Ngôn ngữ | Mức phân tích | Dataflow/Control-flow | Cross-file | Agent Triage | Benchmark |
 |---|---|---|---|---|---|
-| **Python** | Phân tích sâu | Có (Source-Sanitizer-Sink) | Có (Call Graph) | Có đầy đủ Evidence | Benchmark chính |
-| **JavaScript** | Intra-file | Pattern matching | Không | Triage trên AST rule | Benchmark mở rộng |
-| **Java** | Intra-file | Pattern matching | Không | Triage trên AST rule | Benchmark mở rộng |
-| **PHP** | Intra-file | Pattern matching | Không | Triage trên AST rule | Benchmark mở rộng |
-
-**Lưu ý quan trọng:** Phạm vi thực nghiệm đầy đủ của Agent Triage và Benchmark (với Dataflow Evidence) chủ yếu áp dụng trên Python. Đối với các ngôn ngữ mở rộng (JavaScript, Java, PHP), hệ thống chỉ áp dụng AI Triage trên các rule dạng Pattern Matching hoặc cấu trúc AST đơn giản. Kết quả thực nghiệm RQ4 (về Dataflow Evidence) không áp dụng cho các ngôn ngữ mở rộng.
+| Python | Phân tích sâu | Taint + DFG-lite + CFG-lite | Có | Đầy đủ evidence | Benchmark chính |
+| JavaScript | Intra-file | Pattern-level / AST-level | Không | Có nhưng mức cơ bản | Benchmark mở rộng |
+| Java | Intra-file | Pattern-level / AST-level | Không | Có nhưng mức cơ bản | Benchmark mở rộng |
+| PHP | Intra-file | Pattern-level / AST-level | Không | Có nhưng mức cơ bản | Benchmark mở rộng |
 
 ### 6.3. Phạm vi không đặt mục tiêu
 
-- Không xây dựng hệ thống thay thế hoàn toàn công cụ SAST thương mại.
-- Không mở rộng đồng thời quá nhiều ngôn ngữ ở mức phân tích sâu.
-- Không đưa các ngôn ngữ chưa có plugin ổn định vào benchmark chính.
+- Không đặt mục tiêu thay thế hoàn toàn các công cụ SAST thương mại.
+- Không triển khai full graph-based engine cho tất cả ngôn ngữ trong thời gian 3 tháng.
 - Không đặt mục tiêu auto-fix hoàn chỉnh cho mọi finding.
-- Không tập trung vào dashboard lớn trong giai đoạn chính của đề tài.
-
-**Bảng 6. Tổng hợp phạm vi thực hiện của đề tài**
-
-| Nội dung | Phạm vi lựa chọn |
-|---|---|
-| Ngôn ngữ chính | Python (cross-file, taint analysis đầy đủ) |
-| Ngôn ngữ mở rộng | JavaScript, Java, PHP (intra-file, pattern matching) |
-| Nhóm lỗi chính | SQLi, Command Injection, Path Traversal, XSS, SSRF |
-| Baseline chính | Semgrep |
-| Baseline mở rộng | CodeQL trong phạm vi hẹp |
-| Ngoài phạm vi | Dashboard lớn, auto-fix hoàn chỉnh, enterprise-scale SAST |
+- Không tập trung vào dashboard doanh nghiệp trong giai đoạn chính của đề tài.
 
 ---
 
 # PHẦN HAI: NỘI DUNG
 
-## CHƯƠNG 1: TỔNG QUAN VỀ PHÂN TÍCH TĨNH (SAST) VÀ CÁC KỸ THUẬT TẤN CÔNG WEB
+## CHƯƠNG 1: TỔNG QUAN VỀ SAST, FALSE POSITIVE VÀ HƯỚNG TIẾP CẬN HYBRID
 
-### 1.1. Tổng quan
+### 1.1. Bài toán phát hiện lỗ hổng bằng phân tích tĩnh
 
-An toàn ứng dụng Web ngày càng phức tạp khi kẻ tấn công liên tục cải tiến kỹ thuật nhằm vượt qua các bức tường lửa ứng dụng (WAF) và các hệ thống phát hiện xâm nhập. Việc rà quét và đảm bảo mã nguồn sạch ngay từ giai đoạn lập trình (Shift Left Security) là bắt buộc. Phân tích tĩnh (SAST) đóng vai trò trung tâm trong quy trình này.
+Phân tích tĩnh cho phép rà quét mã nguồn mà không cần thực thi chương trình. Đây là hướng phù hợp với quy trình “shift-left security”. Tuy nhiên, hiệu quả thực tế của SAST không chỉ phụ thuộc vào khả năng phát hiện lỗi, mà còn phụ thuộc mạnh vào chất lượng triage, khả năng giải thích và khả năng giảm false positive.
 
-### 1.2. Cơ sở lý thuyết
+### 1.2. Cơ sở kỹ thuật: AST, DFG, CFG và Call Graph
 
-#### 1.2.1. Khái niệm và vai trò của An ninh ứng dụng Web
+- **AST** cho biết cấu trúc cú pháp của chương trình, là nền tảng để nhận diện source, sink, sanitizer và các mẫu vi phạm.
+- **DFG** mô tả luồng truyền dữ liệu giữa các biến, hữu ích để theo dõi assignment, argument, parameter và return value.
+- **CFG** mô tả đường đi điều khiển, hữu ích để xét branch-aware path, guard clause, return sớm và sanitizer reachability.
+- **Call Graph** hỗ trợ nối các lời gọi hàm, đặc biệt quan trọng với phân tích xuyên hàm và xuyên tệp.
 
-Giới thiệu tổng quan về chu kỳ phát triển phần mềm an toàn (SSDLC) và vị trí của công cụ SAST trong việc bảo vệ ứng dụng Web trước các nguy cơ tấn công từ môi trường mạng.
+Trong phạm vi đề tài này, DFG và CFG không được theo đuổi ở mức học thuật đầy đủ cho mọi ngôn ngữ, mà được triển khai theo hướng `lite`, tập trung vào giá trị thực nghiệm cho Python.
 
-#### 1.2.2. Phân loại tấn công Web (SQLi, XSS, Path Traversal, Command Injection...)
+### 1.3. LLM và giới hạn khi áp dụng trực tiếp cho SAST
 
-Định nghĩa cơ chế hoạt động, nguồn sinh (Source), điểm thực thi nguy hiểm (Sink) và cách thức khai thác của các lỗ hổng phổ biến theo phân loại của OWASP Top 10 và CWE.
+LLM có thể hỗ trợ diễn giải finding, tổng hợp ngữ cảnh và gợi ý khắc phục. Tuy nhiên, nếu dùng LLM theo hướng quét mã nguồn trực tiếp mà không có bằng chứng deterministic đi kèm, hệ thống sẽ khó kiểm chứng, tốn token và dễ cho đầu ra thiếu ổn định.
 
-#### 1.2.3. Các phương pháp che giấu payload (Encoding, Obfuscation...)
+### 1.4. Hướng tiếp cận Hybrid SAST
 
-Phân tích cách thức kẻ tấn công sử dụng các kỹ thuật mã hóa (Hex, Base64, URL Encoding), ghép chuỗi động, hoặc obfuscation mã nguồn nhằm làm mù các bộ quét dựa trên đối khớp chuỗi (Regex) truyền thống.
+Hướng đề xuất của đề tài là:
 
-#### 1.2.4. WAF truyền thống và hạn chế
+1. Dùng deterministic detection core để sinh finding và evidence.
+2. Dùng Knowledge Loading để bổ sung ngữ cảnh bảo mật có cấu trúc.
+3. Dùng workflow LangGraph để triage, phản biện và ra quyết định.
+4. Dùng benchmark đối chứng để chứng minh hiệu quả nghiên cứu.
 
-Đánh giá điểm yếu của các hệ thống ngăn chặn dạng Signature-based: dễ bị bypass bằng payload biến thể, tỷ lệ cảnh báo sai cao và không có khả năng hiểu luồng xử lý nội bộ của ứng dụng.
+## CHƯƠNG 2: CÁC CÔNG TRÌNH VÀ HỆ THỐNG LIÊN QUAN
 
-#### 1.2.5. Hướng tiếp cận lai ghép (Hybrid) và sự xuất hiện của AI Agent
+### 2.1. Công cụ SAST tham khảo
 
-Phân tích lý do vì sao LLM thuần túy không thể thay thế SAST (giới hạn context window, hallucination, chi phí token) và tại sao mô hình lai (Deterministic Scanner sinh bằng chứng + AI Agent đánh giá ngữ cảnh) là xu hướng đột phá hiện nay.
+- **Semgrep** đại diện cho hướng quét dựa trên rule và pattern matching.
+- **CodeQL** đại diện cho hướng query-based static analysis có chiều sâu học thuật hơn.
 
----
+Hai công cụ này phù hợp để làm baseline đối chứng cho đề tài.
 
-## CHƯƠNG 2: CÁC CÔNG TRÌNH NGHIÊN CỨU LIÊN QUAN
+### 2.2. Hệ thống agent và workflow tham khảo
 
-### 2.1. Các công trình nghiên cứu trong nước
+- Các dự án agent hỗ trợ làm việc với mã nguồn như Strix hoặc các skill-based workflow cho SAST cho thấy vai trò của orchestration.
+- Tuy nhiên, đề tài không đi theo hướng “nhiều agent trò chuyện tự do”, mà đi theo **workflow có trạng thái và có điều kiện rẽ nhánh**.
 
-Khảo sát các nghiên cứu của các tác giả trong nước về việc ứng dụng học máy, học sâu và luật AST để phát hiện mã độc hoặc lỗ hổng phần mềm. Đánh giá ưu điểm và hạn chế về độ chính xác cũng như quy mô thực nghiệm của các nghiên cứu này.
+### 2.3. Các nghiên cứu liên quan đến LLM-based vulnerability triage
 
-### 2.2. Các công trình nghiên cứu nước ngoài
+Các nghiên cứu gần đây tập trung vào:
 
-- Khảo sát các nghiên cứu về việc tích hợp LLM làm nhiệm vụ triage lỗ hổng (ví dụ: các công cụ như Strix, utkusen/sast-skills).
-- Phân tích các mô hình Program Slicing (lát cắt chương trình) phối hợp với RAG (Retrieval-Augmented Generation) để tối ưu ngữ cảnh đưa vào LLM.
-- Đánh giá các benchmark lớn như **SWE-bench**, **Juliet Test Suite** trong việc đo lường năng lực của các AI Agent bảo mật.
+- Giảm false positive bằng LLM triage.
+- Tăng chất lượng explanation và remediation note.
+- Kết hợp program slicing, retrieval hoặc structured evidence để nâng độ tin cậy.
 
----
+Khoảng trống mà đề tài hướng tới là: **kết hợp evidence-aware SAST, workflow LangGraph và benchmark đối chứng trong một hệ thống thực nghiệm thống nhất**.
 
 ## CHƯƠNG 3: KIẾN TRÚC HỆ THỐNG AGENTIC HYBRID SAST ĐỀ XUẤT
 
-Hệ thống được thiết kế theo mô hình kiến trúc phân tầng chuyên biệt gồm 6 lớp nhằm tách biệt phần phân tích tĩnh có tính xác thực cao và phần AI Agent lập luận ngữ cảnh.
+Đề tài đề xuất kiến trúc 6 lớp để tách phần phân tích tĩnh deterministic khỏi phần triage có sử dụng AI.
 
-**Bảng 7. Kiến trúc 6 lớp của hệ thống Aegis-SAST**
+**Bảng 6. Kiến trúc 6 lớp của hệ thống đề xuất**
 
 | Lớp | Tên lớp | Chức năng chính | Đầu ra |
 |---|---|---|---|
-| 1 | Repo Intake Layer | Tiếp nhận mã nguồn (Local Directory / Git URL), nhận diện ngôn ngữ và framework, chọn cấu hình quét (Scan Profile) | Repo Metadata |
-| 2 | Deterministic Detection Core | Tree-sitter AST Parsers, Rule Engine (YAML rules), Taint Engine (Source → Sanitizer → Sink), Call Graph Generator (Cross-file Python) | Raw Findings |
-| 3 | Finding Normalization | Ánh xạ sang Normalized Finding Schema, thu thập Evidence Bundle và Code Snippets | Normalized Findings |
-| 4 | Knowledge Loading Layer | Trích xuất local Knowledge Cards, liên kết luật CWE, OWASP, Sanitizer Rubrics | Finding + Knowledge Context |
-| 5 | AI Triage Layer (LangGraph) | Planner Node, Auditor Node, Skeptic Validator Node, Judge Node — điều phối lập luận có phản biện | Triaged Results |
-| 6 | Reporting và CI/CD Layer | Remediation Node, Exporters (JSON, Markdown, SARIF), CI/CD Adapters (GitHub Code Scanning) | Báo cáo cuối cùng |
+| 1 | Repo Intake Layer | Nhận mã nguồn, nhận diện ngôn ngữ và framework, chọn scan profile | Repo metadata |
+| 2 | Deterministic Detection Core | AST parser, rule engine, taint engine, call graph, DFG-lite/CFG-lite cho Python | Raw findings |
+| 3 | Finding Normalization Layer | Chuẩn hóa finding và tạo Evidence Bundle | Normalized findings |
+| 4 | Knowledge Loading Layer | Nạp Knowledge Cards, CWE/OWASP mapping và sanitizer rubric | Finding + knowledge context |
+| 5 | AI Triage Layer | LangGraph workflow với Planner, Auditor, SkepticValidator, Judge, Reporter | Triaged results |
+| 6 | Reporting, Evaluation and CI Layer | Xuất JSON, Markdown, SARIF; benchmark; CI/CD integration | Báo cáo và số liệu |
 
-*Điểm cần nhấn mạnh: AI Agent không thay thế lớp phân tích tĩnh. Agent chỉ hoạt động sau khi finding đã được tạo ra cùng với evidence. Nhờ đó, hệ thống giữ được tính kiểm chứng và giảm rủi ro suy diễn không có căn cứ.*
+### 3.1. Repo Intake Layer
 
-### 3.1. Tầng Phân tích Tĩnh (Deterministic Core)
+Lớp này chịu trách nhiệm xác định:
 
-Sử dụng các bộ parser Tree-sitter để phân tích mã nguồn thành cây cú pháp trừu tượng (AST). Cơ chế Taint Analysis lần theo dấu vết luồng dữ liệu truyền từ điểm nhận dữ liệu đầu vào (Source) qua các bước trung gian đến điểm thực thi nhạy cảm (Sink). Đối với Python, tích hợp module Call Graph để giải quyết bài toán luồng dữ liệu xuyên tệp tin (Cross-file).
+- loại đầu vào cần quét;
+- ngôn ngữ lập trình hiện diện trong dự án;
+- framework hoặc dấu hiệu công nghệ liên quan;
+- kế hoạch quét tương ứng.
 
-### 3.2. Chuẩn hóa lỗi (Finding Normalization)
+### 3.2. Deterministic Detection Core
 
-Mọi lỗ hổng thô phát hiện từ tầng quét tĩnh được chuẩn hóa về một cấu trúc dữ liệu thống nhất (**Normalized Finding Schema**) bao gồm:
+Đây là lớp nền tảng của hệ thống. Phần này sử dụng:
 
-- **Evidence Bundle:** Chứa thông tin chi tiết về điểm Source, điểm Sink, đường đi dữ liệu (DataFlowPath), và đoạn mã nguồn tương ứng (Code Snippets).
-- **Metadata:** Định danh lỗi, mức độ nghiêm trọng ban đầu (Severity), và các liên kết CWE.
+- Tree-sitter để tạo AST đa ngôn ngữ;
+- Rule engine để nhận diện các mẫu nguy hiểm;
+- Taint propagation để nối source đến sink;
+- Call graph cho Python để hỗ trợ phân tích xuyên hàm và xuyên tệp.
 
-### 3.3. Tầng Tri thức Bảo mật (Knowledge Loading)
+Nâng cấp kỹ thuật trọng tâm của đề tài nằm ở hai phần:
 
-Nạp thông tin từ các **Knowledge Cards** (thẻ tri thức) dạng cấu trúc cục bộ. Mỗi thẻ chứa tri thức về một lớp lỗi cụ thể:
+- **DFG-lite cho Python:** theo dõi assignment, argument -> parameter, return value -> biến nhận, và tóm tắt dataflow path.
+- **CFG-lite cho Python:** xét branch-aware path, return sớm, guard clause, sanitizer reachability và loại bỏ path không hợp lệ rõ ràng.
 
-- Mã CWE và nhóm OWASP tương ứng.
-- Các hàm Sanitizer hợp lệ của từng ngôn ngữ.
-- Các mẫu báo động giả phổ biến (**False Positive Patterns**).
-- Các đoạn mã sửa lỗi mẫu chuẩn (**Secure Fix Templates**).
-- Source phổ biến và sink phổ biến.
+### 3.3. Finding Normalization Layer
 
-### 3.4. Điều phối Đa tác nhân (AI Triage Stateful Graph)
+Mọi finding từ deterministic core được chuẩn hóa về một cấu trúc thống nhất.
 
-Sử dụng framework **LangGraph** để xây dựng trạng thái (State) và điều phối luồng xử lý lặp (**Agentic Loop**):
+`Normalized Finding` dự kiến bao gồm các nhóm trường sau:
 
-1. **Planner Agent:** Phân tích cấu trúc thư mục chứa tệp lỗi, xác định các file liên quan (dependency, configuration) để gom nhóm và chuẩn bị ngữ cảnh phân tích (Context Matrix).
-2. **Auditor Agent:** Đọc Finding, Evidence Bundle kết hợp với dữ liệu từ Knowledge Card tương ứng nhằm thực hiện phân tích chuyên sâu xem luồng dữ liệu thực tế có khả năng kích hoạt lỗ hổng hay không.
-3. **Skeptic Validator Agent:** Đóng vai trò phản biện phòng thủ. Tác nhân này cố gắng tìm kiếm các cơ chế lọc dữ liệu, kiểm tra kiểu dữ liệu hoặc các hàm sanitizer ẩn trong code để chứng minh phát hiện này là cảnh báo giả (**False Positive**).
-4. **Judge Agent:** Đóng vai trò trọng tài. Dựa trên lập luận của Auditor và Skeptic, Judge đưa ra quyết định gán trạng thái phân loại cuối cùng (**Triage Status**) gồm một trong các nhãn: `confirmed` (xác thực lỗi), `likely` (nhiều khả năng lỗi), `needs-review` (cần con người đánh giá) và `suppressed` (loại bỏ do báo động giả). Đồng thời tính toán điểm số nguy hại CVSS dựa trên ngữ cảnh thực tế.
+- thông tin định danh finding;
+- ngôn ngữ và loại lỗ hổng;
+- CWE/OWASP mapping;
+- severity ban đầu;
+- triage status;
+- evidence summary;
+- metadata phục vụ benchmark và reporting.
 
-**Bảng 8. Các node chính của LangGraph Agent**
+`Evidence Bundle` là thành phần quan trọng nhất, dự kiến bao gồm:
 
-| Node | Vai trò | Điều kiện kích hoạt |
-|---|---|---|
-| Planner | Chọn luồng xử lý theo loại finding và ngôn ngữ | Luôn chạy |
-| KnowledgeLoader | Nạp Knowledge Card phù hợp | Luôn chạy |
-| Auditor (SecurityReviewer) | Đánh giá finding ở vòng đầu | Luôn chạy |
-| SkepticValidator | Phản biện finding chưa đủ thuyết phục | Chỉ khi Confidence từ Core ở mức Medium/Low |
-| Judge (TriageJudge) | Gán trạng thái triage cuối cùng | Luôn chạy |
-| Reporter | Tạo explanation, remediation note và output record | Luôn chạy |
+- source location;
+- sink location;
+- sanitizer location nếu có;
+- path summary;
+- code snippet liên quan;
+- confidence từ deterministic core.
 
-**Cơ chế Conditional Routing:** Finding có Confidence High từ Core sẽ đi thẳng từ Auditor đến Judge, không qua SkepticValidator. Chỉ những finding có Confidence Medium hoặc Low, hoặc thuộc nhóm lỗ hổng phức tạp mới đẩy qua SkepticValidator. Thiết kế này giúp tiết kiệm đáng kể chi phí API token và thời gian xử lý khi project có hàng trăm finding.
+### 3.4. Knowledge Loading Layer
 
----
+`Knowledge Cards` là đơn vị tri thức cục bộ để hỗ trợ triage. Mỗi card có thể chứa:
 
-## CHƯƠNG 4: THIẾT KẾ VÀ XÂY DỰNG CÔNG CỤ THỰC NGHIỆM AEGIS-SAST
+- mã CWE và nhóm OWASP liên quan;
+- source/sink phổ biến;
+- sanitizer rubric theo ngôn ngữ;
+- false-positive pattern thường gặp;
+- remediation hint ở mức kỹ thuật.
 
-### 4.1. Kiến trúc hệ thống phần mềm và Cấu trúc thư mục dự án
+### 3.5. AI Triage Layer bằng LangGraph
 
-Hệ thống Aegis-SAST được tổ chức cấu trúc thư mục dạng module chuyên nghiệp, đảm bảo tính dễ bảo trì và mở rộng:
+Đề tài đề xuất workflow LangGraph theo các node:
 
-- `aegis_core/`: Chứa bộ quét tĩnh, parser Tree-sitter, phân tích taint flow và phân tích call graph.
-- `aegis_agents/`: Triển khai đồ thị LangGraph điều phối các tác nhân AI.
-- `aegis_knowledge/`: Quản lý việc nạp các thẻ tri thức lỗi cục bộ và tra cứu quy tắc.
-- `aegis_ci/`: Định dạng đầu ra báo cáo, bao gồm parser sinh file theo chuẩn SARIF quốc tế.
+1. **Planner:** xác định bối cảnh xử lý finding.
+2. **KnowledgeLoader:** nạp tri thức phù hợp với finding.
+3. **Auditor:** đánh giá finding dựa trên evidence và knowledge context.
+4. **SkepticValidator:** tìm lập luận phản biện, sanitizer hoặc điều kiện giảm mức nghi ngờ.
+5. **Judge:** gán nhãn `confirmed`, `likely`, `needs-review` hoặc `suppressed`.
+6. **Reporter:** sinh explanation và remediation suggestion.
 
-### 4.2. Các module chức năng chính
+Lớp này áp dụng **Conditional Routing**:
 
-- **Module CLI và Repo Intake:** Điểm vào của ứng dụng, chịu trách nhiệm tiếp nhận tham số từ người dùng, nhận diện cấu trúc dự án cần quét và phân phối luồng xử lý.
-- **Module Core Scanner:** Rà quét, sinh AST và lọc ra danh sách các điểm nghi ngờ ban đầu (Raw Candidates).
-- **Module Agentic Triage:** Gọi API mô hình ngôn ngữ lớn (sử dụng Gemini API), thực thi đồ thị LangGraph và cập nhật trạng thái lỗi.
-- **Module Exporter:** Kết xuất báo cáo ra các định dạng JSON, Markdown trực quan và tệp SARIF chuẩn.
+- finding có confidence cao từ core có thể đi thẳng từ Auditor đến Judge;
+- finding trung bình hoặc thấp phải đi qua SkepticValidator để giảm false positive.
 
-### 4.3. Công nghệ sử dụng và Môi trường phát triển
+Lưu ý: trong phạm vi đề tài, phần này tập trung vào **triage và giải thích**, không đặt mục tiêu auto-fix hoàn chỉnh.
 
-**Bảng 9. Công nghệ sử dụng (Technology Stack)**
+### 3.6. Reporting, Evaluation and CI Layer
 
-| Thành phần | Công nghệ | Phiên bản / Ghi chú |
-|---|---|---|
-| Ngôn ngữ phát triển | Python | 3.12+ |
-| AST Parsing | Tree-sitter | Bộ parser đa ngôn ngữ |
-| Agent Orchestration | LangGraph | Framework đồ thị trạng thái |
-| Mô hình LLM | Google Gemini | Gemini 2.0 Flash (API) |
-| Schema Validation | Pydantic | Structured output enforcement |
-| CLI Framework | Rich | Terminal UI nâng cao |
-| Output Format | SARIF | v2.1.0 (chuẩn OASIS) |
-| Quản lý phụ thuộc | pip / venv | Cô lập môi trường |
-| Hệ điều hành | Đa nền tảng | Windows, Linux, macOS |
-| CI/CD Integration | GitHub Actions | Code Scanning alerts |
+Lớp đầu ra bao gồm:
 
----
+- báo cáo JSON để phục vụ xử lý máy;
+- báo cáo Markdown để phục vụ đọc thủ công;
+- báo cáo SARIF để tích hợp GitHub Code Scanning;
+- benchmark harness để chạy batch và so sánh kết quả.
+
+## CHƯƠNG 4: THIẾT KẾ VÀ XÂY DỰNG CÔNG CỤ THỰC NGHIỆM
+
+### 4.1. Thiết kế theo module chức năng
+
+Để phù hợp với cả nghiên cứu và triển khai, hệ thống được tổ chức theo các module chức năng:
+
+- Module CLI và Repo Intake.
+- Module Core Scanner.
+- Module Finding Normalization và Evidence.
+- Module Knowledge Loading.
+- Module LangGraph Triage Workflow.
+- Module Reporting và Benchmark.
+
+### 4.2. Công nghệ sử dụng
+
+**Bảng 7. Công nghệ sử dụng**
+
+| Thành phần | Công nghệ / lựa chọn |
+|---|---|
+| Ngôn ngữ phát triển | Python 3.12+ |
+| AST parsing | Tree-sitter |
+| Điều phối workflow | LangGraph |
+| Mô hình ngôn ngữ lớn | Gemini hoặc mô hình tương đương |
+| Structured output | Schema-based validation |
+| Rule format | YAML |
+| CLI | Rich |
+| Báo cáo chuẩn | SARIF v2.1.0 |
+| Thực nghiệm và kiểm thử | pytest, benchmark scripts |
+| CI/CD | GitHub Actions |
+
+### 4.3. Đầu ra dự kiến của công cụ thực nghiệm
+
+Đề tài hướng đến các đầu ra kỹ thuật sau:
+
+- Một prototype Aegis-SAST có CLI hoàn chỉnh.
+- Một thư viện Knowledge Cards cho 5 nhóm CWE ưu tiên.
+- Một workflow LangGraph cho AI triage.
+- Một hệ thống xuất báo cáo JSON, Markdown và SARIF.
+- Một bộ benchmark và script đánh giá đối chứng.
 
 ## CHƯƠNG 5: THỰC NGHIỆM VÀ ĐÁNH GIÁ
 
-### 5.1. Thiết lập kịch bản thực nghiệm
+### 5.1. Thiết lập thực nghiệm
 
-Mô tả chi tiết môi trường thử nghiệm (cấu hình phần cứng, API LLM sử dụng, các tham số hyper-parameters của agent workflow).
+Thực nghiệm sẽ mô tả rõ:
 
-#### Tập dữ liệu thử nghiệm (Dataset)
+- môi trường phần cứng và phần mềm;
+- phiên bản parser, rule và mô hình LLM sử dụng;
+- cấu hình workflow triage;
+- cách thu thập runtime và token usage.
 
-Để tính được Recall, F1-Score và False-Positive Reduction một cách khoa học, bắt buộc phải có **Ground Truth Dataset** — tức là bộ mã nguồn đã biết trước chính xác dòng nào là lỗ hổng thật, dòng nào là False Positive. Đề tài sử dụng các nguồn sau:
+### 5.2. Bộ dữ liệu thực nghiệm
 
-**Bảng 10. Bộ dữ liệu Ground Truth cho Benchmark**
+**Bảng 8. Bộ dữ liệu dự kiến cho benchmark**
 
-| Bộ dữ liệu | Ngôn ngữ | Đặc điểm | Vai trò |
-|---|---|---|---|
-| Juliet Test Suite | Java (CWE-89 SQLi, CWE-79 XSS) | Có nhãn True/False đầy đủ do NIST cung cấp | Ground truth chuẩn quốc tế |
-| Synthetic Dataset tự tạo | Python | 50-100 sample tự viết, có gắn nhãn True Positive / False Positive rõ ràng | Ground truth chính cho Python |
-| Dự án mẫu nội bộ | Python, JS, Java, PHP | Các project trong `examples/` và `test_projects/` | Kiểm thử chức năng |
-| OWASP Benchmark | Java | Benchmark mở rộng | Bổ sung nếu đủ thời gian |
+| Bộ dữ liệu | Ngôn ngữ | Vai trò |
+|---|---|---|
+| Synthetic Dataset tự tạo | Python | Ground truth chính cho benchmark sâu |
+| Juliet Test Suite | Java | Baseline chuẩn cho đối chứng mở rộng |
+| Dự án mẫu nội bộ | Python, JS, Java, PHP | Kiểm thử chức năng và demo |
+| OWASP Benchmark | Java | Bổ sung nếu đủ thời gian |
 
-### 5.2. Kết quả thực nghiệm của bộ quét Deterministic Core
+Đối với **Synthetic Dataset cho Python**, đề tài dự kiến xây dựng 50-100 mẫu có nhãn rõ ràng theo 5 nhóm lỗi ưu tiên. Quy trình gắn nhãn được thực hiện như sau:
 
-Đánh giá năng lực của phần quét tĩnh độc lập. Ghi nhận số lượng lỗ hổng thô phát hiện được, thời gian quét và các trường hợp bỏ sót lỗi (False Negatives).
+1. Mỗi mẫu được mô tả rõ source, sink, sanitizer và nhãn kỳ vọng.
+2. Hai thành viên gắn nhãn độc lập.
+3. Các trường hợp bất đồng được rà soát lại thủ công.
+4. Bộ nhãn cuối cùng được dùng làm ground truth cho benchmark chính.
 
-### 5.3. Kết quả thực nghiệm sau khi tích hợp lớp AI Triage
+### 5.3. Chỉ số đánh giá
 
-Đo lường sự thay đổi của kết quả sau khi luồng Agentic Loop chạy qua:
+Đề tài sử dụng các chỉ số sau:
 
-- Số lượng lỗi được gán nhãn `suppressed` (loại bỏ cảnh báo giả).
-- Số lượng lỗi được xác nhận chính xác (`confirmed`).
-- Thời gian xử lý trung bình của Agent trên mỗi lỗi phát hiện.
-- Chi phí token trung bình trên mỗi finding.
+- **Precision** = TP / (TP + FP)
+- **Recall** = TP / (TP + FN)
+- **F1-Score** = 2 x Precision x Recall / (Precision + Recall)
+- **False-Positive Reduction Rate**
+- **Runtime**
+- **Token Usage**
 
-### 5.4. Đánh giá phân rã (Ablation Study) và So sánh Baseline
+Ngoài ra, có thể bổ sung đánh giá định tính cho explanation theo các tiêu chí:
 
-#### 5.4.1. So sánh hiệu năng với công cụ Baseline (Semgrep)
+- có nêu được source/sink hay không;
+- có dùng đúng evidence hay không;
+- có remediation suggestion phù hợp hay không.
 
-Chạy cả Aegis-SAST và Semgrep trên cùng một tập dữ liệu benchmark. Tính toán và vẽ biểu đồ so sánh dựa trên 3 chỉ số chính:
+### 5.4. Các kịch bản thực nghiệm
 
-- **Precision** = TP / (TP + FP) — Tỷ lệ cảnh báo đúng trong tổng số cảnh báo phát ra.
-- **Recall** = TP / (TP + FN) — Tỷ lệ lỗ hổng thật được phát hiện trong tổng số lỗ hổng thực tế.
-- **F1-Score** = 2 x Precision x Recall / (Precision + Recall) — Trung bình điều hòa giữa Precision và Recall.
+#### 5.4.1. E1: Static-only vs Static + AI Triage
 
-Chứng minh bằng số liệu thực tế rằng lớp AI Triage giúp nâng cao đáng kể chỉ số Precision thông qua việc lọc bỏ các cảnh báo sai mà không làm giảm Recall.
+Mục tiêu là đo trực tiếp tác động của lớp AI triage lên false positive.
 
-#### 5.4.2. Đo lường hiệu quả của lớp Knowledge Loading (Ablation E2)
+#### 5.4.2. E2: Không Knowledge vs Có Knowledge
 
-So sánh kết quả phân loại lỗi của AI Agent trong 2 kịch bản: có nạp Knowledge Cards và không nạp Knowledge Cards. Đánh giá chất lượng của phần diễn giải lỗi (Explanation) và hướng sửa lỗi (Remediation Notes).
+Mục tiêu là đo ảnh hưởng của Knowledge Cards lên explanation, triage status và tính ổn định của đầu ra.
 
-#### 5.4.3. Đo lường hiệu quả của cấu trúc đồ thị LangGraph (Ablation E3)
+#### 5.4.3. E3: Single-prompt vs LangGraph workflow
 
-So sánh độ ổn định và tính nhất quán đầu ra của cấu trúc đồ thị LangGraph có phản biện (Stateful Multi-agent) so với việc chỉ gọi LLM bằng một câu lệnh Prompt tuyến tính duy nhất (Single-prompt Verification).
+Mục tiêu là kiểm tra workflow có trạng thái và có phản biện có tạo đầu ra ổn định hơn cách gọi LLM tuyến tính hay không.
 
----
+#### 5.4.4. E4: AST/Taint vs AST/Taint + DFG-lite/CFG-lite
 
-# PHẦN BA: KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
+Mục tiêu là chứng minh phần evidence sâu có tác động trực tiếp đến Precision và chất lượng path reasoning trên Python.
 
-## Tóm tắt kết quả đạt được
+#### 5.4.5. So sánh với baseline
 
-Hệ thống Aegis-SAST đã chuyển đổi thành công sang kiến trúc Agentic Hybrid SAST. Bằng chứng phân tích tĩnh từ bộ quét AST đã tạo nền tảng vững chắc cho lớp AI Agent phân tích, giúp giảm tỷ lệ False Positive xuống mức tối thiểu, đồng thời cung cấp hướng sửa lỗi chất lượng cao thông qua định dạng SARIF tiêu chuẩn.
-
-## Đóng góp khoa học của đề tài
-
-### Đóng góp kỹ thuật
-
-- Tích hợp phân tích tĩnh đa ngôn ngữ với AI Triage trong cùng một pipeline.
-- Xây workflow agent bằng LangGraph cho bài toán SAST.
-- Bổ sung lớp Knowledge Loading cho quá trình triage.
-- Tạo đầu ra báo cáo giàu ngữ cảnh hơn scanner truyền thống.
-
-### Đóng góp nghiên cứu
-
-- Đánh giá tác động của AI Triage lên False Positive (RQ1).
-- Đánh giá tác động của Knowledge Loading lên chất lượng explanation (RQ2).
-- Đánh giá tác động của workflow có trạng thái lên độ ổn định của AI (RQ3).
-- Đánh giá vai trò của Dataflow Evidence trong quá trình triage (RQ4).
-
-## Hướng phát triển
-
-- Mở rộng cơ chế Cross-file sang các ngôn ngữ khác (Java, JavaScript).
-- Nghiên cứu tích hợp cơ chế tự động sửa lỗi và kiểm thử hồi quy (Auto-remediation và Agentic Regression Testing).
-- Xây dựng dashboard trực quan hóa kết quả quét cho môi trường doanh nghiệp.
+Đề tài thực hiện so sánh Aegis-SAST với Semgrep trên cùng tập dữ liệu để lượng hóa ưu điểm và giới hạn của hướng hybrid triage.
 
 ---
 
-## Rủi ro và Hướng giảm thiểu
+# PHẦN BA: KẾT QUẢ KỲ VỌNG, ĐÓNG GÓP VÀ HƯỚNG PHÁT TRIỂN
 
-**Bảng 11. Phân tích rủi ro và phương án giảm thiểu**
+## 1. Kết quả kỳ vọng
+
+Đề tài kỳ vọng tạo ra một prototype Aegis-SAST có các đặc điểm:
+
+- có scanner đa ngôn ngữ dựa trên AST;
+- có phân tích sâu cho Python với call graph, DFG-lite và CFG-lite;
+- có workflow LangGraph cho AI triage;
+- có knowledge layer để hỗ trợ explanation;
+- có đầu ra SARIF và benchmark đối chứng.
+
+## 2. Đóng góp kỹ thuật
+
+- Chuẩn hóa finding theo hướng evidence-aware.
+- Bổ sung DFG-lite và CFG-lite cho Python trong bài toán SAST thực nghiệm.
+- Xây dựng workflow LangGraph cho triage có phản biện.
+- Tổ chức đầu ra báo cáo và benchmark phù hợp cho nghiên cứu.
+
+## 3. Đóng góp nghiên cứu
+
+- Đo lường tác động của AI triage lên false positive.
+- Đo lường tác động của Knowledge Loading lên explanation và sự ổn định.
+- Đo lường tác động của evidence sâu (DFG-lite/CFG-lite) lên Precision.
+- Đo lường sự khác biệt giữa workflow LangGraph và single-prompt verification.
+
+## 4. Hướng phát triển
+
+- Mở rộng cross-file analysis sang ngôn ngữ khác ngoài Python.
+- Nghiên cứu remediation có kiểm soát và regression testing tự động.
+- Mở rộng benchmark và tích hợp CI/CD sâu hơn.
+
+## 5. Rủi ro và hướng giảm thiểu
+
+**Bảng 9. Rủi ro và hướng giảm thiểu**
 
 | Rủi ro | Hướng giảm thiểu |
 |---|---|
-| Phạm vi quá rộng | Khóa ngôn ngữ và nhóm lỗ hổng ưu tiên ngay từ đầu |
-| AI Triage thiếu ổn định | Dùng structured output (Pydantic), rubric rõ ràng và log đầy đủ |
-| Benchmark thiếu Ground Truth | Ưu tiên bộ Synthetic Dataset có kiểm chứng thủ công + Juliet Test Suite |
-| Agent quá phức tạp | Giữ số node ở mức cần thiết, không mở rộng quá sớm |
-| Chi phí API token cao khi chạy Agent cho hàng trăm finding | Áp dụng Conditional Routing (finding High Confidence đi thẳng Judge), batch grouping, caching kết quả với diskcache |
-| Self-bias giữa Reviewer và Skeptic cùng dùng một LLM | Dùng prompt persona khác nhau, temperature khác nhau cho mỗi agent role |
+| Phạm vi quá rộng | Khóa ngôn ngữ sâu ở Python và giới hạn 5 nhóm lỗi ưu tiên |
+| Token API cao | Dùng conditional routing, caching và giới hạn số finding qua Skeptic |
+| Workflow agent quá phức tạp | Giữ số node ở mức cần thiết, không mở rộng quá sớm |
+| Dataset thiếu ground truth | Xây synthetic dataset có gắn nhãn chéo bởi 2 thành viên |
+| Môi trường cài đặt không ổn định | Chuẩn hóa môi trường CPython và tách phụ thuộc core/AI |
 
----
+## 6. Giới hạn đạo đức
 
-## Giới hạn đạo đức (Ethical Considerations)
+Hệ thống chỉ thực hiện phân tích tĩnh trên mã nguồn được cung cấp, không thực thi mã, không khai thác lỗ hổng trên hệ thống thật và không thu thập dữ liệu cá nhân. Mục tiêu duy nhất là hỗ trợ phát hiện và giảm rủi ro bảo mật trong quá trình phát triển phần mềm.
 
-Hệ thống Aegis-SAST chỉ thực hiện phân tích tĩnh trên mã nguồn đã được cung cấp. Hệ thống không thực thi mã nguồn, không gửi payload tấn công, không khai thác lỗ hổng trên hệ thống thật và không thu thập dữ liệu cá nhân. Mục đích duy nhất của công cụ là hỗ trợ nhà phát triển phát hiện và khắc phục lỗ hổng bảo mật trong giai đoạn phát triển phần mềm.
+## 7. Tài liệu tham khảo
 
----
-
-# TÀI LIỆU THAM KHẢO
-
-1. OWASP Foundation. (2025). *OWASP Top 10 Application Security Risks*. https://owasp.org/www-project-top-ten/
-2. MITRE Corporation. (2025). *Common Weakness Enumeration (CWE)*. https://cwe.mitre.org/
-3. Al-Amin, M., et al. (2024). *Large Language Models for Code Vulnerability Detection: Bridges and Gaps*. arXiv preprint.
-4. LangGraph documentation. https://langchain-ai.github.io/langgraph/
-5. OASIS Open. (2024). *Static Analysis Results Interchange Format (SARIF) v2.1.0*. https://www.oasis-open.org/committees/sarif/
-6. OWASP Foundation. (2024). *OWASP Benchmark Project*. https://owasp.org/www-project-benchmark/
-7. NIST. (2024). *Juliet Test Suite for C/C++ and Java*. https://samate.nist.gov/
-8. Semgrep Inc. (2025). *Semgrep — Lightweight static analysis*. https://semgrep.dev/
-9. Google DeepMind. (2025). *Gemini API Documentation*. https://ai.google.dev/
-10. Li, H., et al. (2024). *LLM-Assisted Static Analysis for Detecting Security Vulnerabilities*. IEEE S&P Workshop.
+1. OWASP Foundation. *OWASP Top 10 Application Security Risks*.
+2. MITRE. *Common Weakness Enumeration (CWE)*.
+3. OASIS. *Static Analysis Results Interchange Format (SARIF) v2.1.0*.
+4. LangGraph Documentation.
+5. NIST. *Juliet Test Suite*.
+6. OWASP Benchmark Project.
+7. Semgrep Documentation.
+8. CodeQL Documentation.
+9. Các nghiên cứu liên quan đến LLM-based vulnerability triage và automated vulnerability repair.

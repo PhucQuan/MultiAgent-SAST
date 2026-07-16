@@ -3,7 +3,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from aegis_sast.core.models import ScanResult, Vulnerability
 from aegis_sast.triage.schema import TriageRecord
@@ -21,6 +21,7 @@ class JSONExporter:
         scan_result: ScanResult,
         filename: str = None,
         triage_records: Optional[List[TriageRecord]] = None,
+        workflow_metadata: Optional[Dict[str, object]] = None,
     ) -> Path:
         """Export scan results to a JSON report file."""
         if not filename:
@@ -45,6 +46,8 @@ class JSONExporter:
 
         if triage_records:
             report["triage_summary"] = self._build_triage_summary(triage_records)
+        if workflow_metadata:
+            report["workflow_summary"] = self._build_workflow_summary(workflow_metadata)
 
         with open(output_path, "w", encoding="utf-8") as file_handle:
             json.dump(report, file_handle, indent=2, ensure_ascii=False)
@@ -71,6 +74,7 @@ class JSONExporter:
         """Convert a triage record to a JSON-friendly dictionary."""
         payload = record.finding.to_dict()
         payload["triage_decision"] = record.decision.to_dict()
+        payload["agent_reviews"] = JSONExporter._build_agent_reviews(record)
         return payload
 
     @staticmethod
@@ -81,3 +85,32 @@ class JSONExporter:
             status = record.decision.status.value
             summary[status] = summary.get(status, 0) + 1
         return summary
+
+    @staticmethod
+    def _build_agent_reviews(record: TriageRecord) -> dict:
+        """Extract node-level workflow reviews from finding metadata."""
+        metadata = record.finding.metadata
+        return {
+            "auditor_review": metadata.get("auditor_review"),
+            "skeptic_review": metadata.get("skeptic_review"),
+            "judge_review": metadata.get("judge_review"),
+        }
+
+    @staticmethod
+    def _build_workflow_summary(workflow_metadata: Dict[str, object]) -> dict:
+        """Keep the most relevant workflow metadata for report consumers."""
+        keys = [
+            "scan_profile",
+            "framework_hints",
+            "knowledge_card_count",
+            "triage_summary",
+            "route_summary",
+            "auditor_summary",
+            "skeptic_summary",
+            "judge_summary",
+        ]
+        return {
+            key: workflow_metadata[key]
+            for key in keys
+            if key in workflow_metadata
+        }

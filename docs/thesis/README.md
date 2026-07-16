@@ -2,6 +2,26 @@
 
 Thu muc nay tong hop phan hien trang, huong nang cap, benchmark, demo, va bo cau hoi phan bien de dua Aegis-SAST tu muc portfolio len muc do an tot nghiep.
 
+## Cum tien do 20-31 da dat duoc gi
+
+Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
+
+1. **Triage va workflow**
+   - `20`, `21`, `22`, `23`, `26`
+   - Da co knowledge cards, workflow-state, repo intake, node contracts, va workflow metadata di xuyen qua report/SARIF.
+
+2. **Moi truong va kha nang chay that**
+   - `24`, `25`
+   - Da co huong dan tuong thich CPython, smoke test nhe, va cach phan tach loi moi truong khoi loi scanner.
+
+3. **Python graph core**
+   - `27`, `28`, `29`, `30`
+   - Da co explicit CFG/DFG, taint kill, dead-path pruning, `try/except/finally`, `break/continue`, `loop else`, function summary, va graph smoke script doc lap.
+
+4. **Danh gia nghien cuu**
+   - `31`
+   - Da co mini benchmark ablation co dataset synthetic, runner, JSON/Markdown output, va so lieu de viet phan thuc nghiem so bo.
+
 ## Thu tu nen doc
 
 1. `00-tong-hop-da-lam.md`
@@ -18,10 +38,19 @@ Thu muc nay tong hop phan hien trang, huong nang cap, benchmark, demo, va bo cau
 12. `20-knowledge-cards-va-triage-engine-v1.md`
 13. `21-workflow-state-va-langgraph-ready-orchestration.md`
 14. `22-repo-intake-va-scan-profile-v1.md`
-15. `06-lo-trinh-phat-trien.md`
-16. `07-ke-hoach-benchmark.md`
-17. `08-kich-ban-demo.md`
-18. `09-cau-hoi-phan-bien.md`
+15. `23-auditor-skeptic-judge-va-source-context-v1.md`
+16. `24-cai-dat-moi-truong-va-smoke-test-v1.md`
+17. `25-tuong-thich-moi-truong-va-khuyen-nghi-cpython.md`
+18. `26-workflow-metadata-vao-report-va-sarif.md`
+19. `27-python-dfg-cfg-explicit-graph-v1.md`
+20. `28-python-cfg-dfg-v1-1-taint-kill-va-dead-path.md`
+21. `29-python-cfg-dfg-v1-2-loop-control-va-function-summary.md`
+22. `30-manual-graph-smoke-va-kiem-thu-core.md`
+23. `31-mini-benchmark-ablation-python-graph-v1-2.md`
+24. `06-lo-trinh-phat-trien.md`
+25. `07-ke-hoach-benchmark.md`
+26. `08-kich-ban-demo.md`
+27. `09-cau-hoi-phan-bien.md`
 
 ## Muc luc tai lieu
 
@@ -50,3 +79,12 @@ Thu muc nay tong hop phan hien trang, huong nang cap, benchmark, demo, va bo cau
 | `20-knowledge-cards-va-triage-engine-v1.md` | Mo ta bo knowledge cards, triage engine, workflow route seed, va cach tich hop vao pipeline scan hien tai |
 | `21-workflow-state-va-langgraph-ready-orchestration.md` | Mo ta lop workflow-state moi, route summary, trace node, va vi sao day la buoc dem dung truoc khi tich hop LangGraph that su |
 | `22-repo-intake-va-scan-profile-v1.md` | Mo ta lop repo intake moi, cach detect ngon ngu/framework, scan profile, va gia tri cua metadata nay doi voi workflow agent va benchmark |
+| `23-auditor-skeptic-judge-va-source-context-v1.md` | Mo ta node-level contracts cho Auditor, SkepticValidator, Judge, bo doc source context, va cach workflow da bat dau co hanh vi tung node that su |
+| `24-cai-dat-moi-truong-va-smoke-test-v1.md` | Giai thich van de cai dat tren moi truong Windows UCRT, cach dong bo dependency, va cach chay smoke test nhe truoc khi chay full CLI |
+| `25-tuong-thich-moi-truong-va-khuyen-nghi-cpython.md` | Chot ro van de tuong thich interpreter/ABI, vi sao MSYS2/UCRT gay loi cho stack native, va vi sao CPython chuan la moi truong khuyen nghi |
+| `26-workflow-metadata-vao-report-va-sarif.md` | Mo ta viec dua workflow summary va node-level reviews vao JSON, Markdown va SARIF de output the hien ro gia tri cua lop triage/orchestration |
+| `27-python-dfg-cfg-explicit-graph-v1.md` | Ghi lai buoc nang cap sang explicit Python CFG/DFG graph, cach tich hop vao plugin/detector, va y nghia cua no doi voi khoa luan va benchmark |
+| `28-python-cfg-dfg-v1-1-taint-kill-va-dead-path.md` | Ghi lai dot nang cap tiep theo cua graph engine: kill-set cho safe overwrite, pruning dead path, va modeling co ban cho try/except/finally |
+| `29-python-cfg-dfg-v1-2-loop-control-va-function-summary.md` | Ghi lai moc nang cap tiep theo cua graph engine: loop control cho break/continue va function summary de suy luan taint qua helper local tot hon |
+| `30-manual-graph-smoke-va-kiem-thu-core.md` | Ghi lai script smoke test doc lap cho graph core, cach chay, va gia tri cua no doi voi phat trien, demo va bao cao khoa luan |
+| `31-mini-benchmark-ablation-python-graph-v1-2.md` | Ghi lai bo benchmark synthetic nho cho Python graph v1.2, cac mode ablation, ket qua hien tai va cach dien giai trong bao cao |

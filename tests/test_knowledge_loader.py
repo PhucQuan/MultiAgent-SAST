@@ -1,6 +1,7 @@
 """Tests for built-in knowledge cards."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import aegis_sast.knowledge.loader as loader_module
 from aegis_sast.knowledge import KnowledgeLoader
@@ -61,3 +62,37 @@ def test_loader_reads_yaml_cards_without_pyyaml(tmp_path, monkeypatch):
     assert len(cards) == 1
     assert cards[0].card_id == "custom-command-card"
     assert cards[0].remediation_notes == ["use subprocess argument arrays"]
+
+
+def test_loader_falls_back_when_pyyaml_cannot_parse_scalar_tokens(tmp_path, monkeypatch):
+    """PyYAML parse errors should not break the whole knowledge-loading pipeline."""
+    card_path = tmp_path / "java-card.yaml"
+    card_path.write_text(
+        "\n".join(
+            [
+                "card_id: java-card",
+                "title: Java Card",
+                "language: java",
+                "sources:",
+                "  - \"@RequestParam\"",
+                "sinks:",
+                "  - Statement.executeQuery",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    class BrokenYamlModule:
+        """Minimal stub that mimics a PyYAML parser failure."""
+
+        @staticmethod
+        def safe_load(_raw_text):
+            raise ValueError("synthetic yaml parse failure")
+
+    monkeypatch.setattr(loader_module, "yaml", BrokenYamlModule())
+
+    loader = KnowledgeLoader(Path(tmp_path))
+    cards = loader.load_directory()
+
+    assert len(cards) == 1
+    assert cards[0].sources == ["@RequestParam"]

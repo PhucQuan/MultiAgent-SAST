@@ -1,6 +1,7 @@
 """Tests for the staged workflow-state orchestration layer."""
 
 from datetime import datetime
+from pathlib import Path
 
 from aegis_sast.core.models import (
     AIVerification,
@@ -110,5 +111,56 @@ def test_scan_workflow_builds_state_with_route_and_triage_summaries():
     assert state.metadata["triage_summary"]["suppressed"] == 1
     assert state.metadata["route_summary"]["direct-judge"] == 1
     assert state.metadata["route_summary"]["skeptic-review"] == 1
+    assert state.metadata["skeptic_summary"]["executed"] == 1
     assert state.traces[0].node_name == "repo_intake"
-    assert len(state.traces) == 7
+    assert state.traces[5].node_name == "skeptic_validator"
+    assert len(state.traces) == 8
+
+
+def test_scan_workflow_promotes_strong_sqli_to_likely(tmp_path):
+    """Workflow should promote strong unmitigated SQLi findings to likely."""
+    target = Path(tmp_path) / "app.py"
+    target.write_text(
+        "\n".join(
+            [
+                "import sqlite3",
+                "user_id = request.args.get('id')",
+                "query = \"SELECT * FROM users WHERE id = '\" + user_id + \"'\"",
+                "cursor.execute(query)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    source = TaintSource(
+        CodeLocation(str(target), 2, 1, "user_id = request.args.get('id')"),
+        "HTTP_PARAM",
+        "user_id",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 4, 1, "cursor.execute(query)"),
+        VulnerabilityType.SQL_INJECTION,
+        "cursor.execute",
+        ".execute(",
+    )
+    vulnerability = Vulnerability(
+        id="VULN-203",
+        vuln_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(source=source, sink=sink),
+    )
+    result = ScanResult(
+        target_path=str(target),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[vulnerability],
+        files_scanned=1,
+    )
+
+    state = ScanWorkflow().run(result)
+
+    assert state.metadata["triage_summary"]["likely"] == 1
+    assert state.metadata["skeptic_summary"]["executed"] == 1
+    assert state.triage_records[0].decision.status.value == "likely"
+    assert state.triage_records[0].decision.confidence >= 0.72
