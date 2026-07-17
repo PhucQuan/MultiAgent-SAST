@@ -1,6 +1,6 @@
 # Bo tai lieu do an cho Aegis-SAST
 
-Thu muc nay tong hop phan hien trang, huong nang cap, benchmark, demo, va bo cau hoi phan bien de dua Aegis-SAST tu muc portfolio len muc do an tot nghiep.
+Thu muc nay tong hop phan hien trang, huong nang cap, benchmark, demo, va bo cau hoi phan bien de dua Aegis-SAST tu muc portfolio len muc do an tot nghiep va de tai NCKH co co so ky thuat ro rang.
 
 ## Cum tien do 20-31 da dat duoc gi
 
@@ -21,6 +21,16 @@ Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
 4. **Danh gia nghien cuu**
    - `31`
    - Da co mini benchmark ablation co dataset synthetic, runner, JSON/Markdown output, va so lieu de viet phan thuc nghiem so bo.
+
+## File 32 bo sung gi
+
+File `32-roadmap-4-6-thang-hybrid-sast-agent.md` chot huong trien khai tiep theo theo scope 4-6 thang, gom:
+
+- `Python = deep lane`;
+- `JavaScript/Java = breadth lane`;
+- `Semgrep = baseline cong nghiep`;
+- `LangGraph + Local LLM + RAG = lop AI hien dai`;
+- `benchmark + SARIF + CI = lop chung minh gia tri khoa hoc va san pham`.
 
 ## Thu tu nen doc
 
@@ -47,10 +57,11 @@ Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
 21. `29-python-cfg-dfg-v1-2-loop-control-va-function-summary.md`
 22. `30-manual-graph-smoke-va-kiem-thu-core.md`
 23. `31-mini-benchmark-ablation-python-graph-v1-2.md`
-24. `06-lo-trinh-phat-trien.md`
-25. `07-ke-hoach-benchmark.md`
-26. `08-kich-ban-demo.md`
-27. `09-cau-hoi-phan-bien.md`
+24. `32-roadmap-4-6-thang-hybrid-sast-agent.md`
+25. `06-lo-trinh-phat-trien.md`
+26. `07-ke-hoach-benchmark.md`
+27. `08-kich-ban-demo.md`
+28. `09-cau-hoi-phan-bien.md`
 
 ## Muc luc tai lieu
 
@@ -88,3 +99,4 @@ Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
 | `29-python-cfg-dfg-v1-2-loop-control-va-function-summary.md` | Ghi lai moc nang cap tiep theo cua graph engine: loop control cho break/continue va function summary de suy luan taint qua helper local tot hon |
 | `30-manual-graph-smoke-va-kiem-thu-core.md` | Ghi lai script smoke test doc lap cho graph core, cach chay, va gia tri cua no doi voi phat trien, demo va bao cao khoa luan |
 | `31-mini-benchmark-ablation-python-graph-v1-2.md` | Ghi lai bo benchmark synthetic nho cho Python graph v1.2, cac mode ablation, ket qua hien tai va cach dien giai trong bao cao |
+| `32-roadmap-4-6-thang-hybrid-sast-agent.md` | Chot roadmap 4-6 thang tiep theo, tach ro must-have, strong contribution, stretch goal, va thu tu nang cap de tai theo huong Hybrid SAST + agent + benchmark |

@@ -1,407 +1,218 @@
-<div align="center">
+# Aegis-SAST
 
-# 🔒 Aegis-SAST
+Aegis-SAST is a thesis-scale Hybrid SAST platform that combines deterministic static analysis with evidence-aware AI triage. The repository is no longer just a simple AST demo: it already contains a multi-language plugin framework, a Python graph-analysis lane, normalized findings and triage records, workflow-state orchestration, SARIF export, and an initial benchmark track for research evaluation.
 
-**AI-Powered Static Application Security Testing Tool**
+The project is being developed toward a larger graduation-thesis and NCKH scope:
 
-*Built for penetration testers and security engineers — finds vulnerabilities before attackers do.*
+- Python is the deep research lane.
+- JavaScript and Java are the breadth lanes that must work in practice.
+- Semgrep is the first industrial baseline to integrate.
+- LangGraph, Local LLM, and RAG are the target AI workflow layer.
+- Benchmarking is a required research contribution, not an optional extra.
 
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python)](https://python.org)
-[![Languages](https://img.shields.io/badge/Languages-Python%20%7C%20JS%20%7C%20Java%20%7C%20PHP-green)](#language-support)
-[![OWASP Top 10](https://img.shields.io/badge/OWASP-Top%2010%202021-red)](https://owasp.org/Top10/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+## Why this repository matters
 
-</div>
+Traditional SAST tools often optimize recall but produce too many false positives, which makes manual review slow and expensive. Aegis-SAST is aimed at the space between:
 
----
+- rule-based static analysis that is deterministic but noisy; and
+- LLM-based triage that is flexible but weak if it receives poor evidence.
 
-## What is Aegis-SAST?
+The core idea is to strengthen the scanner first, then feed compact and structured evidence into an AI triage workflow.
 
-Aegis-SAST is a **static analysis tool** that scans source code for security vulnerabilities using a two-layer approach:
-
-1. **Layer 1 — Tree-sitter AST Analysis**: Parses source code into an Abstract Syntax Tree and tracks how untrusted user input (sources) flows into dangerous functions (sinks) without being sanitized — this is called **Taint Analysis**.
-2. **Layer 2 — Gemini AI Verification**: Each potential finding is verified by Google Gemini to reduce false positives and provide remediation advice.
-
-> This tool is designed to detect real, exploitable vulnerabilities — not just flag dangerous function names.
-
----
-
-## Architecture
+## Current architecture
 
 ```mermaid
 graph TD
-    A[Source Files<br/>.py .js .java .php] --> B[Plugin Registry]
-    B --> C{Language Plugin}
-    C --> D[Tree-sitter AST Parser]
-    D --> E[Taint Analysis Engine]
-
-    F[rules/python.yaml<br/>rules/javascript.yaml<br/>rules/java.yaml<br/>rules/php.yaml] --> G[Rule Engine<br/>Sources · Sinks · Sanitizers]
-    G --> E
-
-    H[call_graph.py<br/>FunctionIndex + ImportResolver] --> E
-    E --> I[Vulnerability Findings]
-    I --> J{AI Verification<br/>Gemini API}
-    J --> K[JSON Report]
-    J --> L[Markdown Report]
+    A["Source code (.py, .js, .java, .php)"] --> B["Repo intake and scan profile"]
+    B --> C["Language plugins and rule engine"]
+    C --> D["AST parsing and taint/dataflow detection"]
+    D --> E["Normalized finding and evidence bundle"]
+    E --> F["Triage workflow state"]
+    F --> G["Auditor / Skeptic / Judge"]
+    G --> H["JSON / Markdown / SARIF reports"]
+    H --> I["Benchmark, CI, and thesis evaluation"]
 ```
 
-## Repository Layout
+## Current technical position
 
-The repository is now organized to separate product code, research assets, and
-developer fixtures more clearly:
+| Area | Status now | Notes |
+|---|---|---|
+| Multi-language plugin framework | Implemented | Python, JavaScript, Java, PHP |
+| Rule-based detection | Implemented | YAML rules for sources, sinks, sanitizers |
+| Python graph core | Implemented | Explicit CFG/DFG, taint kill, dead-path pruning, loop control, function summary |
+| JavaScript lane | Basic | Intra-file parsing and taint heuristics |
+| Java lane | Basic | Intra-file parsing and taint heuristics |
+| PHP lane | Basic | Intra-file plugin exists, not the main research focus |
+| Normalized findings | Implemented | Shared schema for reporting and triage |
+| Knowledge-assisted triage | Implemented | Knowledge cards and triage engine seed |
+| Workflow-state orchestration | Implemented | LangGraph-ready node structure and route metadata |
+| SARIF export | Implemented | JSON, Markdown, SARIF |
+| Python graph benchmark | Implemented | Synthetic ablation dataset and benchmark runner |
+| Semgrep adapter | Planned | Baseline and industrial comparison |
+| Local LLM / RAG | Planned | Next AI layer after evidence and workflow |
+| Fine-tuning / LoRA | Planned | Stretch goal after labeled triage data exists |
+
+## Analysis depth by language
+
+One of the most important scope decisions in this repository is to separate depth from breadth.
+
+| Language | Current depth | What that means |
+|---|---|---|
+| Python | Deep | Explicit CFG/DFG lane, function summaries, graph metadata, benchmark track |
+| JavaScript | Intra-file | Tree-sitter parsing, source/sink/sanitizer extraction, basic taint heuristics |
+| Java | Intra-file | Tree-sitter parsing, source/sink/sanitizer extraction, basic taint heuristics |
+| PHP | Intra-file | Plugin lane exists, but not the primary thesis contribution |
+
+This is intentional. Python is the research contribution lane; JavaScript and Java are the practical multi-language breadth lanes.
+
+## Repository layout
 
 ```text
 aegis_sast/        core scanner, plugins, analysis, triage, orchestration, integrations
-benchmarks/        baseline comparison plans and evaluation fixtures
-datasets/          synthetic or labeled research datasets
-docs/thesis/       graduation-thesis and defense documents
-examples/          user-facing demo samples
-refs/              third-party reference snapshots
-scripts/           workflow utilities and future benchmark helpers
-skills/            local skill pack for agent-oriented development
-test_projects/     quick local scan targets for manual debugging
+benchmarks/        benchmark outputs and future baseline comparisons
+datasets/          synthetic and labeled evaluation assets
+docs/thesis/       thesis, defense, roadmap, and research planning documents
+examples/          intentionally vulnerable demo files
+refs/              local reference snapshots (ignored by git)
+scripts/           smoke tests, environment checks, benchmark runners
+test_projects/     manual local scan targets
 tests/             unit and regression tests
 ```
 
-Design direction:
+## Thesis-scale progress already completed
 
-- `aegis_sast/analysis` remains the deterministic core
-- `aegis_sast/triage` holds normalized finding and review decisions
-- `aegis_sast/orchestration` is reserved for workflow and LangGraph-style state
-- `aegis_sast/knowledge` is reserved for YAML knowledge cards and loaders
-- `aegis_sast/integrations` contains CI-facing export formats such as SARIF
+The recent thesis-focused work from `docs/thesis/20..31` established four major layers:
 
-## Recent Thesis-Scale Progress
+1. Triage and workflow foundation
+2. Environment and runtime stability
+3. Python graph-analysis core
+4. Research evaluation through a mini benchmark
 
-The latest thesis-focused work in `docs/thesis/20..31` has already moved the
-project beyond a simple AST demo. The main completed areas are:
-
-| Thesis docs | What is implemented now |
-|---|---|
-| `20` | knowledge cards and a triage engine seed for evidence-aware review |
-| `21` | workflow-state orchestration that is ready to map into LangGraph-style nodes |
-| `22` | repo intake, language detection, framework hints, and scan-profile routing |
-| `23` | Auditor / Skeptic / Judge node contracts plus source-context handling |
-| `24` | installation notes and lightweight smoke-test flow for unstable environments |
-| `25` | CPython-first environment guidance for Windows and native-package reliability |
-| `26` | workflow metadata exported into JSON, Markdown, and SARIF |
-| `27` | explicit Python CFG/DFG graph foundation (`python_flow_graph.py`) |
-| `28` | taint-kill, dead-path pruning, and basic `try/except/finally` control-flow support |
-| `29` | `break` / `continue`, `loop else`, local function summaries, and richer path metadata |
-| `30` | `scripts/manual_graph_smoke.py` for graph-core verification without Tree-sitter |
-| `31` | synthetic ablation benchmark for Python graph v1.2 with JSON/Markdown outputs |
-
-From an engineering perspective, the repository now has:
-
-- a normalized finding and evidence pipeline for triage/reporting
-- staged orchestration nodes that can evolve into a full agent workflow
-- enriched SARIF / Markdown / JSON outputs with workflow and graph evidence
-- an explicit Python graph-analysis core that is already testable outside the full plugin stack
-- a repeatable mini benchmark for graph ablation, not just a benchmark plan on paper
-
-### How Taint Analysis Works
-
-```
-Source (untrusted input)
-  │
-  │  request.args.get('id')          ← HTTP parameter
-  ▼
-Propagation (variable tracking)
-  │
-  │  user_id = request.args.get('id')
-  │  query   = f"SELECT * FROM users WHERE id={user_id}"
-  ▼
-Sink (dangerous function)
-  │
-  │  db.execute(query)               ← SQL Injection!
-  ▼
-Finding: [CRITICAL] SQL_INJECTION @ app.py:42
-```
-
-### Cross-file Tracking (Level-B Inter-procedural)
-
-```
-utils.py                         app.py
-─────────────────────            ──────────────────────────
-def get_command():               from utils import get_command
-    cmd = request.args.get('cmd')
-    return cmd                   cmd = get_command()  ← Synthetic source
-                                 os.system(cmd)       ← SINK detected!
-```
-
----
-
-## Features
-
-### Language Support
-
-| Language | Extensions | Parser |
-|---|---|---|
-| 🐍 Python | `.py`, `.pyw` | tree-sitter-python |
-| 🟨 JavaScript / Node.js | `.js`, `.mjs`, `.cjs` | tree-sitter-javascript |
-| ☕ Java | `.java` | tree-sitter-java |
-| 🐘 PHP | `.php`, `.phtml` | tree-sitter-php |
-
-### OWASP Top 10 Coverage
-
-| Vulnerability | Python | JavaScript | Java | PHP |
-|---|:---:|:---:|:---:|:---:|
-| SQL Injection | ✅ | ✅ | ✅ | ✅ |
-| Command Injection (RCE) | ✅ | ✅ | ✅ | ✅ |
-| Code Injection | ✅ | ✅ | ✅ | ✅ |
-| Path Traversal / LFI | ✅ | ✅ | ✅ | ✅ |
-| Cross-Site Scripting (XSS) | ✅ | ✅ | ✅ | ✅ |
-| Server-Side Request Forgery | ✅ | ✅ | ✅ | ✅ |
-| XML External Entity (XXE) | ✅ | — | ✅ | ✅ |
-| NoSQL Injection | ✅ | ✅ | — | — |
-| Insecure Deserialization | ✅ | ✅ | ✅ | ✅ |
-| SSTI | ✅ | — | — | — |
-| IDOR | ✅ | — | — | — |
-| Mass Assignment | ✅ | — | — | — |
-| Open Redirect | ✅ | ✅ | ✅ | — |
-
-### Key Capabilities
-
-| Feature | Details |
-|---|---|
-| **AST-based analysis** | Uses Tree-sitter for precise, language-aware parsing — not just regex |
-| **Taint flow tracking** | Follows data from `source → variable → sink` through assignments and aliasing |
-| **Cross-file analysis** | Detects vulnerabilities that span multiple files via import tracking |
-| **Sanitizer awareness** | Recognises safe functions (e.g. `parameterized queries`, `htmlspecialchars`) and marks paths as low-risk |
-| **AI Verification** | Gemini API verifies each finding to suppress false positives |
-| **Reports and CI** | JSON, Markdown, and SARIF export for CI/CD and code scanning workflows |
-| **Docker support** | Run without installing anything locally |
-
----
+The next roadmap is captured in [docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md](docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md).
 
 ## Installation
 
-### Option 1: virtualenv + requirements (recommended)
+### Recommended environment
+
+Use official CPython on Windows, Linux, or macOS. Do not build the working environment from MSYS2/UCRT Python if you expect `tree-sitter` packages to install reliably.
 
 ```bash
-# Clone the repository
-git clone https://github.com/PhucQuan/SAST_tool4pentester.git
-cd SAST_tool4pentester
-
-# Check whether your interpreter is suitable
 python scripts/doctor_env.py
-
-# Windows PowerShell: prefer official CPython via the `py` launcher
 py -3.12 -m venv .venv
+```
 
-# Windows PowerShell
+Windows PowerShell:
+
+```powershell
 .\.venv\Scripts\Activate.ps1
-
-# Linux / macOS / Git Bash on Windows
-source .venv/bin/activate
-
-# Install runtime dependencies
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
-# Optional: install AI dependencies for Gemini verification
 python -m pip install -r requirements-ai.txt
-
-# Optional: install developer tooling
 python -m pip install -r requirements-dev.txt
+```
 
-# Optional: install the `aegis-sast` console command in editable mode
+Linux / macOS / Git Bash:
+
+```bash
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-ai.txt
+python -m pip install -r requirements-dev.txt
+```
+
+If you only need the module entrypoint, `python -m aegis_sast.cli ...` is enough. The editable install is optional:
+
+```bash
 python -m pip install -e . --no-deps
-
-# Set up Gemini API key (optional — tool works without AI verification)
-cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
 ```
 
-If you only need to run the scanner locally, `python -m aegis_sast.cli ...` is enough.
-The editable install is only needed when you want the `aegis-sast` command.
-`requirements.txt` is the core scanner stack. Gemini verification is now optional and lives in `requirements-ai.txt`.
+## Quick start
 
-On Windows, do **not** create the environment from MSYS2/UCRT Python if you want pip-installed native packages to work reliably. If `python scripts/doctor_env.py` reports `mingw_*` or `msys64`, recreate the venv with official CPython first.
-
-### Option 2: Docker
+Scan a single file:
 
 ```bash
-docker build -t aegis-sast .
-docker run --rm -v $(pwd)/target:/scan aegis-sast scan /scan
+python -m aegis_sast.cli scan examples/vulnerable_sqli.py --no-ai
 ```
 
----
+At startup the CLI now prints analyzer availability so you can see whether Python, JavaScript, Java, and PHP plugins were loaded successfully in the current environment.
 
-## Quick Start
+Scan a directory:
 
 ```bash
-# Scan a single Python file
-python -m aegis_sast.cli scan app.py
+python -m aegis_sast.cli scan test_projects/ --no-ai --output json --output markdown --output sarif
+```
 
-# Scan an entire project directory (all languages)
-python -m aegis_sast.cli scan ./my_project/
+Export to a custom output directory:
 
-# Scan without AI verification (faster)
-python -m aegis_sast.cli scan ./my_project/ --no-ai
-
-# Output only JSON report, to a custom directory
-python -m aegis_sast.cli scan ./my_project/ --output json --output-dir ./results/
-
-# Export SARIF for GitHub code scanning or CI pipelines
-python -m aegis_sast.cli scan ./my_project/ --output sarif --output-dir ./results/
-
-# Positive smoke sample that should produce findings
+```bash
 python -m aegis_sast.cli scan examples/vulnerable_sqli.py --no-ai --output json --output markdown --output sarif --output-dir reports/manual_smoke
 ```
 
-### Example Output
+## Useful development commands
 
-```
-╭─────────────────────────────────╮
-│ 🔒 Aegis-SAST Security Scanner  │
-│ AI-Powered Static Analysis Tool │
-╰─────────────────────────────────╯
-
-🔍 Scanning: examples/vulnerable_sqli.py
-
-┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ Metric         ┃     Value ┃
-┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
-│ Files Scanned  │         1 │
-│ Total Findings │         5 │
-│ 🔴 Critical    │         3 │
-│ 🟠 High        │         1 │
-│ 🟡 Medium      │         1 │
-└────────────────┴───────────┘
-
-⚠️  CRITICAL vulnerabilities found!
-```
-
----
-
-## How to Use Results
-
-Each report (JSON and Markdown) contains for every finding:
-
-- **Vulnerability type** (e.g. `SQL_INJECTION`)
-- **Severity** (`CRITICAL` / `HIGH` / `MEDIUM` / `LOW`)
-- **Source location** — the file and line where untrusted input enters
-- **Sink location** — the file and line of the dangerous function
-- **AI confidence score** and **remediation recommendation** (when AI is enabled)
-
----
-
-## Configuration
-
-| CLI Flag | Default | Description |
-|---|---|---|
-| `--no-ai` | AI enabled | Disable Gemini AI verification |
-| `--max-depth` | `5` | Maximum taint propagation depth |
-| `--output` | `json,markdown` | Output format(s): `json`, `markdown`, `sarif` |
-| `--output-dir` | `reports/` | Directory for report files |
-| `--rules` | auto | Path to custom rules YAML file |
-
-If `google-genai` is not installed, the CLI will automatically fall back to non-AI mode after printing a warning.
-
----
-
-## Writing Custom Rules
-
-Rules are defined in YAML files under `rules/`. Here is the structure:
-
-```yaml
-sources:
-  - pattern: "request.args.get"
-    type: "HTTP_PARAM"
-    severity: "HIGH"
-
-sinks:
-  sqli:
-    - pattern: ".execute("
-      type: "SQL_INJECTION"
-      severity: "CRITICAL"
-      description: "Raw SQL execution"
-
-sanitizers:
-  - pattern: "parameterize("
-    mitigates: ["SQL_INJECTION"]
-    description: "Safe parameterized query"
-```
-
-To add a new language: create `rules/<language>.yaml` and implement `aegis_sast/plugins/<language>_plugin.py`.
-
----
-
-## Limitations
-
-> [!NOTE]
-> Understanding the limitations helps interpret results accurately.
-
-| Limitation | Explanation |
-|---|---|
-| **Intra-project analysis only** | Cross-file tracking works within the same project directory via explicit imports. Third-party library internals are not traversed. |
-| **No dynamic analysis** | `__import__()`, `importlib`, runtime reflection are not resolved — only static `from X import Y` statements. |
-| **Conservative taint** | When a function has multiple return paths, all are treated as tainted if any is tainted (may cause false positives). |
-| **Python cross-file only** | Cross-file tracking currently only supports Python. JS/Java/PHP work intra-file. |
-| **Not a WAF replacement** | This tool finds code patterns; it does not test a running application. |
-
----
-
-## Project Structure
-
-```
-aegis_sast/
-├── ai/
-│   ├── gemini_client.py        # Gemini API integration
-│   └── prompts.py              # Vulnerability-specific prompt templates
-├── analysis/
-│   ├── call_graph.py           # FunctionIndex + ImportResolver (cross-file)
-│   ├── rule_engine.py          # YAML rule loader
-│   └── vulnerability_detector.py  # Main scan orchestrator
-├── core/
-│   ├── models.py               # Data models (Vulnerability, TaintSource, etc.)
-│   ├── plugin_interface.py     # Abstract base for language plugins
-│   └── registry.py             # Plugin auto-registration
-└── plugins/
-    ├── python_plugin.py        # Python / Flask / Django
-    ├── javascript_plugin.py    # Node.js / Express
-    ├── java_plugin.py          # Java / Spring
-    └── php_plugin.py           # PHP / Laravel
-rules/
-    ├── python.yaml
-    ├── javascript.yaml
-    ├── java.yaml
-    └── php.yaml
-```
-
----
-
-## Development
+Environment and workflow smoke:
 
 ```bash
-# Lightweight smoke test for config + triage + workflow
-python scripts/manual_smoke.py
-
-# Graph-core smoke tests without Tree-sitter
-python scripts/manual_graph_smoke.py
-
-# Synthetic Python graph ablation benchmark
-python scripts/benchmark_python_graph_ablation.py
-
-# Check interpreter / ABI compatibility before debugging pip failures
 python scripts/doctor_env.py
-
-# Run unit tests after installing developer dependencies
-python -m pytest tests/ -v
-
-# Run against example vulnerable files
-python -m aegis_sast.cli scan examples/ --no-ai
+python scripts/manual_smoke.py
 ```
 
----
+Python graph-core smoke:
 
-## License
+```bash
+python scripts/manual_graph_smoke.py
+```
 
-MIT License — see [LICENSE](LICENSE) for details.
+Python graph ablation benchmark:
 
----
+```bash
+python scripts/benchmark_python_graph_ablation.py
+```
 
-<div align="center">
-  <sub>Built as a Penetration Testing portfolio project · Python · Tree-sitter · Gemini AI</sub>
-</div>
+## Report outputs
+
+Aegis-SAST currently exports:
+
+- JSON for structured downstream processing
+- Markdown for fast manual review
+- SARIF for CI/code-scanning oriented workflows
+
+Workflow metadata and triage summaries are carried into the reports so that findings are not just a flat list of alerts.
+
+## Current limitations
+
+The repository is stronger than an early prototype, but it is still honest about its limits:
+
+- Python is the only deep graph-analysis lane today.
+- JavaScript, Java, and PHP are currently shallower than Python.
+- Cross-file reasoning is currently Python-first.
+- Full LangGraph integration is not complete yet.
+- Local LLM, RAG, Semgrep adapter, and fine-tuning are roadmap items, not finished features.
+- Missing `tree-sitter` dependencies can make analyzers unavailable in a runtime environment.
+
+## Roadmap focus for the next 4-6 months
+
+The roadmap is deliberately heavy, but it is heavy in the right places:
+
+1. Make JavaScript and Java visible and usable in practice, with examples, smoke tests, and benchmark mini-tracks.
+2. Push Python from graph core into evidence slicing / CPG-lite for stronger research contribution.
+3. Integrate Semgrep as the first industrial baseline.
+4. Turn the current staged workflow into a real LangGraph triage pipeline.
+5. Add Local LLM + RAG for private, evidence-aware triage and remediation planning.
+6. Expand benchmarking into a thesis-grade evaluation layer.
+
+The detailed technical roadmap lives in [docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md](docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md).
+
+## Thesis documentation
+
+The thesis and defense planning documents are organized under [docs/thesis](docs/thesis/). Start with:
+
+1. [docs/thesis/00-tong-hop-da-lam.md](docs/thesis/00-tong-hop-da-lam.md)
+2. [docs/thesis/04-kien-truc-muc-tieu.md](docs/thesis/04-kien-truc-muc-tieu.md)
+3. [docs/thesis/15-phase-3-thang-va-phan-cong-quan-tue.md](docs/thesis/15-phase-3-thang-va-phan-cong-quan-tue.md)
+4. [docs/thesis/16-de-cuong-bao-cao-de-tai-ban-giang-vien.md](docs/thesis/16-de-cuong-bao-cao-de-tai-ban-giang-vien.md)
+5. [docs/thesis/17-lo-trinh-ast-dfg-cfg-va-agent.md](docs/thesis/17-lo-trinh-ast-dfg-cfg-va-agent.md)
+6. [docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md](docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md)
+
+For the full index, see [docs/thesis/README.md](docs/thesis/README.md).

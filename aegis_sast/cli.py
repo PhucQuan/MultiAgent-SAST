@@ -21,10 +21,6 @@ from aegis_sast.integrations import SARIFFormatter
 from aegis_sast.knowledge import KnowledgeLoader
 from aegis_sast.orchestration import RepoIntake, ScanWorkflow
 from aegis_sast.orchestration.state import RepoProfile
-from aegis_sast.plugins.java_plugin import JavaPlugin
-from aegis_sast.plugins.javascript_plugin import JavaScriptPlugin
-from aegis_sast.plugins.php_plugin import PHPPlugin
-from aegis_sast.plugins.python_plugin import PythonPlugin
 from aegis_sast.reporting.json_exporter import JSONExporter
 from aegis_sast.reporting.markdown_exporter import MarkdownExporter
 
@@ -78,7 +74,7 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
 
     console.print("\n[yellow]Initializing...[/yellow]")
     registry = get_registry()
-    _register_plugins(registry)
+    _display_analyzer_status(registry)
     repo_profile = RepoIntake(registry).analyze_target(target)
     _display_repo_profile(repo_profile)
 
@@ -155,15 +151,6 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
 
     console.print("[green]No vulnerabilities detected[/green]")
     sys.exit(0)
-
-
-def _register_plugins(registry) -> None:
-    """Register built-in language plugins."""
-    for plugin in (PythonPlugin(), JavaScriptPlugin(), JavaPlugin(), PHPPlugin()):
-        try:
-            registry.register(plugin)
-        except ValueError:
-            pass
 
 
 def _run_scan(detector: VulnerabilityDetector, target: Path) -> ScanResult:
@@ -291,6 +278,31 @@ def _display_repo_profile(repo_profile: RepoProfile) -> None:
         "Supported Files",
         str(repo_profile.metadata.get("supported_file_count", repo_profile.files_scanned)),
     )
+
+    console.print(table)
+
+
+def _display_analyzer_status(registry) -> None:
+    """Display which built-in analyzers are currently available."""
+    table = Table(
+        title="Analyzer Availability",
+        show_header=True,
+        header_style="bold yellow",
+    )
+    table.add_column("Language", style="yellow")
+    table.add_column("Status")
+    table.add_column("Detail")
+
+    enabled = set(registry.get_supported_languages())
+    failures = registry.get_import_failures()
+
+    for language in ["python", "javascript", "java", "php"]:
+        if language in enabled:
+            table.add_row(language, "[green]enabled[/green]", "plugin loaded")
+            continue
+
+        detail = failures.get(language, "not registered")
+        table.add_row(language, "[red]missing[/red]", detail)
 
     console.print(table)
 

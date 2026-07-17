@@ -1,10 +1,7 @@
-"""
-Plugin registry for managing language-specific analyzers.
+"""Plugin registry for managing language-specific analyzers."""
 
-Provides auto-discovery and registration of language plugins.
-"""
-
-from typing import Dict, List, Optional
+from importlib import import_module
+from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
 from aegis_sast.core.plugin_interface import ILanguagePlugin
@@ -16,6 +13,7 @@ class PluginRegistry:
     def __init__(self):
         self._plugins: Dict[str, ILanguagePlugin] = {}
         self._extension_map: Dict[str, str] = {}  # extension -> language name
+        self._import_failures: Dict[str, str] = {}
     
     def register(self, plugin: ILanguagePlugin):
         """
@@ -30,6 +28,7 @@ class PluginRegistry:
             raise ValueError(f"Plugin for language '{language}' already registered")
         
         self._plugins[language] = plugin
+        self._import_failures.pop(language, None)
         
         # Map file extensions to language
         for ext in plugin.get_file_extensions():
@@ -91,6 +90,14 @@ class PluginRegistry:
             List of supported extensions
         """
         return list(self._extension_map.keys())
+
+    def record_import_failure(self, language: str, error: str) -> None:
+        """Record why a built-in analyzer could not be loaded."""
+        self._import_failures[language] = error
+
+    def get_import_failures(self) -> Dict[str, str]:
+        """Return built-in analyzers that failed to import."""
+        return dict(self._import_failures)
     
     def unregister(self, language: str):
         """
@@ -113,10 +120,17 @@ class PluginRegistry:
         """Clear all registered plugins."""
         self._plugins.clear()
         self._extension_map.clear()
+        self._import_failures.clear()
 
 
 # Global registry instance
 _registry: Optional[PluginRegistry] = None
+_BUILTIN_PLUGINS: Tuple[Tuple[str, str, str], ...] = (
+    ("python", "aegis_sast.plugins.python_plugin", "PythonPlugin"),
+    ("javascript", "aegis_sast.plugins.javascript_plugin", "JavaScriptPlugin"),
+    ("java", "aegis_sast.plugins.java_plugin", "JavaPlugin"),
+    ("php", "aegis_sast.plugins.php_plugin", "PHPPlugin"),
+)
 
 
 def get_registry() -> PluginRegistry:
@@ -130,30 +144,14 @@ def get_registry() -> PluginRegistry:
 
 def _auto_register_plugins():
     """Auto-register available plugins."""
-    # Import and register Python plugin
-    try:
-        from aegis_sast.plugins.python_plugin import PythonPlugin
-        _registry.register(PythonPlugin())
-    except ImportError:
-        pass
-
-    # Import and register JavaScript plugin
-    try:
-        from aegis_sast.plugins.javascript_plugin import JavaScriptPlugin
-        _registry.register(JavaScriptPlugin())
-    except ImportError:
-        pass
-
-    # Import and register Java plugin
-    try:
-        from aegis_sast.plugins.java_plugin import JavaPlugin
-        _registry.register(JavaPlugin())
-    except ImportError:
-        pass
-
-    # Import and register PHP plugin
-    try:
-        from aegis_sast.plugins.php_plugin import PHPPlugin
-        _registry.register(PHPPlugin())
-    except ImportError:
-        pass
+    for language, module_name, class_name in _BUILTIN_PLUGINS:
+        try:
+            module = import_module(module_name)
+            plugin_class = getattr(module, class_name)
+            _registry.register(plugin_class())
+        except ImportError as exc:
+            _registry.record_import_failure(language, str(exc))
+        except ValueError:
+            continue
+        except Exception as exc:
+            _registry.record_import_failure(language, str(exc))
