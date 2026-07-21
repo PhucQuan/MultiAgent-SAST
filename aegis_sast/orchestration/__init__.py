@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from aegis_sast.orchestration.router import WorkflowRoute, route_finding
 from aegis_sast.orchestration.state import (
+    AgentWorkflowState,
     RepoProfile,
     WorkflowStepTrace,
     ScanWorkflowState,
@@ -16,8 +17,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         SourceContextWindow,
     )
     from aegis_sast.orchestration.contracts import (
+        AuditorResult,
         AuditorReview,
         JudgeReview,
+        SkepticResult,
         SkepticReview,
     )
     from aegis_sast.orchestration.nodes import (
@@ -30,8 +33,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 __all__ = [
     "AuditorNode",
+    "AuditorResult",
     "AuditorReview",
     "EvidenceContext",
+    "AgentWorkflowState",
     "JudgeNode",
     "JudgeReview",
     "WorkflowRoute",
@@ -41,6 +46,7 @@ __all__ = [
     "WorkflowStepTrace",
     "ScanWorkflowState",
     "ScanWorkflow",
+    "SkepticResult",
     "SkepticReview",
     "SkepticValidatorNode",
     "SourceContextReader",
@@ -70,10 +76,18 @@ def __getattr__(name):
         from aegis_sast.orchestration.context import SourceContextReader
 
         return SourceContextReader
+    if name == "AuditorResult":
+        from aegis_sast.orchestration.contracts import AuditorResult
+
+        return AuditorResult
     if name == "AuditorReview":
         from aegis_sast.orchestration.contracts import AuditorReview
 
         return AuditorReview
+    if name == "SkepticResult":
+        from aegis_sast.orchestration.contracts import SkepticResult
+
+        return SkepticResult
     if name == "SkepticReview":
         from aegis_sast.orchestration.contracts import SkepticReview
 

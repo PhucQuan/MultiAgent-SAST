@@ -133,7 +133,7 @@ class TriageEngine:
             [f"knowledge_card={card.card_id}" for card in matched_cards]
         )
 
-        return TriageDecision(
+        return TriageDecision.from_legacy(
             status=status,
             confidence=confidence,
             explanation=explanation,

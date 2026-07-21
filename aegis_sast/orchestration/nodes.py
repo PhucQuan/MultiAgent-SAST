@@ -299,7 +299,7 @@ class JudgeNode:
         updated_record.finding.metadata["skeptic_review"] = skeptic_review.to_dict()
         updated_record.finding.metadata["judge_review"] = judge_review.to_dict()
 
-        updated_record.decision = TriageDecision(
+        updated_record.decision = TriageDecision.from_legacy(
             status=final_status,
             confidence=final_confidence,
             explanation=explanation,

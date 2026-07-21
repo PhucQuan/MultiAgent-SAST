@@ -1,86 +1,123 @@
-"""Contracts exchanged between deterministic workflow nodes."""
+"""Structured contracts exchanged by AI triage orchestration nodes."""
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
+from pydantic import Field, model_validator
 
 from aegis_sast.core.models import TriageStatus
 from aegis_sast.orchestration.context import EvidenceContext
+from aegis_sast.triage.schema import StrictContractModel
 
 
-@dataclass
-class AuditorReview:
-    """Structured output from the auditor stage."""
+class AuditorResult(StrictContractModel):
+    """Required structured output from the auditor node."""
+
+    is_exploitable: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_strength: str
+    sanitizer_effective: bool
+    reasoning_summary: str
+    missing_evidence: List[str] = Field(default_factory=list)
+
+
+class SkepticResult(StrictContractModel):
+    """Required structured output from the skeptic node."""
+
+    objections: List[str] = Field(default_factory=list)
+    false_positive_indicators: List[str] = Field(default_factory=list)
+    sanitizer_found: bool
+    dead_code_suspected: bool
+    recommended_status: TriageStatus
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class AuditorReview(AuditorResult):
+    """Workflow auditor output with deterministic routing metadata."""
 
     finding_id: str
     route_id: str
     route_steps: List[str]
-    evidence_score: float
-    matched_card_ids: List[str] = field(default_factory=list)
+    evidence_score: float = Field(ge=0.0, le=1.0)
+    matched_card_ids: List[str] = Field(default_factory=list)
     context: Optional[EvidenceContext] = None
     summary: str = ""
-    notes: List[str] = field(default_factory=list)
-    metadata: Dict[str, object] = field(default_factory=dict)
+    notes: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, object]:
+    @model_validator(mode="before")
+    @classmethod
+    def fill_contract_fields(cls, data: Any) -> Any:
+        """Populate required AI fields from legacy workflow values."""
+        if not isinstance(data, dict):
+            return data
+
+        evidence_score = float(data.get("evidence_score", data.get("confidence", 0.0)))
+        data.setdefault("is_exploitable", evidence_score >= 0.7)
+        data.setdefault("confidence", evidence_score)
+        data.setdefault(
+            "evidence_strength",
+            "strong" if evidence_score >= 0.75 else "moderate" if evidence_score >= 0.5 else "weak",
+        )
+        data.setdefault("sanitizer_effective", False)
+        data.setdefault("reasoning_summary", data.get("summary", "Auditor reviewed evidence."))
+        data.setdefault("missing_evidence", [])
+        return data
+
+    def to_dict(self) -> Dict[str, Any]:
         """Convert the review to a JSON-friendly dictionary."""
-        return {
-            "finding_id": self.finding_id,
-            "route_id": self.route_id,
-            "route_steps": self.route_steps,
-            "evidence_score": self.evidence_score,
-            "matched_card_ids": self.matched_card_ids,
-            "context": self.context.to_dict() if self.context else None,
-            "summary": self.summary,
-            "notes": self.notes,
-            "metadata": self.metadata,
-        }
+        payload = self.model_dump(exclude={"context"}, mode="json")
+        payload["context"] = self.context.to_dict() if self.context else None
+        return payload
 
 
-@dataclass
-class SkepticReview:
-    """Structured output from the skeptic validation stage."""
+class SkepticReview(SkepticResult):
+    """Workflow skeptic output with deterministic validation metadata."""
 
     finding_id: str
     executed: bool
     summary: str
-    objections: List[str] = field(default_factory=list)
-    mitigation_signals: List[str] = field(default_factory=list)
+    mitigation_signals: List[str] = Field(default_factory=list)
     suggested_status: Optional[TriageStatus] = None
-    confidence_cap: Optional[float] = None
-    metadata: Dict[str, object] = field(default_factory=dict)
+    confidence_cap: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, object]:
-        """Convert the skeptic review to a JSON-friendly dictionary."""
-        return {
-            "finding_id": self.finding_id,
-            "executed": self.executed,
-            "summary": self.summary,
-            "objections": self.objections,
-            "mitigation_signals": self.mitigation_signals,
-            "suggested_status": (
-                self.suggested_status.value if self.suggested_status else None
-            ),
-            "confidence_cap": self.confidence_cap,
-            "metadata": self.metadata,
-        }
+    @model_validator(mode="before")
+    @classmethod
+    def fill_contract_fields(cls, data: Any) -> Any:
+        """Populate required AI fields from deterministic skeptic values."""
+        if not isinstance(data, dict):
+            return data
+
+        mitigation_signals = data.get("mitigation_signals", [])
+        suggested_status = data.get("suggested_status")
+        confidence_cap = data.get("confidence_cap")
+        recommended_status = suggested_status or data.get("recommended_status")
+        if recommended_status is None:
+            recommended_status = (
+                TriageStatus.SUPPRESSED if mitigation_signals else TriageStatus.NEEDS_REVIEW
+            )
+
+        data.setdefault("false_positive_indicators", mitigation_signals)
+        data.setdefault("sanitizer_found", bool(mitigation_signals))
+        data.setdefault("dead_code_suspected", False)
+        data.setdefault("recommended_status", recommended_status)
+        data.setdefault("confidence", confidence_cap if confidence_cap is not None else 0.5)
+        return data
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the review to a JSON-friendly dictionary."""
+        return self.model_dump(mode="json")
 
 
-@dataclass
-class JudgeReview:
+class JudgeReview(StrictContractModel):
     """Structured output from the final judge stage."""
 
     finding_id: str
     final_status: TriageStatus
-    final_confidence: float
+    final_confidence: float = Field(ge=0.0, le=1.0)
     summary: str
-    metadata: Dict[str, object] = field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, object]:
-        """Convert the judge review to a JSON-friendly dictionary."""
-        return {
-            "finding_id": self.finding_id,
-            "final_status": self.final_status.value,
-            "final_confidence": self.final_confidence,
-            "summary": self.summary,
-            "metadata": self.metadata,
-        }
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the review to a JSON-friendly dictionary."""
+        return self.model_dump(mode="json")
