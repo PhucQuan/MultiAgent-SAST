@@ -101,6 +101,7 @@ def test_markdown_exporter_includes_workflow_and_agent_review_sections(tmp_path)
     assert "## Workflow Summary" in content
     assert "**Agent Reviews**" in content
     assert "auditor:" in content
+    assert "**Evidence Summary**" in content
     assert "**Graph Summary**" in content
     assert "**Local Helper Summaries**" in content
     assert "get_cmd" in content

@@ -45,6 +45,10 @@ def test_triage_engine_marks_strong_unsanitized_flow_as_confirmed():
     assert record.decision.status.value == "confirmed"
     assert "generic-command-injection" in record.decision.metadata["knowledge_card_ids"]
     assert record.finding.metadata["workflow_route"]["steps"][-2] == "judge"
+    assert "generic-command-injection" in record.finding.metadata["triage"]["knowledge_card_ids"]
+    assert record.finding.metadata["triage"]["workflow_route"]["steps"][-2] == "judge"
+    assert record.finding.metadata["triage"]["workflow_route"]["metadata"]["path_length"] == 3
+    assert "path_length=3" in record.decision.evidence_notes
 
 
 def test_triage_engine_suppresses_sanitized_low_confidence_flow():
@@ -77,3 +81,6 @@ def test_triage_engine_suppresses_sanitized_low_confidence_flow():
     assert record.decision.status.value == "suppressed"
     assert record.decision.confidence <= 0.5
     assert "generic-sqli" in record.decision.metadata["knowledge_card_ids"]
+    assert record.finding.metadata["triage"]["reviewer"] == "triage-engine-v1"
+    assert record.finding.metadata["triage"]["workflow_route"]["metadata"]["path_length"] == 3
+    assert "sanitizers=1" in record.decision.evidence_notes

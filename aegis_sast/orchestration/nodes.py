@@ -31,6 +31,8 @@ class AuditorNode:
         route = record.decision.metadata.get("workflow_route", {})
         route_id = route.get("route_id", "unknown")
         route_steps = route.get("steps", [])
+        evidence_summary = record.finding.evidence_summary
+        graph_slice = evidence_summary.get("graph_slice", {})
         evidence_score = self._score_evidence(record.finding, record.decision.confidence)
         context = self.context_reader.read_for_finding(record.finding)
         notes = [
@@ -38,7 +40,18 @@ class AuditorNode:
             f"language={record.finding.language}",
             f"severity={record.finding.severity.value}",
             f"context_loaded={bool(context.source_window or context.sink_window)}",
+            f"path_length={evidence_summary.get('path_length', 0)}",
+            f"intermediate_steps={evidence_summary.get('intermediate_step_count', 0)}",
+            f"sanitizers={evidence_summary.get('sanitizer_count', 0)}",
         ]
+        if graph_slice:
+            notes.append(
+                "graph_slice="
+                f"nodes:{graph_slice.get('node_count', 0)},"
+                f"cfg:{graph_slice.get('cfg_edge_count', 0)},"
+                f"dfg:{graph_slice.get('dfg_edge_count', 0)},"
+                f"helpers:{graph_slice.get('local_helper_count', 0)}"
+            )
         notes.extend(
             [f"framework_hint={hint}" for hint in repo_profile.framework_hints[:4]]
         )
@@ -64,19 +77,20 @@ class AuditorNode:
     @staticmethod
     def _score_evidence(finding: NormalizedFinding, base_confidence: float) -> float:
         """Estimate how strong the deterministic evidence currently looks."""
+        evidence_summary = finding.evidence_summary
+        graph_slice = evidence_summary.get("graph_slice", {})
         score = 0.35
-        score += min(len(finding.evidence.intermediate_steps) * 0.12, 0.24)
+        score += min(evidence_summary.get("intermediate_step_count", 0) * 0.12, 0.24)
         score += min(base_confidence * 0.35, 0.35)
         if finding.evidence.source.file_path:
             score += 0.08
         if finding.evidence.sink.file_path:
             score += 0.08
-        if finding.evidence.has_sanitizers:
+        if evidence_summary.get("has_sanitizers", False):
             score -= 0.14
-        graph_summary = finding.evidence.metadata.get("graph_summary", {})
-        if graph_summary.get("cfg_edge_count", 0) > 0:
+        if graph_slice.get("cfg_edge_count", 0) > 0:
             score += 0.04
-        if graph_summary.get("dfg_edge_count", 0) > 0:
+        if graph_slice.get("dfg_edge_count", 0) > 0:
             score += 0.04
         return max(0.0, min(score, 1.0))
 
@@ -139,7 +153,7 @@ class SkepticValidatorNode:
         suggested_status = None
         confidence_cap = None
 
-        if record.finding.metadata.get("is_sanitized"):
+        if record.finding.is_effectively_sanitized:
             mitigation_signals.append("Dataflow already contains a sanitizer.")
 
         for token in self.MITIGATION_PATTERNS.get(
@@ -295,6 +309,14 @@ class JudgeNode:
         updated_record.finding.explanation = explanation
         if recommendation and not updated_record.finding.recommendation:
             updated_record.finding.recommendation = recommendation
+        triage_metadata = updated_record.finding.metadata.setdefault("triage", {})
+        triage_metadata["final_status"] = final_status.value
+        triage_metadata["final_confidence"] = final_confidence
+        triage_metadata["agent_reviews"] = {
+            "auditor_review": auditor_review.to_dict(),
+            "skeptic_review": skeptic_review.to_dict(),
+            "judge_review": judge_review.to_dict(),
+        }
         updated_record.finding.metadata["auditor_review"] = auditor_review.to_dict()
         updated_record.finding.metadata["skeptic_review"] = skeptic_review.to_dict()
         updated_record.finding.metadata["judge_review"] = judge_review.to_dict()
@@ -333,7 +355,7 @@ class JudgeNode:
         return (
             current_status == TriageStatus.NEEDS_REVIEW
             and finding.severity in (Severity.CRITICAL, Severity.HIGH)
-            and not finding.metadata.get("is_sanitized")
+            and not finding.is_effectively_sanitized
             and not skeptic_review.mitigation_signals
             and not skeptic_review.objections
             and auditor_review.evidence_score >= 0.7

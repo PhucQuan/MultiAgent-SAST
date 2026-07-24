@@ -223,6 +223,17 @@ class MarkdownExporter:
         for index, step in enumerate(path_steps, 1):
             lines.append(f"{index}. {step}\n")
 
+        evidence_summary = finding.evidence.summary
+        graph_slice = evidence_summary.get("graph_slice", {})
+        helper_count = graph_slice.get("local_helper_count", 0)
+        lines.append(
+            "\n**Evidence Summary**: "
+            f"path_length={evidence_summary.get('path_length', 0)}, "
+            f"intermediate_steps={evidence_summary.get('intermediate_step_count', 0)}, "
+            f"sanitizers={evidence_summary.get('sanitizer_count', 0)}, "
+            f"helpers={helper_count}\n"
+        )
+
         graph_summary = finding.evidence.metadata.get("graph_summary")
         if graph_summary:
             lines.append(

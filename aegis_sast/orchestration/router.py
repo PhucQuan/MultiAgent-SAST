@@ -32,7 +32,8 @@ def route_finding(finding: NormalizedFinding) -> WorkflowRoute:
     High-confidence findings without sanitizers can skip the skeptic stage.
     Findings with sanitizers or weaker evidence should go through skeptical review.
     """
-    has_sanitizers = finding.metadata.get("is_sanitized", False)
+    evidence_summary = finding.evidence_summary
+    has_sanitizers = finding.is_effectively_sanitized
 
     if finding.confidence >= 0.85 and not has_sanitizers:
         return WorkflowRoute(
@@ -49,6 +50,11 @@ def route_finding(finding: NormalizedFinding) -> WorkflowRoute:
                 "language": finding.language,
                 "confidence": finding.confidence,
                 "has_sanitizers": has_sanitizers,
+                "path_length": evidence_summary.get("path_length", 0),
+                "intermediate_step_count": evidence_summary.get(
+                    "intermediate_step_count",
+                    0,
+                ),
             },
         )
 
@@ -67,5 +73,10 @@ def route_finding(finding: NormalizedFinding) -> WorkflowRoute:
             "language": finding.language,
             "confidence": finding.confidence,
             "has_sanitizers": has_sanitizers,
+            "path_length": evidence_summary.get("path_length", 0),
+            "intermediate_step_count": evidence_summary.get(
+                "intermediate_step_count",
+                0,
+            ),
         },
     )

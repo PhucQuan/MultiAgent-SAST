@@ -125,6 +125,67 @@ class EvidenceBundle:
         """Return True when the path contains at least one sanitizer."""
         return bool(self.sanitizers)
 
+    @property
+    def path_summary(self) -> List[str]:
+        """Return a compact source-to-sink path summary for triage/reporting."""
+        detection_metadata = self.metadata.get("detection", {})
+        source_type = detection_metadata.get("source_type")
+        sink_function = detection_metadata.get("sink_function")
+
+        source_label = (
+            f"SOURCE[{source_type}] {self.source}"
+            if source_type
+            else str(self.source)
+        )
+        sink_label = (
+            f"SINK[{sink_function}] {self.sink}"
+            if sink_function
+            else str(self.sink)
+        )
+
+        steps = [source_label]
+        steps.extend(str(step) for step in self.intermediate_steps)
+        steps.extend(
+            f"[SANITIZER] {sanitizer.function_name} at {sanitizer.location}"
+            for sanitizer in self.sanitizers
+        )
+        steps.append(sink_label)
+        return steps
+
+    @property
+    def summary(self) -> Dict[str, Any]:
+        """Return a small, stable evidence summary for triage consumers."""
+        graph_summary = self.metadata.get("graph_summary", {})
+        local_callee_summaries = self.metadata.get("local_callee_summaries", [])
+
+        summary = {
+            "path_length": len(self.path_summary),
+            "intermediate_step_count": len(self.intermediate_steps),
+            "sanitizer_count": len(self.sanitizers),
+            "has_sanitizers": self.has_sanitizers,
+            "path_summary": self.path_summary,
+        }
+
+        graph_slice = {}
+        if graph_summary:
+            graph_slice.update(
+                {
+                    "node_count": graph_summary.get("node_count", 0),
+                    "cfg_edge_count": graph_summary.get("cfg_edge_count", 0),
+                    "dfg_edge_count": graph_summary.get("dfg_edge_count", 0),
+                }
+            )
+        if "cfg_path_node_ids" in self.metadata:
+            graph_slice["path_node_count"] = len(self.metadata.get("cfg_path_node_ids", []))
+        if "dfg_path_edges" in self.metadata:
+            graph_slice["path_edge_count"] = len(self.metadata.get("dfg_path_edges", []))
+        if local_callee_summaries:
+            graph_slice["local_helper_count"] = len(local_callee_summaries)
+        if graph_slice:
+            summary["graph_slice"] = graph_slice
+
+        return summary
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert the evidence bundle to a JSON-friendly dictionary."""
         return {
@@ -166,6 +227,7 @@ class EvidenceBundle:
                 for sanitizer in self.sanitizers
             ],
             "metadata": self.metadata,
+            "summary": self.summary,
         }
 
 
@@ -232,6 +294,30 @@ class NormalizedFinding:
     recommendation: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     detected_at: datetime = field(default_factory=datetime.now)
+
+    @property
+    def detection_metadata(self) -> Dict[str, Any]:
+        """Return nested detection metadata when available."""
+        detection = self.metadata.get("detection", {})
+        return detection if isinstance(detection, dict) else {}
+
+    @property
+    def triage_metadata(self) -> Dict[str, Any]:
+        """Return nested triage metadata when available."""
+        triage = self.metadata.get("triage", {})
+        return triage if isinstance(triage, dict) else {}
+
+    @property
+    def evidence_summary(self) -> Dict[str, Any]:
+        """Return the stable evidence summary consumed by triage layers."""
+        return self.evidence.summary
+
+    @property
+    def is_effectively_sanitized(self) -> bool:
+        """Return True when the path contains an effective sanitizer."""
+        if "is_sanitized" in self.detection_metadata:
+            return bool(self.detection_metadata.get("is_sanitized"))
+        return bool(self.metadata.get("is_sanitized", False))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the normalized finding to a JSON-friendly dictionary."""
@@ -313,12 +399,31 @@ class Vulnerability:
 
     def to_evidence_bundle(self) -> EvidenceBundle:
         """Project the current dataflow into a reusable evidence schema."""
+        source = self.dataflow.source
+        sink = self.dataflow.sink
+        detection_metadata = {
+            "source_type": source.source_type,
+            "source_pattern": source.pattern,
+            "sink_pattern": sink.pattern,
+            "sink_function": sink.function_name,
+            "is_sanitized": self.dataflow.is_sanitized(),
+        }
+        evidence_metadata = dict(self.dataflow.metadata)
+        evidence_metadata.setdefault("path_summary", self.dataflow.get_path_summary())
+        evidence_metadata.setdefault("path_length", len(evidence_metadata["path_summary"]))
+        evidence_metadata.setdefault(
+            "intermediate_step_count",
+            len(self.dataflow.intermediate_steps),
+        )
+        evidence_metadata.setdefault("sanitizer_count", len(self.dataflow.sanitizers))
+        evidence_metadata.setdefault("detection", detection_metadata)
+
         return EvidenceBundle(
             source=self.dataflow.source.location,
             sink=self.dataflow.sink.location,
             intermediate_steps=list(self.dataflow.intermediate_steps),
             sanitizers=list(self.dataflow.sanitizers),
-            metadata=dict(self.dataflow.metadata),
+            metadata=evidence_metadata,
         )
 
     def to_normalized_finding(
@@ -332,6 +437,19 @@ class Vulnerability:
 
         source = self.dataflow.source
         sink = self.dataflow.sink
+        evidence_bundle = self.to_evidence_bundle()
+        detection_metadata = {
+            "source_type": source.source_type,
+            "source_pattern": source.pattern,
+            "sink_pattern": sink.pattern,
+            "sink_function": sink.function_name,
+            "is_sanitized": self.dataflow.is_sanitized(),
+            "dataflow_metadata": dict(self.dataflow.metadata),
+            "evidence_summary": evidence_bundle.summary,
+        }
+        triage_metadata = {}
+        if self.ai_verification:
+            triage_metadata["ai_model"] = self.ai_verification.model_used
 
         return NormalizedFinding(
             id=self.id,
@@ -348,7 +466,7 @@ class Vulnerability:
                 f"Potential {self.vuln_type.value} from "
                 f"{source.variable_name} to {sink.function_name}"
             ),
-            evidence=self.to_evidence_bundle(),
+            evidence=evidence_bundle,
             explanation=(
                 self.ai_verification.explanation
                 if self.ai_verification else None
@@ -358,16 +476,13 @@ class Vulnerability:
                 if self.ai_verification else None
             ),
             metadata={
-                "source_type": source.source_type,
-                "source_pattern": source.pattern,
-                "sink_pattern": sink.pattern,
-                "sink_function": sink.function_name,
-                "is_sanitized": self.dataflow.is_sanitized(),
-                "dataflow_metadata": dict(self.dataflow.metadata),
+                **detection_metadata,
                 "ai_model": (
                     self.ai_verification.model_used
                     if self.ai_verification else None
                 ),
+                "detection": detection_metadata,
+                "triage": triage_metadata,
             },
             detected_at=self.detected_at,
         )

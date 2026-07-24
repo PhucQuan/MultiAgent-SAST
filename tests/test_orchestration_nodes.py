@@ -89,6 +89,9 @@ def test_nodes_attach_context_and_allow_skeptical_demotion():
         assert final_record.decision.status.value == "suppressed"
         assert judge_review.final_status.value == "suppressed"
         assert final_record.finding.metadata["auditor_review"]["route_id"] == "skeptic-review"
+        assert final_record.finding.metadata["triage"]["agent_reviews"]["judge_review"]["final_status"] == "suppressed"
+        assert "path_length=2" in auditor_review.notes
+        assert "sanitizers=0" in auditor_review.notes
 
 
 def test_nodes_promote_strong_unmitigated_sqli_to_likely():

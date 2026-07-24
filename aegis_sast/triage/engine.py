@@ -36,6 +36,12 @@ class TriageEngine:
             finding.explanation = decision.explanation
         if decision.recommendation and not finding.recommendation:
             finding.recommendation = decision.recommendation
+        triage_metadata = finding.metadata.setdefault("triage", {})
+        triage_metadata["knowledge_card_ids"] = [
+            card.card_id for card in matched_cards
+        ]
+        triage_metadata["workflow_route"] = decision.metadata.get("workflow_route")
+        triage_metadata["reviewer"] = decision.reviewer
         finding.metadata["knowledge_card_ids"] = [
             card.card_id for card in matched_cards
         ]
@@ -77,12 +83,24 @@ class TriageEngine:
     ) -> TriageDecision:
         """Make a conservative triage decision based on evidence and knowledge."""
         route = route_finding(finding)
+        evidence_summary = finding.evidence_summary
+        graph_slice = evidence_summary.get("graph_slice", {})
         notes = [
             f"matched_cards={len(matched_cards)}",
-            f"intermediate_steps={len(finding.evidence.intermediate_steps)}",
-            f"sanitizers={len(finding.evidence.sanitizers)}",
+            f"path_length={evidence_summary.get('path_length', 0)}",
+            f"intermediate_steps={evidence_summary.get('intermediate_step_count', 0)}",
+            f"sanitizers={evidence_summary.get('sanitizer_count', 0)}",
             f"route={' -> '.join(route.steps)}",
         ]
+        if graph_slice:
+            notes.append(
+                "graph_slice="
+                f"nodes:{graph_slice.get('node_count', 0)},"
+                f"cfg:{graph_slice.get('cfg_edge_count', 0)},"
+                f"dfg:{graph_slice.get('dfg_edge_count', 0)},"
+                f"path_nodes:{graph_slice.get('path_node_count', 0)},"
+                f"path_edges:{graph_slice.get('path_edge_count', 0)}"
+            )
 
         status = finding.triage_status
         confidence = finding.confidence
@@ -91,7 +109,7 @@ class TriageEngine:
         )
         explanation = finding.explanation or finding.message
 
-        if finding.metadata.get("is_sanitized"):
+        if finding.is_effectively_sanitized:
             notes.append("effective_sanitizer_detected=true")
             if status == TriageStatus.CONFIRMED:
                 status = TriageStatus.NEEDS_REVIEW
@@ -109,7 +127,7 @@ class TriageEngine:
                 )
 
         elif status == TriageStatus.NEEDS_REVIEW:
-            if len(finding.evidence.intermediate_steps) > 0:
+            if evidence_summary.get("intermediate_step_count", 0) > 0:
                 status = TriageStatus.LIKELY
                 confidence = max(confidence, 0.7)
                 explanation = (

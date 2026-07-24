@@ -125,6 +125,9 @@ def test_vulnerability_to_dict():
     assert result["language"] == "python"
     assert result["evidence"]["source"]["line"] == 10
     assert result["evidence"]["sink"]["line"] == 20
+    assert result["evidence"]["summary"]["path_length"] == 2
+    assert "USER_INPUT" in result["evidence"]["summary"]["path_summary"][0]
+    assert "os.system" in result["evidence"]["summary"]["path_summary"][-1]
 
 
 def test_vulnerability_to_normalized_finding_with_ai():
@@ -176,7 +179,12 @@ def test_vulnerability_to_normalized_finding_with_ai():
     assert payload["confidence"] == pytest.approx(0.91)
     assert payload["evidence"]["intermediate_steps"][0]["line"] == 12
     assert payload["evidence"]["sanitizers"][0]["function"] == "shlex.quote"
+    assert payload["evidence"]["summary"]["path_length"] == 4
+    assert payload["evidence"]["summary"]["sanitizer_count"] == 1
     assert payload["metadata"]["is_sanitized"] is True
+    assert payload["metadata"]["detection"]["source_type"] == "USER_INPUT"
+    assert payload["metadata"]["detection"]["sink_function"] == "os.system"
+    assert payload["metadata"]["triage"]["ai_model"] == "gemini-test"
 
 
 def test_scan_result_summary():
