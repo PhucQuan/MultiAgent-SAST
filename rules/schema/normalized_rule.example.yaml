@@ -1,0 +1,60 @@
+schema_version: aegis-normalized-rule-v1
+rule_id: PY-CMD-SEED-001
+title: Potential command injection via shell-enabled subprocess
+language: python
+family: COMMAND_INJECTION
+severity: CRITICAL
+
+taxonomy:
+  cwe:
+    - CWE-78
+  owasp:
+    - A05:2025
+
+detection:
+  match_mode: semgrep-taint-subset
+  source_patterns:
+    - pattern: request.args.get(...)
+      pattern_mode: pattern
+      exact: true
+      by_side_effect: false
+    - pattern: input(...)
+      pattern_mode: pattern
+      exact: true
+      by_side_effect: false
+  sink_patterns:
+    - pattern: subprocess.run(..., shell=True, ...)
+      pattern_mode: pattern
+      exact: true
+      by_side_effect: false
+    - pattern: os.system(...)
+      pattern_mode: pattern
+      exact: true
+      by_side_effect: false
+  sanitizers:
+    - pattern: shlex.quote(...)
+      pattern_mode: pattern
+      exact: true
+      by_side_effect: false
+
+triage:
+  knowledge_refs:
+    - generic-command-injection
+    - python-web-and-db
+  fp_hints:
+    - argument-array-with-shell-false
+    - constant-command-string
+  remediation_notes:
+    - prefer subprocess argument arrays over shell-enabled commands
+    - keep shell disabled unless no structured API exists
+
+provenance:
+  source: semgrep
+  source_rule_id: python.command-injection.subprocess-shell-true
+  source_path: snapshot/python/command_injection.yaml
+  importer: scripts/import_semgrep_subset.py
+  snapshot_version: 2026-07-23-seed
+
+notes:
+  - This schema example keeps detector fields under detection and triage guidance separate.
+  - Imported rules should stay reviewable before they are merged into production detector configs.
