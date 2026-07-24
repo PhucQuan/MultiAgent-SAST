@@ -143,6 +143,23 @@ Scan a directory:
 python -m aegis_sast.cli scan test_projects/ --no-ai --output json --output markdown --output sarif
 ```
 
+Scan any local file or repository target with the manual wrapper:
+
+```bash
+python scripts/scan_target.py C:\path\to\target
+python scripts/scan_target.py test_projects/cross_file_app --format json --format sarif
+python scripts/scan_target.py "D:\CVE Target\pytorch" --exclude-dir test --exclude-dir third_party --exclude-dir build --progress-every 50
+python scripts/scan_target.py "D:\CVE Target\pytorch" --exclude-profile focus --progress-every 50
+```
+
+For very large repositories, `scan_target.py` now supports repeatable
+`--exclude-dir`, `--exclude-glob`, and `--exclude-profile` controls plus
+lightweight progress logs so manual scans do not feel stalled while the
+detector works through the tree. Directory scans auto-apply a conservative
+`baseline` profile for dependency, cache, and build-output paths, while the
+opt-in `focus` profile further suppresses tests, benchmarks, fixtures,
+examples, and generated/codegen trees for lower-noise research runs.
+
 Export to a custom output directory:
 
 ```bash

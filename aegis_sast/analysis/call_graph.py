@@ -14,10 +14,12 @@ importlib) are NOT resolved here.
 
 from __future__ import annotations
 
+import fnmatch
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 # We reuse the tree-sitter Python grammar that is already installed.
 import tree_sitter_python as tspython
@@ -67,9 +69,29 @@ class FunctionIndex:
     # Public API
     # ------------------------------------------------------------------
 
-    def build(self, project_root: Path) -> None:
+    def build(
+        self,
+        project_root: Path,
+        exclude_dir_names: Optional[Sequence[str]] = None,
+        exclude_globs: Optional[Sequence[str]] = None,
+    ) -> None:
         """Scan every *.py file under *project_root* and index functions."""
-        for py_file in sorted(project_root.rglob("*.py")):
+        normalized_exclude_dirs = {
+            name.strip().casefold()
+            for name in (exclude_dir_names or [])
+            if name and name.strip()
+        }
+        normalized_exclude_globs = [
+            pattern.strip()
+            for pattern in (exclude_globs or [])
+            if pattern and pattern.strip()
+        ]
+
+        for py_file in self._iter_python_files(
+            project_root,
+            normalized_exclude_dirs,
+            normalized_exclude_globs,
+        ):
             self._index_file(py_file)
 
     def get(self, name: str) -> Optional[FunctionEntry]:
@@ -87,6 +109,64 @@ class FunctionIndex:
 
         tree = self._parser.parse(source)
         self._visit(tree.root_node, file_path)
+
+    def _iter_python_files(
+        self,
+        project_root: Path,
+        exclude_dir_names: Set[str],
+        exclude_globs: Sequence[str],
+    ):
+        """Yield project Python files while pruning excluded directories early."""
+        for root, dirnames, filenames in os.walk(project_root, topdown=True):
+            root_path = Path(root)
+            dirnames[:] = sorted(
+                dirname
+                for dirname in dirnames
+                if not self._should_skip_path(
+                    root_path / dirname,
+                    project_root,
+                    exclude_dir_names,
+                    exclude_globs,
+                    is_directory=True,
+                )
+            )
+
+            for filename in sorted(filenames):
+                file_path = root_path / filename
+                if file_path.suffix.lower() != ".py":
+                    continue
+                if self._should_skip_path(
+                    file_path,
+                    project_root,
+                    exclude_dir_names,
+                    exclude_globs,
+                ):
+                    continue
+                yield file_path
+
+    @staticmethod
+    def _should_skip_path(
+        path: Path,
+        project_root: Path,
+        exclude_dir_names: Set[str],
+        exclude_globs: Sequence[str],
+        is_directory: bool = False,
+    ) -> bool:
+        """Return True when a path should be ignored during index construction."""
+        try:
+            relative_path = path.relative_to(project_root)
+        except ValueError:
+            relative_path = path
+
+        parts = relative_path.parts if is_directory else relative_path.parts[:-1]
+        if exclude_dir_names and any(part.casefold() in exclude_dir_names for part in parts):
+            return True
+
+        if not exclude_globs:
+            return False
+
+        relative_posix = relative_path.as_posix()
+        return any(fnmatch.fnmatch(relative_posix, pattern) for pattern in exclude_globs)
 
     def _visit(self, node: Node, file_path: Path) -> None:
         if node.type == "function_definition":

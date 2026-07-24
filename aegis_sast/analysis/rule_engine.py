@@ -22,10 +22,12 @@ class RuleEngine:
             language: Language name (python/javascript/java/php) for auto rule loading.
         """
         self.rules: Dict[str, Any] = {}
+        self.rules_path = Path(rules_path) if rules_path else None
         self.language = language
+        self._language_cache: Dict[str, "RuleEngine"] = {}
         
-        if rules_path:
-            self.load_rules(rules_path)
+        if self.rules_path:
+            self.load_rules(self.rules_path)
         else:
             # Load rules matching the specific language
             rules_dir = Path(__file__).parent.parent.parent / "rules"
@@ -81,3 +83,25 @@ class RuleEngine:
     def get_rules(self) -> Dict[str, Any]:
         """Get all rules."""
         return self.rules
+
+    def for_language(self, language: str) -> "RuleEngine":
+        """
+        Resolve the effective rule engine for one language.
+
+        Custom rules are treated as an explicit override contract and are reused
+        unchanged for every file. When no custom rules were provided, the engine
+        lazily loads and caches built-in rule sets per language so multi-language
+        scans respect each plugin's default rules.
+        """
+        if self.rules_path is not None:
+            return self
+
+        normalized = language.strip().lower()
+        if normalized == self.language and self.rules:
+            return self
+
+        cached = self._language_cache.get(normalized)
+        if cached is None:
+            cached = RuleEngine(language=normalized)
+            self._language_cache[normalized] = cached
+        return cached

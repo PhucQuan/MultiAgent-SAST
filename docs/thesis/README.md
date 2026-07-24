@@ -22,15 +22,33 @@ Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
    - `31`
    - Da co mini benchmark ablation co dataset synthetic, runner, JSON/Markdown output, va so lieu de viet phan thuc nghiem so bo.
 
-## File 32 bo sung gi
+## File 32-35 bo sung gi
 
 File `32-roadmap-4-6-thang-hybrid-sast-agent.md` chot huong trien khai tiep theo theo scope 4-6 thang, gom:
 
-- `Python = deep lane`;
-- `JavaScript/Java = breadth lane`;
+- Python la lane khoi dau manh nhat;
+- JavaScript va Java phai duoc nang cap lien tuc theo roadmap;
 - `Semgrep = baseline cong nghiep`;
 - `LangGraph + Local LLM + RAG = lop AI hien dai`;
 - `benchmark + SARIF + CI = lop chung minh gia tri khoa hoc va san pham`.
+
+File `33-chien-luoc-capability-parity-python-javascript-java.md` bo sung them mot quyet dinh quan trong:
+
+- khong giu Python lam dich den duy nhat cua de tai;
+- dua Python, JavaScript va Java ve cung mot thang nang luc ky thuat;
+- chot ro contract chung giua deterministic core va agent workflow.
+
+File `34-rule-ingestion-va-normalized-schema-v1.md` chot:
+
+- scope `rule ingestion V1` cho Python;
+- normalized rule schema tach `detection` va `triage`;
+- chien luoc import subset co provenance thay vi copy rule a o at.
+
+File `35-roadmap-v1-python-rule-ingestion-va-triage.md` chot:
+
+- thu tu uu tien phase tiep theo;
+- scanner cleanup -> rule ingestion -> graph-slice -> benchmark -> debate loop -> knowledge retrieval;
+- cach giu scope gon ma van co gia tri nghien cuu ro rang.
 
 ## Thu tu nen doc
 
@@ -58,10 +76,13 @@ File `32-roadmap-4-6-thang-hybrid-sast-agent.md` chot huong trien khai tiep theo
 22. `30-manual-graph-smoke-va-kiem-thu-core.md`
 23. `31-mini-benchmark-ablation-python-graph-v1-2.md`
 24. `32-roadmap-4-6-thang-hybrid-sast-agent.md`
-25. `06-lo-trinh-phat-trien.md`
-26. `07-ke-hoach-benchmark.md`
-27. `08-kich-ban-demo.md`
-28. `09-cau-hoi-phan-bien.md`
+25. `33-chien-luoc-capability-parity-python-javascript-java.md`
+26. `34-rule-ingestion-va-normalized-schema-v1.md`
+27. `35-roadmap-v1-python-rule-ingestion-va-triage.md`
+28. `06-lo-trinh-phat-trien.md`
+29. `07-ke-hoach-benchmark.md`
+30. `08-kich-ban-demo.md`
+31. `09-cau-hoi-phan-bien.md`
 
 ## Muc luc tai lieu
 
@@ -100,3 +121,6 @@ File `32-roadmap-4-6-thang-hybrid-sast-agent.md` chot huong trien khai tiep theo
 | `30-manual-graph-smoke-va-kiem-thu-core.md` | Ghi lai script smoke test doc lap cho graph core, cach chay, va gia tri cua no doi voi phat trien, demo va bao cao khoa luan |
 | `31-mini-benchmark-ablation-python-graph-v1-2.md` | Ghi lai bo benchmark synthetic nho cho Python graph v1.2, cac mode ablation, ket qua hien tai va cach dien giai trong bao cao |
 | `32-roadmap-4-6-thang-hybrid-sast-agent.md` | Chot roadmap 4-6 thang tiep theo, tach ro must-have, strong contribution, stretch goal, va thu tu nang cap de tai theo huong Hybrid SAST + agent + benchmark |
+| `33-chien-luoc-capability-parity-python-javascript-java.md` | Chot chien luoc dua Python, JavaScript va Java ve cung mot thang nang luc ky thuat, va quy dinh contract chung giua core voi agent |
+| `34-rule-ingestion-va-normalized-schema-v1.md` | Chot schema rule normalize, pham vi ingestion V1, provenance, va cach tach detector fields khoi triage knowledge |
+| `35-roadmap-v1-python-rule-ingestion-va-triage.md` | Chot roadmap gan nhat cho Python scanner cleanup, rule ingestion, graph-slice triage, benchmark, va phase AI nang cao sau do |
