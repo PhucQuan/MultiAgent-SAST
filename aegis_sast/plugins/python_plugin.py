@@ -76,18 +76,18 @@ class PythonPlugin(ILanguagePlugin):
         
         # Traverse AST to find source patterns
         def visit_node(node: Node):
-            node_text = node.text.decode('utf-8')
+            node_text = node.text.decode('utf-8', errors='replace')
             
             for rule in source_rules:
                 pattern = rule.get("pattern", "")
                 
                 # Refine matching: Avoid matching parent nodes if child already matches
                 # and only match nodes that likely represent the source (identifier, attribute, call)
-                if pattern in node_text and node.type in ["identifier", "attribute", "call"]:
+                if self._node_matches_pattern(node, pattern) and node.type in ["identifier", "attribute", "call"]:
                     # Check if any child already matches the same pattern (to avoid duplicates from parents)
                     child_matches = False
-                    for child in node.  children:
-                        if pattern in child.text.decode('utf-8'):
+                    for child in node.children:
+                        if self._node_matches_pattern(child, pattern):
                             child_matches = True
                             break
                     
@@ -138,18 +138,18 @@ class PythonPlugin(ILanguagePlugin):
                 sink_rules.extend(rules["sinks"][category])
         
         def visit_node(node: Node):
-            node_text = node.text.decode('utf-8')
+            node_text = node.text.decode('utf-8', errors='replace')
             
             for rule in sink_rules:
                 pattern = rule.get("pattern", "")
                 
                 # Refine matching: only match call nodes directly
-                if node.type == "call" and pattern in node_text:
+                if node.type == "call" and self._node_matches_pattern(node, pattern):
                     # Ensure it's the specific call, not a parent call
                     # Check if any child call already matches
                     child_call_matches = False
                     for child in node.children:
-                        if child.type == "call" and pattern in child.text.decode('utf-8'):
+                        if child.type == "call" and self._node_matches_pattern(child, pattern):
                             child_call_matches = True
                             break
                     
@@ -201,12 +201,12 @@ class PythonPlugin(ILanguagePlugin):
             source_lines = f.readlines()
         
         def visit_node(node: Node):
-            node_text = node.text.decode('utf-8')
+            node_text = node.text.decode('utf-8', errors='replace')
             
             for rule in sanitizer_rules:
                 pattern = rule.get("pattern", "")
                 
-                if pattern in node_text and node.type == "call":
+                if node.type == "call" and self._node_matches_pattern(node, pattern):
                     func_name = self._extract_function_name(node)
                     
                     location = CodeLocation(
@@ -336,8 +336,6 @@ class PythonPlugin(ILanguagePlugin):
             callee_file = import_map[callee_name]
         elif Path(entry.file_path) == file_path:
             callee_file = Path(entry.file_path)
-        elif Path(entry.file_path).exists():
-            callee_file = Path(entry.file_path)
 
         if callee_file is None or not callee_file.exists():
             return False
@@ -449,13 +447,51 @@ class PythonPlugin(ILanguagePlugin):
             current = current.parent
         
         return "unknown"
+
+    def _node_matches_pattern(self, node: Node, pattern: str) -> bool:
+        """Return True when a node matches one reviewable source/sink pattern."""
+        normalized_pattern = pattern.strip()
+        if not normalized_pattern:
+            return False
+
+        if normalized_pattern.endswith("("):
+            return self._call_matches_pattern(node, normalized_pattern[:-1])
+
+        node_text = node.text.decode('utf-8', errors='replace').strip()
+        if node.type == "call":
+            return self._call_name_matches(
+                self._extract_function_name(node),
+                normalized_pattern,
+            )
+
+        return node_text == normalized_pattern
+
+    def _call_matches_pattern(self, node: Node, pattern_name: str) -> bool:
+        """Match exact callable names without substring bleed into unrelated APIs."""
+        if node.type != "call":
+            return False
+        return self._call_name_matches(
+            self._extract_function_name(node),
+            pattern_name.strip(),
+        )
+
+    @staticmethod
+    def _call_name_matches(function_name: str, pattern_name: str) -> bool:
+        """Match a function name directly or by simple dotted suffix."""
+        if not function_name or function_name == "unknown" or not pattern_name:
+            return False
+        if function_name == pattern_name:
+            return True
+        if "." not in pattern_name and function_name.endswith(f".{pattern_name}"):
+            return True
+        return False
     
     def _extract_function_name(self, node: Node) -> str:
         """Extract function name from call node."""
         if node.type == "call":
             func_node = node.child_by_field_name("function")
             if func_node:
-                return func_node.text.decode('utf-8')
+                return func_node.text.decode('utf-8', errors='replace').strip()
         
         return "unknown"
     

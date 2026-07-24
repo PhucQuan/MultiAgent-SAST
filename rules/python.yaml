@@ -23,11 +23,6 @@ sources:
     type: "USER_INPUT"
     severity: "MEDIUM"
   
-  # File Operations
-  - pattern: "open("
-    type: "FILE_READ"
-    severity: "LOW"
-  
   # System Arguments
   - pattern: "sys.argv"
     type: "COMMAND_LINE_ARGS"

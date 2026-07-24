@@ -77,6 +77,13 @@ class TestExtractSources:
         sources = plugin.extract_sources(ast, path, rules)
         assert sources == [], "No sources in clean arithmetic code"
 
+    def test_open_call_is_no_longer_treated_as_generic_source(self, plugin, rules):
+        code = "data = open(path).read()\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert sources == [], "open() should not be treated as a generic taint source"
+
 
 # ---------------------------------------------------------------------------
 # Tests: extract_sinks
@@ -103,6 +110,22 @@ class TestExtractSinks:
         ast = plugin.parse_file(path)
         sinks = plugin.extract_sinks(ast, path, rules)
         assert sinks == []
+
+    def test_urlopen_does_not_match_open_path_sink(self, plugin, rules):
+        code = "from urllib.request import urlopen\nurlopen(target)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert all(sink.sink_type.value != "PATH_TRAVERSAL" for sink in sinks), (
+            "urlopen() should not be matched by the generic open() path sink"
+        )
+
+    def test_code_template_does_not_match_template_sink(self, plugin, rules):
+        code = "CodeTemplate('hello ${name}')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert sinks == [], "CodeTemplate() should not be treated as a Jinja Template sink"
 
 
 # ---------------------------------------------------------------------------

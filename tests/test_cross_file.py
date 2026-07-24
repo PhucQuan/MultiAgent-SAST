@@ -192,3 +192,60 @@ class TestCrossFileDetection:
             "Sanitized path produced significantly more findings than unsanitized"
         )
 
+    def test_cross_file_source_keeps_underlying_source_type(self):
+        tmp = make_cross_file_project(
+            utils_code="""\
+                import os
+                def get_command():
+                    return os.environ.get('DANGEROUS_CMD')
+            """,
+            app_code="""\
+                import os
+                from utils import get_command
+
+                def run():
+                    cmd = get_command()
+                    os.system(cmd)
+            """,
+        )
+        detector = make_detector()
+        result = detector.analyze_directory(tmp)
+
+        assert result.vulnerabilities, "Expected at least one cross-file finding"
+        source_types = {v.dataflow.source.source_type for v in result.vulnerabilities}
+        assert "ENVIRONMENT_VAR" in source_types, (
+            f"Expected ENVIRONMENT_VAR synthetic source, got: {sorted(source_types)}"
+        )
+
+    def test_cross_file_source_synthesis_ignores_unimported_same_name_functions(self):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "noise.py").write_text(
+            textwrap.dedent(
+                """\
+                def list(value):
+                    return input()
+                """
+            ),
+            encoding="utf-8",
+        )
+        (tmp / "app.py").write_text(
+            textwrap.dedent(
+                """\
+                import os
+
+                def run(reader):
+                    file_rows = list(reader)
+                    os.system(file_rows)
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        detector = make_detector()
+        result = detector.analyze_directory(tmp)
+
+        assert result.vulnerabilities == [], (
+            "Builtin-style calls should not inherit sources from unrelated same-name "
+            "functions elsewhere in the repo"
+        )
+
