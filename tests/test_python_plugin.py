@@ -104,6 +104,23 @@ class TestExtractSinks:
         sinks = plugin.extract_sinks(ast, path, rules)
         assert len(sinks) >= 1, "Should detect cursor.execute as sink"
 
+    def test_execute_query_does_not_match_execute_sink(self, plugin, rules):
+        code = "cursor.execute_query('SELECT * FROM users')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert sinks == [], "execute_query() should not be matched by the legacy .execute( sink"
+
+    def test_mass_assignment_update_kwargs_matches_legacy_pattern(self, plugin, rules):
+        code = "user.update(**payload)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "user.update" and sink.sink_type.value == "MASS_ASSIGNMENT"
+            for sink in sinks
+        ), "user.update(**payload) should match the legacy .update(** sink"
+
     def test_no_sinks_in_clean_code(self, plugin, rules):
         code = "result = 1 + 2\nprint(result)\n"
         path = write_temp(code)

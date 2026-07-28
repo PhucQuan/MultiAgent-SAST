@@ -454,15 +454,13 @@ class PythonPlugin(ILanguagePlugin):
         if not normalized_pattern:
             return False
 
-        if normalized_pattern.endswith("("):
-            return self._call_matches_pattern(node, normalized_pattern[:-1])
+        if node.type == "call":
+            callable_pattern = self._normalize_call_pattern(normalized_pattern)
+            if callable_pattern:
+                return self._call_matches_pattern(node, callable_pattern)
+            return False
 
         node_text = node.text.decode('utf-8', errors='replace').strip()
-        if node.type == "call":
-            return self._call_name_matches(
-                self._extract_function_name(node),
-                normalized_pattern,
-            )
 
         return node_text == normalized_pattern
 
@@ -476,10 +474,22 @@ class PythonPlugin(ILanguagePlugin):
         )
 
     @staticmethod
+    def _normalize_call_pattern(pattern: str) -> str:
+        """Collapse legacy call hints such as `.execute(` or `.update(**` to names."""
+        normalized = pattern.strip()
+        if not normalized:
+            return ""
+        if "(" in normalized:
+            normalized = normalized.split("(", 1)[0].rstrip()
+        return normalized
+
+    @staticmethod
     def _call_name_matches(function_name: str, pattern_name: str) -> bool:
-        """Match a function name directly or by simple dotted suffix."""
+        """Match a function name directly or by controlled method suffix rules."""
         if not function_name or function_name == "unknown" or not pattern_name:
             return False
+        if pattern_name.startswith("."):
+            return function_name.endswith(pattern_name)
         if function_name == pattern_name:
             return True
         if "." not in pattern_name and function_name.endswith(f".{pattern_name}"):

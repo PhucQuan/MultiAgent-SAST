@@ -1,0 +1,58 @@
+# Manual Semgrep-shaped seed fixture for Aegis rule-review flow testing.
+# This is a hand-written local fixture, not a raw Semgrep registry snapshot.
+
+rules:
+  - id: python.command-injection.subprocess-shell-true
+    message: Potential command injection via shell-enabled subprocess
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: input(...)
+    pattern-sinks:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+    pattern-sanitizers:
+      - pattern: shlex.quote(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-78
+      owasp:
+        - A05:2025
+      references:
+        - generic-command-injection
+      false_positives:
+        - constant-command-string
+      fix: Prefer subprocess argument arrays with shell disabled.
+
+  - id: python.command-injection.subprocess-popen-shell-true
+    message: Potential command injection via shell-enabled Popen
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.form.get(...)
+          - pattern: sys.argv[...]
+    pattern-sinks:
+      - pattern: subprocess.Popen(..., shell=True, ...)
+    pattern-sanitizers:
+      - pattern: shlex.quote(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-78
+      owasp:
+        - A05:2025
+      references:
+        - generic-command-injection
+      false_positives:
+        - argument-array-with-shell-false
+      fix: Avoid shell=True and pass an argument list instead.

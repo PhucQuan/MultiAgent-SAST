@@ -1,0 +1,57 @@
+# Manual Semgrep-shaped seed fixture for Aegis rule-review flow testing.
+# This is a hand-written local fixture, not a raw Semgrep registry snapshot.
+
+rules:
+  - id: python.sql-injection.execute-family
+    message: Potential SQL injection through execute-style query execution
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: input(...)
+    pattern-sinks:
+      - pattern: execute(...)
+      - pattern: executemany(...)
+    pattern-sanitizers:
+      - pattern: int(...)
+        exact: true
+      - pattern: float(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-89
+      references:
+        - generic-sqli
+      false_positives:
+        - parameterized-query
+        - trusted-integer-cast
+      fix: Replace string formatting with parameterized queries or prepared statements.
+
+  - id: python.sql-injection.raw-query-family
+    message: Potential SQL injection through raw query helpers
+    severity: WARNING
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.values.get(...)
+          - pattern: request.data
+    pattern-sinks:
+      - pattern: raw(...)
+    pattern-sanitizers:
+      - pattern: int(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-89
+      references:
+        - generic-sqli
+      false_positives:
+        - safe-allowlisted-raw-fragment
+      fix: Keep raw SQL fragments on an allowlist and never concatenate untrusted input directly.

@@ -22,6 +22,11 @@ This directory is for operational scripts that support the thesis workflow.
   - highlights top finding families, source/sink patterns, duplicate groups, and optional source-pattern mismatches
 - `import_semgrep_subset.py`: normalize a small Semgrep taint-rule subset into the Aegis review schema
   - keeps provenance metadata and is meant for human-reviewed seed imports
+- `compare_reviewed_bundle_scan.py`: run default rules and one reviewed legacy bundle side by side on a small target
+  - writes `comparison_summary.json` so the team can record Phase 1 smoke results for the thesis
+- `run_benchmark_v1.py`: run the reviewed-bundle mini benchmark across the 3 Python V1 families
+  - aggregates per-case `comparison_summary.json` files into one `benchmark_summary.json` and Markdown report
+  - also supports custom manifests such as `datasets/benchmark/reviewed_bundle_v1/cases_sql_injection_extension.json`
 
 ## Guidelines
 

@@ -1,0 +1,13 @@
+{
+  "schema_version": "aegis-reviewed-bundle-benchmark-v1",
+  "description": "Extension benchmark manifest for the reviewed SQL injection bundle after the strict Python V1 trio.",
+  "cases": [
+    {
+      "case_id": "python-sql-injection-extension",
+      "family": "SQL_INJECTION",
+      "target": "examples/vulnerable_sqli.py",
+      "reviewed_rules": "reports/rule_review/sql_injection_seed/python_sql_injection_semgrep_shape.legacy.yaml",
+      "goal": "Check whether the fixed default scanner and the reviewed SQLi bundle keep execute-family sink coverage aligned."
+    }
+  ]
+}

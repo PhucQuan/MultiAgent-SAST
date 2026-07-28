@@ -78,6 +78,8 @@ def test_normalize_semgrep_taint_rule_maps_reviewable_subset():
     ]
     assert rule["provenance"]["source"] == "semgrep"
     assert rule["provenance"]["snapshot_version"] == "unit-test"
+    assert all(entry["exact"] is True for entry in rule["detection"]["source_patterns"])
+    assert all(entry["exact"] is True for entry in rule["detection"]["sink_patterns"])
 
 
 def test_normalize_semgrep_document_skips_non_taint_and_unsupported_rules():
@@ -127,6 +129,34 @@ def test_normalize_semgrep_document_skips_non_taint_and_unsupported_rules():
     skipped = {item["rule_id"]: item["reason"] for item in normalized["skipped_rules"]}
     assert skipped["python.pattern-only.demo"] == "only taint-mode rules are supported in V1"
     assert skipped["javascript.taint.demo"] == "rule language is unsupported or filtered out"
+
+
+def test_importer_infers_exact_true_for_call_like_patterns_without_override():
+    module = _load_importer_module()
+    document = {
+        "rules": [
+            {
+                "id": "python.command.call-like.default-exact",
+                "message": "Potential command injection",
+                "severity": "ERROR",
+                "mode": "taint",
+                "languages": ["python"],
+                "pattern-sources": [{"pattern": "input(...)"}],
+                "pattern-sinks": [{"pattern": "subprocess.call(..., shell=True, ...)"}],
+                "metadata": {"cwe": ["CWE-78"]},
+            }
+        ]
+    }
+
+    normalized = module.normalize_semgrep_document(
+        document,
+        language_filter="python",
+        provenance_source="semgrep",
+    )
+
+    rule = normalized["rules"][0]
+    assert rule["detection"]["source_patterns"][0]["exact"] is True
+    assert rule["detection"]["sink_patterns"][0]["exact"] is True
 
 
 def test_cli_writes_normalized_json_document(tmp_path):

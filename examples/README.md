@@ -61,6 +61,22 @@ aegis-sast scan examples/vulnerable_path_traversal.py
 
 ---
 
+### 4. `vulnerable_deserialization.py` - Insecure Deserialization
+
+Demonstrates unsafe object loading patterns:
+- `pickle.loads()` on untrusted input
+- `yaml.unsafe_load()` on user-controlled content
+- `yaml.load()` without a safe loader
+
+**Test it:**
+```bash
+aegis-sast scan examples/vulnerable_deserialization.py
+```
+
+**Expected findings:** 2-3 Insecure Deserialization vulnerabilities (CRITICAL severity)
+
+---
+
 ## 🚀 Quick Test
 
 Scan all examples at once:

@@ -19,6 +19,7 @@ import sys
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -393,16 +394,31 @@ def print_progress_update(update: dict) -> None:
         )
 
 
-def main() -> int:
-    """Run a manual scan for any local target."""
-    parser = build_parser()
-    args = parser.parse_args()
-
-    target = args.target.resolve()
+def run_manual_scan(
+    *,
+    target: Path,
+    custom_rules_path: Path | None = None,
+    output_dir: Path | None = None,
+    formats: list[str] | None = None,
+    max_depth: int = 5,
+    with_ai: bool = False,
+    exclude_dirs: list[str] | None = None,
+    exclude_globs: list[str] | None = None,
+    exclude_profiles: list[str] | None = None,
+    no_default_excludes: bool = False,
+    progress_every: int = 100,
+    progress_callback=None,
+    emit_console: bool = False,
+) -> dict[str, Any]:
+    """Run one manual scan and return reusable artifacts for other scripts."""
+    target = target.resolve()
     if not target.exists():
-        parser.error(f"Target does not exist: {target}")
-    if args.rules and not args.rules.exists():
-        parser.error(f"Rules file does not exist: {args.rules}")
+        raise FileNotFoundError(f"Target does not exist: {target}")
+
+    if custom_rules_path is not None:
+        custom_rules_path = custom_rules_path.resolve()
+        if not custom_rules_path.exists():
+            raise FileNotFoundError(f"Rules file does not exist: {custom_rules_path}")
 
     try:
         from aegis_sast.analysis.rule_engine import RuleEngine
@@ -412,47 +428,50 @@ def main() -> int:
         from aegis_sast.core.registry import get_registry
         from aegis_sast.knowledge import KnowledgeLoader
         from aegis_sast.orchestration import RepoIntake, ScanWorkflow
-    except ModuleNotFoundError as exc:
-        print(f"[error] missing runtime dependency: {exc}")
-        print("Run `python scripts/doctor_env.py` and install requirements.txt first.")
-        return 1
+    except ModuleNotFoundError as exc:  # pragma: no cover - runtime environment dependent
+        raise RuntimeError(f"missing runtime dependency: {exc}") from exc
 
     config = get_config()
-    config.enable_ai_verification = args.with_ai
-    config.max_analysis_depth = args.max_depth
-    config.output_formats = args.format or ["json", "markdown", "sarif"]
-    config.output_dir = args.output_dir or default_output_dir(target)
-    config.custom_rules_path = args.rules
+    config.enable_ai_verification = with_ai
+    config.max_analysis_depth = max_depth
+    config.output_formats = formats or ["json", "markdown", "sarif"]
+    config.output_dir = output_dir or default_output_dir(target)
+    config.custom_rules_path = custom_rules_path
     set_config(config)
 
     registry = get_registry()
-    print_analyzer_status(registry)
-
     repo_profile = RepoIntake(registry).analyze_target(target)
-    print_repo_profile(repo_profile)
-    active_profiles, exclude_dirs, exclude_globs = resolve_scan_controls(
+    active_profiles, resolved_exclude_dirs, resolved_exclude_globs = resolve_scan_controls(
         target,
-        args.exclude_dir,
-        args.exclude_glob,
-        args.exclude_profile,
-        no_default_excludes=args.no_default_excludes,
-    )
-    print_scan_controls(
-        target,
-        active_profiles,
-        exclude_dirs,
-        exclude_globs,
-        args.progress_every,
+        exclude_dirs or [],
+        exclude_globs or [],
+        exclude_profiles or [],
+        no_default_excludes=no_default_excludes,
     )
 
-    detector = VulnerabilityDetector(RuleEngine(config.custom_rules_path), args.max_depth)
+    if emit_console:
+        print_analyzer_status(registry)
+        print_repo_profile(repo_profile)
+        print_scan_controls(
+            target,
+            active_profiles,
+            resolved_exclude_dirs,
+            resolved_exclude_globs,
+            progress_every,
+        )
+
+    detector = VulnerabilityDetector(RuleEngine(config.custom_rules_path), max_depth)
+    selected_progress_callback = progress_callback
+    if selected_progress_callback is None and emit_console:
+        selected_progress_callback = print_progress_update
+
     if target.is_dir():
         scan_result = detector.analyze_directory(
             target,
-            exclude_dir_names=exclude_dirs,
-            exclude_globs=exclude_globs,
-            progress_callback=print_progress_update,
-            progress_every=args.progress_every,
+            exclude_dir_names=resolved_exclude_dirs,
+            exclude_globs=resolved_exclude_globs,
+            progress_callback=selected_progress_callback,
+            progress_every=progress_every,
         )
     else:
         vulnerabilities = detector.analyze_file(target)
@@ -464,14 +483,15 @@ def main() -> int:
             files_scanned=1,
         )
 
-    if args.with_ai and scan_result.vulnerabilities:
+    if with_ai and scan_result.vulnerabilities:
         try:
             from aegis_sast.llm import GeminiClient
 
             asyncio.run(verify_with_ai(GeminiClient(), scan_result))
-        except Exception as exc:
-            print(f"[warn] AI verification unavailable: {exc}")
-            print("[warn] continuing with deterministic findings only")
+        except Exception as exc:  # pragma: no cover - runtime environment dependent
+            if emit_console:
+                print(f"[warn] AI verification unavailable: {exc}")
+                print("[warn] continuing with deterministic findings only")
 
     triage_records = []
     workflow_metadata = None
@@ -491,15 +511,56 @@ def main() -> int:
         workflow_metadata,
     )
 
-    print_scan_summary(scan_result, workflow_metadata)
-    print("Reports:")
-    for path in written_reports:
-        print(f"  - {path}")
+    if emit_console:
+        print_scan_summary(scan_result, workflow_metadata)
+        print("Reports:")
+        for path in written_reports:
+            print(f"  - {path}")
+        if scan_result.errors:
+            print("Errors:")
+            for error in scan_result.errors:
+                print(f"  - {error}")
 
-    if scan_result.errors:
-        print("Errors:")
-        for error in scan_result.errors:
-            print(f"  - {error}")
+    return {
+        "config": config,
+        "registry": registry,
+        "repo_profile": repo_profile,
+        "active_profiles": active_profiles,
+        "exclude_dirs": resolved_exclude_dirs,
+        "exclude_globs": resolved_exclude_globs,
+        "scan_result": scan_result,
+        "triage_records": triage_records,
+        "workflow_metadata": workflow_metadata,
+        "written_reports": written_reports,
+    }
+
+
+def main() -> int:
+    """Run a manual scan for any local target."""
+    parser = build_parser()
+    args = parser.parse_args()
+
+    try:
+        run_manual_scan(
+            target=args.target,
+            custom_rules_path=args.rules,
+            output_dir=args.output_dir,
+            formats=args.format or ["json", "markdown", "sarif"],
+            max_depth=args.max_depth,
+            with_ai=args.with_ai,
+            exclude_dirs=args.exclude_dir,
+            exclude_globs=args.exclude_glob,
+            exclude_profiles=args.exclude_profile,
+            no_default_excludes=args.no_default_excludes,
+            progress_every=args.progress_every,
+            emit_console=True,
+        )
+    except FileNotFoundError as exc:
+        parser.error(str(exc))
+    except RuntimeError as exc:
+        print(f"[error] {exc}")
+        print("Run `python scripts/doctor_env.py` and install requirements.txt first.")
+        return 1
 
     return 0
 

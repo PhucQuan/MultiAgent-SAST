@@ -1,0 +1,51 @@
+# Manual Semgrep-shaped seed fixture for Aegis rule-review flow testing.
+# This is a hand-written local fixture, not a raw Semgrep registry snapshot.
+
+rules:
+  - id: python.insecure-deserialization.pickle-loads
+    message: Potential insecure deserialization via pickle.loads
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.data
+          - pattern: input(...)
+          - pattern: sys.stdin.read(...)
+    pattern-sinks:
+      - pattern: pickle.loads(...)
+    metadata:
+      cwe:
+        - CWE-502
+      references:
+        - python-pickle-loads
+      false_positives:
+        - trusted-signed-payload
+      fix: Avoid pickle for untrusted data and switch to a safe serialization format with integrity checks.
+
+  - id: python.insecure-deserialization.yaml-loaders
+    message: Potential insecure deserialization via unsafe YAML loaders
+    severity: WARNING
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: request.data
+    pattern-sinks:
+      - pattern: yaml.unsafe_load(...)
+      - pattern: yaml.load(...)
+    pattern-sanitizers:
+      - pattern: yaml.safe_load(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-502
+      references:
+        - python-yaml-deserialization
+      false_positives:
+        - safe-loader-used
+      fix: Prefer yaml.safe_load or an allowlisted safe loader for untrusted YAML content.

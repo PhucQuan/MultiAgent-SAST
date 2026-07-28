@@ -1,0 +1,238 @@
+:root {
+  --bg: #f3eadf;
+  --panel: rgba(255, 250, 242, 0.92);
+  --panel-strong: rgba(255, 247, 235, 0.98);
+  --line: rgba(52, 35, 18, 0.14);
+  --text: #2f2014;
+  --muted: #7d624b;
+  --accent: #b4542a;
+  --accent-strong: #8a3511;
+  --shadow: 0 22px 55px rgba(60, 31, 8, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(235, 122, 46, 0.18), transparent 38%),
+    radial-gradient(circle at bottom right, rgba(62, 99, 140, 0.12), transparent 32%),
+    linear-gradient(180deg, #f7f1e7 0%, var(--bg) 100%);
+  color: var(--text);
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+}
+
+.page-shell {
+  width: min(1240px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 40px;
+}
+
+.hero-card,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.hero-card {
+  padding: 26px 28px;
+  margin-bottom: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hero-card h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  line-height: 0.95;
+}
+
+.hero-copy {
+  max-width: 720px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 460px) minmax(380px, 1fr);
+  gap: 20px;
+}
+
+.panel {
+  padding: 22px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.7rem;
+}
+
+.panel-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.bundle-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.bundle-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.bundle-form span {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.field-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+input,
+select,
+button,
+pre {
+  font: inherit;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid rgba(73, 43, 18, 0.16);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+input:focus,
+select:focus,
+button:focus {
+  outline: 2px solid rgba(180, 84, 42, 0.22);
+  outline-offset: 2px;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+  color: #fff8f2;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: 0.62;
+  cursor: progress;
+}
+
+.status-text {
+  margin: 0;
+  color: var(--muted);
+}
+
+.status-text[data-state="error"] {
+  color: #a1321e;
+}
+
+.summary-card {
+  min-height: 96px;
+  margin-top: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.summary-card.empty {
+  color: var(--muted);
+}
+
+.summary-topline {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.summary-topline strong {
+  color: var(--accent-strong);
+  text-transform: uppercase;
+}
+
+.artifact-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 18px 0 12px;
+}
+
+.artifact-tab {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--text);
+  border: 1px solid rgba(73, 43, 18, 0.12);
+}
+
+.artifact-tab.active {
+  background: linear-gradient(135deg, rgba(180, 84, 42, 0.15), rgba(60, 95, 144, 0.12));
+  color: var(--accent-strong);
+}
+
+.artifact-preview {
+  min-height: 480px;
+  margin: 0;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(50, 33, 20, 0.12);
+  background: #201811;
+  color: #f6ebde;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 980px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .artifact-preview {
+    min-height: 340px;
+  }
+}

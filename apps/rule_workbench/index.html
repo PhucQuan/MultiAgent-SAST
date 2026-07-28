@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aegis Rule Workbench</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero-card">
+        <p class="eyebrow">Aegis-SAST V1</p>
+        <h1>Rule Workbench</h1>
+        <p class="hero-copy">
+          Review a small seed snapshot, normalize it, validate it, and export a
+          detector-friendly legacy bridge without pushing anything straight into
+          runtime detection.
+        </p>
+      </section>
+
+      <section class="workspace-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Bundle Builder</h2>
+            <p>Seed in, reviewed artifacts out.</p>
+          </div>
+
+          <form id="bundle-form" class="bundle-form">
+            <label>
+              <span>Suggested seed inputs</span>
+              <select id="seed-suggestions">
+                <option value="">Loading seed inputs...</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Input path</span>
+              <input
+                id="input-path"
+                name="input_path"
+                type="text"
+                placeholder="datasets/synthetic/rule_review_v1/seed_inputs/..."
+                required
+              />
+            </label>
+
+            <label>
+              <span>Output dir</span>
+              <input
+                id="output-dir"
+                name="output_dir"
+                type="text"
+                placeholder="reports/rule_review/my_bundle"
+              />
+            </label>
+
+            <div class="field-row">
+              <label>
+                <span>Language</span>
+                <select id="language" name="language"></select>
+              </label>
+              <label>
+                <span>Family</span>
+                <select id="family" name="family"></select>
+              </label>
+            </div>
+
+            <div class="field-row">
+              <label>
+                <span>Profile</span>
+                <select id="profile" name="profile"></select>
+              </label>
+              <label>
+                <span>Limit</span>
+                <input id="limit" name="limit" type="number" min="1" placeholder="Optional" />
+              </label>
+            </div>
+
+            <div class="field-row">
+              <label>
+                <span>Normalized format</span>
+                <select id="normalized-format" name="normalized_format">
+                  <option value="json">json</option>
+                  <option value="yaml">yaml</option>
+                </select>
+              </label>
+              <label>
+                <span>Validation format</span>
+                <select id="validation-format" name="validation_format">
+                  <option value="json">json</option>
+                  <option value="text">text</option>
+                </select>
+              </label>
+              <label>
+                <span>Legacy bridge</span>
+                <select id="legacy-format" name="legacy_format">
+                  <option value="yaml">yaml</option>
+                  <option value="json">json</option>
+                  <option value="">disabled</option>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              <span>Provenance source</span>
+              <input id="provenance-source" name="provenance_source" type="text" />
+            </label>
+
+            <label>
+              <span>Snapshot version</span>
+              <input id="snapshot-version" name="snapshot_version" type="text" />
+            </label>
+
+            <div class="action-row">
+              <button id="build-button" type="submit">Build Review Bundle</button>
+              <p id="status-text" class="status-text">Waiting for input.</p>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="panel-head">
+            <h2>Artifacts</h2>
+            <p>Preview normalized output, validation, and legacy bridge files.</p>
+          </div>
+
+          <div id="summary-card" class="summary-card empty">
+            Run the bundle builder to see artifact paths and validation status.
+          </div>
+
+          <div id="artifact-tabs" class="artifact-tabs"></div>
+          <pre id="artifact-preview" class="artifact-preview">No artifact selected.</pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

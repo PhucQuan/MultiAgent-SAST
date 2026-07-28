@@ -1,0 +1,65 @@
+# Manual Semgrep-shaped seed fixture for Aegis rule-review flow testing.
+# This is a hand-written local fixture, not a raw Semgrep registry snapshot.
+
+rules:
+  - id: python.path-traversal.file-read-and-download
+    message: Potential path traversal via user-controlled file reads or downloads
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: input(...)
+    pattern-sinks:
+      - pattern: send_file(...)
+      - pattern: open(...)
+    pattern-sanitizers:
+      - pattern: os.path.basename(...)
+        exact: true
+      - pattern: os.path.abspath(...)
+        exact: true
+      - pattern: os.path.realpath(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-22
+      references:
+        - generic-path-traversal
+      false_positives:
+        - basename-allowlist
+        - resolved-path-prefix-check
+      fix: Normalize and resolve the path, then ensure it stays within an allowlisted base directory.
+
+  - id: python.path-traversal.file-delete-and-list
+    message: Potential path traversal via user-controlled file mutation or directory listing
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.values.get(...)
+          - pattern: sys.argv[...]
+    pattern-sinks:
+      - pattern: os.remove(...)
+      - pattern: os.listdir(...)
+    pattern-sanitizers:
+      - pattern: os.path.basename(...)
+        exact: true
+      - pattern: os.path.normpath(...)
+        exact: true
+      - pattern: os.path.realpath(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-22
+      references:
+        - generic-path-traversal
+      false_positives:
+        - base-dir-prefix-check
+        - reject-dot-dot-segments
+      fix: Reject traversal markers and verify the resolved path remains under the trusted root before listing or deleting files.

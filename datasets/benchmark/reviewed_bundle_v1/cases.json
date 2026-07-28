@@ -1,0 +1,27 @@
+{
+  "schema_version": "aegis-reviewed-bundle-benchmark-v1",
+  "description": "Small Python reviewed-bundle benchmark covering the three V1 rule families.",
+  "cases": [
+    {
+      "case_id": "python-command-injection",
+      "family": "COMMAND_INJECTION",
+      "target": "examples/vulnerable_rce.py",
+      "reviewed_rules": "reports/rule_review/command_injection_seed/python_command_injection_semgrep_shape.legacy.yaml",
+      "goal": "Check whether the reviewed command-injection bundle reduces noisy sinks while preserving core RCE findings."
+    },
+    {
+      "case_id": "python-path-traversal",
+      "family": "PATH_TRAVERSAL",
+      "target": "examples/vulnerable_path_traversal.py",
+      "reviewed_rules": "reports/rule_review/path_traversal_seed/python_path_traversal_semgrep_shape.legacy.yaml",
+      "goal": "Check whether the reviewed path-traversal bundle shifts findings from path construction helpers toward real file-access sinks."
+    },
+    {
+      "case_id": "python-insecure-deserialization",
+      "family": "INSECURE_DESERIALIZATION",
+      "target": "examples/vulnerable_deserialization.py",
+      "reviewed_rules": "reports/rule_review/insecure_deserialization_seed/python_insecure_deserialization_semgrep_shape.legacy.yaml",
+      "goal": "Check whether the reviewed deserialization bundle preserves sink coverage while adding reviewed provenance and sanitizer metadata."
+    }
+  ]
+}

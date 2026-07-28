@@ -22,7 +22,7 @@ Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
    - `31`
    - Da co mini benchmark ablation co dataset synthetic, runner, JSON/Markdown output, va so lieu de viet phan thuc nghiem so bo.
 
-## File 32-35 bo sung gi
+## File 32-38 bo sung gi
 
 File `32-roadmap-4-6-thang-hybrid-sast-agent.md` chot huong trien khai tiep theo theo scope 4-6 thang, gom:
 
@@ -49,6 +49,84 @@ File `35-roadmap-v1-python-rule-ingestion-va-triage.md` chot:
 - thu tu uu tien phase tiep theo;
 - scanner cleanup -> rule ingestion -> graph-slice -> benchmark -> debate loop -> knowledge retrieval;
 - cach giu scope gon ma van co gia tri nghien cuu ro rang.
+
+File `36-cong-viec-tiep-theo-cho-quan-v1.md` chot:
+
+- checklist thao tac sat ngay voi phan cua Quan;
+- viec gi can lam ngay sau cleanup;
+- viec gi chua nen dung vao de tranh lech scope.
+
+File `37-web-rule-workbench-v1.md` chot:
+
+- web nay nen la rule workbench, khong phai detector moi;
+- AI chi sinh draft rule va phai qua validate + review;
+- benchmark va provenance la trung tam.
+
+File `38-review-bundle-va-legacy-bridge-v1.md` chot:
+
+- review flow da duoc dong goi thanh 1 bundle script;
+- normalized rules da co cau noi tam thoi sang format rules cu de scan thu nghiem;
+- V1 da co mot duong di ro rang tu seed -> review -> scan.
+
+File `39-roadmap-sau-rule-workbench-v1.md` chot:
+
+- sau khi co scaffold web thi phase nao lam truoc;
+- thu tu giua workbench van hanh, reviewed bundles, benchmark, AI drafting, va evidence;
+- viec nao chua nen lam de tranh lech scope va overclaim.
+
+File `40-rule-workbench-command-injection-runbook.md` chot:
+
+- cach build reviewed bundle dau tien cho `COMMAND_INJECTION`;
+- cach compare default rules voi reviewed bundle tren corpus nho;
+- artifact nao can luu lai de demo va bao cao.
+
+File `41-tong-hop-cach-cac-paper-giai-bai-toan-multi-agent-sast.md` chot:
+
+- cac huong giai bai toan ma paper gan day dang di theo;
+- paper nao hop voi bai toan rules/specs, paper nao hop voi false-positive reduction;
+- va Aegis nen hoc gi, chua nen hoc gi o tung giai doan.
+
+File `42-dinh-huong-nghien-cuu-tu-paper-cho-aegis-v1.md` chot:
+
+- quy ve nhung paper/doi chieu online thanh quyet dinh build cu the cho Aegis;
+- chi ro thu tu `reviewed bundles -> benchmark -> AI draft rule/spec -> triage nang cao`;
+- va giup tranh bi loai sang huong "AI scan bua" hoac "LangGraph qua som".
+
+File `43-ke-hoach-dung-owasp-benchmark-cho-aegis-v1.md` chot:
+
+- cach dua OWASP Benchmark vao de tai ma khong bi to scope;
+- benchmark modes can do cho Aegis core, reviewed bundle, triage va Semgrep baseline;
+- va ranh gioi claim/limitations can giu khi viet khoa luan.
+
+File `44-rule-workbench-path-traversal-runbook.md` chot:
+
+- cach lap lai reviewed bundle flow cho family thu 2 la `PATH_TRAVERSAL`;
+- cach compare default rules voi reviewed path bundle tren corpus nho;
+- va cach dung ket qua nay lam buoc dem truoc khi sang `INSECURE_DESERIALIZATION` va benchmark mini.
+
+File `45-rule-workbench-insecure-deserialization-runbook.md` chot:
+
+- cach hoan tat reviewed bundle flow cho family thu 3 la `INSECURE_DESERIALIZATION`;
+- cach chay compare tren example rieng de tranh nhiu OWASP mixed file;
+- va cach dung moc nay de chuyen sang benchmark mini 3 family.
+
+File `46-mini-benchmark-review-bundles-v1.md` chot:
+
+- cach gom 3 reviewed bundles thanh 1 benchmark mini co the chay lai;
+- benchmark runner chi cho `default vs reviewed` o giai doan dau;
+- va cach doc ket qua theo huong `giam noise`, `giu signal`, hoac `doi sink signal`.
+
+File `47-rule-workbench-sql-injection-extension.md` chot:
+
+- cach mo rong reviewed bundle flow sang `SQL_INJECTION` sau khi dong Phase V1 3 family;
+- vi sao SQLi dung pattern `execute(...)` suffix-style thay vi `.execute(`;
+- va cach build/compare family nay bang profile `generic`.
+
+File `48-benchmark-extension-sql-injection.md` chot:
+
+- cach them mot benchmark manifest rieng cho SQLi sau khi fix regression o core scanner;
+- cach giu benchmark V1 strict 3 family nguyen ven, trong khi van do duoc SQLi;
+- va moc ket qua mong doi de xem SQLi da san sang cho benchmark/thesis chua.
 
 ## Thu tu nen doc
 
@@ -79,10 +157,23 @@ File `35-roadmap-v1-python-rule-ingestion-va-triage.md` chot:
 25. `33-chien-luoc-capability-parity-python-javascript-java.md`
 26. `34-rule-ingestion-va-normalized-schema-v1.md`
 27. `35-roadmap-v1-python-rule-ingestion-va-triage.md`
-28. `06-lo-trinh-phat-trien.md`
-29. `07-ke-hoach-benchmark.md`
-30. `08-kich-ban-demo.md`
-31. `09-cau-hoi-phan-bien.md`
+28. `36-cong-viec-tiep-theo-cho-quan-v1.md`
+29. `37-web-rule-workbench-v1.md`
+30. `38-review-bundle-va-legacy-bridge-v1.md`
+31. `39-roadmap-sau-rule-workbench-v1.md`
+32. `40-rule-workbench-command-injection-runbook.md`
+33. `41-tong-hop-cach-cac-paper-giai-bai-toan-multi-agent-sast.md`
+34. `42-dinh-huong-nghien-cuu-tu-paper-cho-aegis-v1.md`
+35. `43-ke-hoach-dung-owasp-benchmark-cho-aegis-v1.md`
+36. `44-rule-workbench-path-traversal-runbook.md`
+37. `45-rule-workbench-insecure-deserialization-runbook.md`
+38. `46-mini-benchmark-review-bundles-v1.md`
+39. `47-rule-workbench-sql-injection-extension.md`
+40. `48-benchmark-extension-sql-injection.md`
+41. `06-lo-trinh-phat-trien.md`
+42. `07-ke-hoach-benchmark.md`
+43. `08-kich-ban-demo.md`
+44. `09-cau-hoi-phan-bien.md`
 
 ## Muc luc tai lieu
 
@@ -124,3 +215,16 @@ File `35-roadmap-v1-python-rule-ingestion-va-triage.md` chot:
 | `33-chien-luoc-capability-parity-python-javascript-java.md` | Chot chien luoc dua Python, JavaScript va Java ve cung mot thang nang luc ky thuat, va quy dinh contract chung giua core voi agent |
 | `34-rule-ingestion-va-normalized-schema-v1.md` | Chot schema rule normalize, pham vi ingestion V1, provenance, va cach tach detector fields khoi triage knowledge |
 | `35-roadmap-v1-python-rule-ingestion-va-triage.md` | Chot roadmap gan nhat cho Python scanner cleanup, rule ingestion, graph-slice triage, benchmark, va phase AI nang cao sau do |
+| `36-cong-viec-tiep-theo-cho-quan-v1.md` | Checklist thao tac sat ngay cho Quan sau cleanup: rerun, residual FP, import subset, review va benchmark mini |
+| `37-web-rule-workbench-v1.md` | Chot scope va vai tro dung cua web Rule Workbench V1 theo huong authoring/review thay vi detector moi |
+| `38-review-bundle-va-legacy-bridge-v1.md` | Ghi lai review bundle script va legacy bridge de dua normalized rules da review vao scanner hien tai mot cach co kiem soat |
+| `39-roadmap-sau-rule-workbench-v1.md` | Chot thu tu phase sau khi co Rule Workbench V1: workbench van hanh that, reviewed bundles, benchmark, AI drafting, adapter runtime, va thesis/demo pack |
+| `40-rule-workbench-command-injection-runbook.md` | Runbook Phase 1 cho `COMMAND_INJECTION`: build reviewed bundle, compare default vs reviewed scan, va luu artifact demo/bao cao |
+| `41-tong-hop-cach-cac-paper-giai-bai-toan-multi-agent-sast.md` | Tong hop cac paper Multi-Agent SAST gan day theo bai toan rules/specs, false positives, orchestration, va noi ro Aegis nen hoc gi o tung phase |
+| `42-dinh-huong-nghien-cuu-tu-paper-cho-aegis-v1.md` | Quy doi phan paper/online references thanh quyet dinh ky thuat cu the cho Aegis V1, chot thu tu uu tien va nhung gi chua nen lam |
+| `43-ke-hoach-dung-owasp-benchmark-cho-aegis-v1.md` | Chot benchmark plan dung OWASP Benchmark cho Aegis V1, cac mode can do, metrics, deliverables va ranh gioi claim |
+| `44-rule-workbench-path-traversal-runbook.md` | Runbook Phase 2 cho `PATH_TRAVERSAL`: build reviewed bundle, compare voi default rules, va chot push gate cho family thu 2 |
+| `45-rule-workbench-insecure-deserialization-runbook.md` | Runbook Phase 2 cho `INSECURE_DESERIALIZATION`: build reviewed bundle, compare tren example rieng, va chot du 3 family reviewed bundles V1 |
+| `46-mini-benchmark-review-bundles-v1.md` | Runbook benchmark mini cho 3 reviewed bundles V1, gom summary `default vs reviewed` thanh artifact JSON/Markdown co the chay lai |
+| `47-rule-workbench-sql-injection-extension.md` | Huong dan mo rong reviewed bundle flow sang `SQL_INJECTION` sau V1, voi fixture, ly do chon sink pattern, va lenh build/compare |
+| `48-benchmark-extension-sql-injection.md` | Runbook them benchmark manifest rieng cho SQLi extension sau khi fix core matcher, giu nguyen benchmark V1 strict 3 family |
