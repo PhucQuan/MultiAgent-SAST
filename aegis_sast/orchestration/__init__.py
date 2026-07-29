@@ -17,12 +17,22 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         SourceContextWindow,
     )
     from aegis_sast.orchestration.contracts import (
+        AuditorInput,
         AuditorResult,
         AuditorReview,
+        JudgeInput,
         JudgeReview,
+        KnowledgeLoaderNodeInput,
+        KnowledgeLoaderNodeResult,
+        PlannerInput,
+        PlannerResult,
+        ReporterInput,
+        ReportEnrichment,
+        SkepticInput,
         SkepticResult,
         SkepticReview,
     )
+    from aegis_sast.orchestration.ai_workflow import AITriageWorkflow
     from aegis_sast.orchestration.nodes import (
         AuditorNode,
         JudgeNode,
@@ -32,13 +42,22 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from aegis_sast.orchestration.workflow import ScanWorkflow
 
 __all__ = [
+    "AITriageWorkflow",
+    "AuditorInput",
     "AuditorNode",
     "AuditorResult",
     "AuditorReview",
     "EvidenceContext",
     "AgentWorkflowState",
+    "JudgeInput",
     "JudgeNode",
     "JudgeReview",
+    "KnowledgeLoaderNodeInput",
+    "KnowledgeLoaderNodeResult",
+    "PlannerInput",
+    "PlannerResult",
+    "ReporterInput",
+    "ReportEnrichment",
     "WorkflowRoute",
     "route_finding",
     "RepoProfile",
@@ -46,6 +65,7 @@ __all__ = [
     "WorkflowStepTrace",
     "ScanWorkflowState",
     "ScanWorkflow",
+    "SkepticInput",
     "SkepticResult",
     "SkepticReview",
     "SkepticValidatorNode",
@@ -60,6 +80,10 @@ def __getattr__(name):
         from aegis_sast.orchestration.workflow import ScanWorkflow
 
         return ScanWorkflow
+    if name == "AITriageWorkflow":
+        from aegis_sast.orchestration.ai_workflow import AITriageWorkflow
+
+        return AITriageWorkflow
     if name == "RepoIntake":
         from aegis_sast.orchestration.repo_intake import RepoIntake
 
@@ -76,6 +100,21 @@ def __getattr__(name):
         from aegis_sast.orchestration.context import SourceContextReader
 
         return SourceContextReader
+    contract_names = {
+        "AuditorInput",
+        "JudgeInput",
+        "KnowledgeLoaderNodeInput",
+        "KnowledgeLoaderNodeResult",
+        "PlannerInput",
+        "PlannerResult",
+        "ReporterInput",
+        "ReportEnrichment",
+        "SkepticInput",
+    }
+    if name in contract_names:
+        import aegis_sast.orchestration.contracts as contracts
+
+        return getattr(contracts, name)
     if name == "AuditorResult":
         from aegis_sast.orchestration.contracts import AuditorResult
 

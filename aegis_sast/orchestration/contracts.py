@@ -5,8 +5,41 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field, model_validator
 
 from aegis_sast.core.models import TriageStatus
+from aegis_sast.knowledge.schema import KnowledgeLoaderResult
 from aegis_sast.orchestration.context import EvidenceContext
-from aegis_sast.triage.schema import StrictContractModel
+from aegis_sast.triage.schema import AITriageInput, StrictContractModel, TriageDecision
+
+
+class PlannerInput(StrictContractModel):
+    """Input to the planner node."""
+
+    triage_input: AITriageInput
+
+
+class PlannerResult(StrictContractModel):
+    """Structured output from the planner node."""
+
+    finding_id: str
+    route_hints: List[str] = Field(default_factory=list)
+    required_knowledge: List[str] = Field(default_factory=list)
+    evidence_gaps: List[str] = Field(default_factory=list)
+    should_use_skeptic: bool
+    reasoning_summary: str
+
+
+class KnowledgeLoaderNodeInput(StrictContractModel):
+    """Input to the knowledge-loader node."""
+
+    triage_input: AITriageInput
+    plan: PlannerResult
+
+
+class KnowledgeLoaderNodeResult(StrictContractModel):
+    """Structured output from the knowledge-loader node."""
+
+    finding_id: str
+    selection: KnowledgeLoaderResult
+    warnings: List[str] = Field(default_factory=list)
 
 
 class AuditorResult(StrictContractModel):
@@ -20,6 +53,14 @@ class AuditorResult(StrictContractModel):
     missing_evidence: List[str] = Field(default_factory=list)
 
 
+class AuditorInput(StrictContractModel):
+    """Input to the auditor node."""
+
+    triage_input: AITriageInput
+    plan: PlannerResult
+    knowledge: KnowledgeLoaderNodeResult
+
+
 class SkepticResult(StrictContractModel):
     """Required structured output from the skeptic node."""
 
@@ -29,6 +70,43 @@ class SkepticResult(StrictContractModel):
     dead_code_suspected: bool
     recommended_status: TriageStatus
     confidence: float = Field(ge=0.0, le=1.0)
+
+
+class SkepticInput(StrictContractModel):
+    """Input to the skeptic node."""
+
+    triage_input: AITriageInput
+    auditor_result: AuditorResult
+    knowledge: KnowledgeLoaderNodeResult
+
+
+class JudgeInput(StrictContractModel):
+    """Input to the judge node."""
+
+    triage_input: AITriageInput
+    plan: PlannerResult
+    auditor_result: AuditorResult
+    skeptic_result: Optional[SkepticResult] = None
+    route_taken: List[str] = Field(default_factory=list)
+
+
+class ReporterInput(StrictContractModel):
+    """Input to the reporter node."""
+
+    triage_input: AITriageInput
+    decision: TriageDecision
+    knowledge: KnowledgeLoaderNodeResult
+
+
+class ReportEnrichment(StrictContractModel):
+    """Structured report enrichment produced after final triage."""
+
+    finding_id: str
+    explanation: str
+    remediation_note: str
+    supporting_evidence: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    route_taken: List[str] = Field(default_factory=list)
 
 
 class AuditorReview(AuditorResult):
