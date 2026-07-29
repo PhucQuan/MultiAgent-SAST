@@ -165,6 +165,110 @@ def get_batch_verification_prompt(vulnerabilities: list) -> str:
     pass
 
 
+def get_planner_prompt(triage_input: AITriageInput) -> str:
+    """Build a planner prompt that asks for route hints, not final triage."""
+    finding = triage_input.finding
+    return f"""You are the planner node for Aegis-SAST.
+
+Use only the normalized finding and evidence metadata. Do not read repository files.
+Do not decide final status.
+
+Observed evidence:
+{_render_observed_evidence(triage_input)}
+
+Inference:
+- Identify missing evidence.
+- Decide whether the skeptic node is needed.
+- Select required knowledge by CWE and vulnerability type.
+
+Missing evidence:
+- List missing source, sink, data-flow, sanitizer, reachability, or framework evidence.
+
+Final assessment:
+Return only structured JSON matching PlannerResult.
+- finding_id must be {finding.finding_id}
+- should_use_skeptic must be true when confidence is low, sanitizer is present,
+  dead path is suspected, framework is unsupported, or path evidence is incomplete.
+"""
+
+
+def get_auditor_prompt(triage_input: AITriageInput, knowledge_summary: str) -> str:
+    """Build an auditor prompt grounded in observed evidence and selected knowledge."""
+    return f"""You are the auditor node for Aegis-SAST.
+
+Use only observed evidence and the selected knowledge summary. Do not read repository files.
+
+Observed evidence:
+{_render_observed_evidence(triage_input)}
+
+Selected knowledge:
+{knowledge_summary}
+
+Inference:
+- Check whether source is untrusted.
+- Check whether sink is dangerous for the vulnerability type.
+- Check whether data-flow path is complete.
+- Evaluate sanitizer effectiveness.
+
+Missing evidence:
+- List evidence required for confirmation but absent from the payload.
+
+Final assessment:
+Return only structured JSON matching AuditorResult.
+"""
+
+
+def get_skeptic_prompt(triage_input: AITriageInput, auditor_summary: str) -> str:
+    """Build a skeptic prompt focused on false-positive indicators."""
+    return f"""You are the skeptic validator node for Aegis-SAST.
+
+Use only observed evidence and auditor summary. Do not read repository files.
+Do not invent sanitizers or reachability facts.
+
+Observed evidence:
+{_render_observed_evidence(triage_input)}
+
+Auditor summary:
+{auditor_summary}
+
+Inference:
+- Look for effective sanitizers.
+- Look for parameterization, allowlists, dead paths, unreachable branches, or unsupported framework uncertainty.
+- Prefer needs-review over suppression when false-positive evidence is weak.
+
+Missing evidence:
+- List contradictions or unavailable evidence.
+
+Final assessment:
+Return only structured JSON matching SkepticResult.
+"""
+
+
+def get_reporter_prompt(triage_input: AITriageInput, decision_json: str) -> str:
+    """Build a reporter prompt for explanation and remediation enrichment."""
+    return f"""You are the reporter node for Aegis-SAST.
+
+Use only the final decision and observed evidence. Do not read repository files.
+Do not change status or confidence.
+
+Observed evidence:
+{_render_observed_evidence(triage_input)}
+
+Final decision:
+{decision_json}
+
+Inference:
+- Explain the decision in language appropriate for a security report.
+- Keep remediation aligned to language, framework, and vulnerability type.
+
+Missing evidence:
+- Preserve limitations from the final decision.
+
+Final assessment:
+Return only structured JSON matching ReportEnrichment.
+"""
+
+
 def get_judge_structured_prompt(triage_input: AITriageInput, route_taken: list[str]) -> str:
     """Build a compact judge prompt from normalized AI-visible evidence only."""
     finding = triage_input.finding
@@ -221,3 +325,31 @@ Return only JSON matching this schema:
   "model_name": "model name"
 }}
 """
+
+
+def _render_observed_evidence(triage_input: AITriageInput) -> str:
+    """Render normalized evidence without adding repository context."""
+    finding = triage_input.finding
+    evidence = triage_input.evidence
+    path = "\n".join(
+        f"  - {location.file_path}:{location.line_number}: {location.code_snippet}"
+        for location in evidence.data_flow_path
+    )
+    snippets = "\n".join(f"  - {snippet}" for snippet in evidence.evidence_snippets)
+    return f"""finding_id: {finding.finding_id}
+rule_id: {finding.rule_id}
+language: {finding.language}
+vuln_type: {finding.vuln_type}
+cwe_id: {finding.cwe_id}
+severity: {finding.severity}
+static_confidence: {finding.static_confidence}
+source_location: {evidence.source_location.file_path}:{evidence.source_location.line_number}
+sink_location: {evidence.sink_location.file_path}:{evidence.sink_location.line_number}
+evidence_snippets:
+{snippets}
+data_flow_path:
+{path}
+sanitizer_info: {evidence.sanitizer_info.model_dump(mode="json")}
+graph_metadata: {evidence.graph_metadata.model_dump(mode="json")}
+cross_file: {evidence.cross_file}
+call_chain_depth: {evidence.call_chain_depth}"""
