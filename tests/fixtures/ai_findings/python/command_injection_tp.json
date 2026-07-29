@@ -1,0 +1,103 @@
+{
+  "finding": {
+    "finding_id": "PY-CMD-001",
+    "rule_id": "python-command-injection",
+    "language": "python",
+    "vuln_type": "COMMAND_INJECTION",
+    "cwe_id": "CWE-78",
+    "severity": "HIGH",
+    "confidence": 0.87,
+    "source_location": {
+      "file_path": "app.py",
+      "line_number": 12,
+      "column_number": 8,
+      "code_snippet": "cmd = request.args.get('cmd')"
+    },
+    "sink_location": {
+      "file_path": "app.py",
+      "line_number": 13,
+      "column_number": 4,
+      "code_snippet": "os.system(cmd)"
+    },
+    "evidence_snippets": ["request cmd parameter flows to os.system"],
+    "data_flow_path": [
+      {
+        "file_path": "app.py",
+        "line_number": 12,
+        "column_number": 8,
+        "code_snippet": "cmd = request.args.get('cmd')"
+      },
+      {
+        "file_path": "app.py",
+        "line_number": 13,
+        "column_number": 4,
+        "code_snippet": "os.system(cmd)"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false,
+      "notes": ["No sanitizer observed."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 1,
+      "dfg_edge_count": 1,
+      "dead_path_suspected": false,
+      "unsupported_framework": false,
+      "notes": ["Single-file path."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "evidence": {
+    "finding_id": "PY-CMD-001",
+    "source_location": {
+      "file_path": "app.py",
+      "line_number": 12,
+      "column_number": 8,
+      "code_snippet": "cmd = request.args.get('cmd')"
+    },
+    "sink_location": {
+      "file_path": "app.py",
+      "line_number": 13,
+      "column_number": 4,
+      "code_snippet": "os.system(cmd)"
+    },
+    "evidence_snippets": ["request cmd parameter flows to os.system"],
+    "data_flow_path": [
+      {
+        "file_path": "app.py",
+        "line_number": 12,
+        "column_number": 8,
+        "code_snippet": "cmd = request.args.get('cmd')"
+      },
+      {
+        "file_path": "app.py",
+        "line_number": 13,
+        "column_number": 4,
+        "code_snippet": "os.system(cmd)"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false,
+      "notes": ["No sanitizer observed."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 1,
+      "dfg_edge_count": 1,
+      "dead_path_suspected": false,
+      "unsupported_framework": false,
+      "notes": ["Single-file path."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "benchmark": {
+    "benchmark_id": "ai-fixtures-v1",
+    "dataset_name": "mock-ai-findings",
+    "case_id": "PY-CMD-001",
+    "expected_status": "confirmed",
+    "language": "python"
+  }
+}

@@ -1,0 +1,48 @@
+card_id: cwe-22-path-traversal
+title: Path Traversal
+cwe_id: CWE-22
+finding_type: PATH_TRAVERSAL
+description: User-controlled path data can escape an intended filesystem root.
+languages:
+  python:
+    sources: ["request.args", "request.files", "input()"]
+    sinks: ["open", "send_file", "Path.read_text"]
+    sanitizers: ["resolve under base directory", "safe_join"]
+    insufficient_sanitizers: ["basename only", "replace('../', '')"]
+    false_positive_patterns: ["safe_join", "resolve().is_relative_to"]
+    secure_fix_patterns: ["Resolve paths and enforce a trusted base directory."]
+    framework_notes:
+      flask: ["Use send_from_directory or safe_join."]
+  javascript:
+    sources: ["req.query", "req.params", "req.body"]
+    sinks: ["fs.readFile", "res.sendFile", "path.join"]
+    sanitizers: ["path.resolve plus base prefix check", "allowlist filenames"]
+    insufficient_sanitizers: ["replace('../', '')", "normalize without base check"]
+    false_positive_patterns: ["resolved.startsWith(base)", "allowlist filename map"]
+    secure_fix_patterns: ["Resolve path and verify it stays inside the base directory."]
+    framework_notes:
+      express: ["Never pass request path directly to sendFile."]
+  java:
+    sources: ["HttpServletRequest.getParameter", "@PathVariable"]
+    sinks: ["Files.readString", "FileInputStream", "Paths.get"]
+    sanitizers: ["normalize plus base startsWith", "allowlist"]
+    insufficient_sanitizers: ["replace(\"..\", \"\")", "getName only"]
+    false_positive_patterns: ["normalize().startsWith(base)", "allowlisted resource"]
+    secure_fix_patterns: ["Normalize and verify the resolved path stays under base."]
+    framework_notes:
+      spring: ["Path variables are untrusted."]
+  php:
+    sources: ["$_GET", "$_POST", "$_FILES"]
+    sinks: ["file_get_contents", "readfile", "include"]
+    sanitizers: ["realpath plus base prefix check", "allowlist"]
+    insufficient_sanitizers: ["basename only", "str_replace('../', '')"]
+    false_positive_patterns: ["realpath", "allowlisted file id"]
+    secure_fix_patterns: ["Use realpath and enforce an allowed directory."]
+    framework_notes:
+      laravel: ["Prefer Storage disk APIs with fixed roots."]
+evidence_rubric:
+  required: ["untrusted path source", "filesystem sink", "path reaches sink"]
+  strong_signals: ["path concatenation", "no canonical base check"]
+  weak_signals: ["sink reads a constant path", "sanitizer unknown"]
+  suppress_when: ["canonical base directory check", "allowlist", "dead path"]
+remediation_notes: ["Canonicalize paths and enforce a trusted base directory or allowlist."]

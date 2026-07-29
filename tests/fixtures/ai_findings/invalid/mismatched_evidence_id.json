@@ -1,0 +1,68 @@
+{
+  "finding": {
+    "finding_id": "BAD-001",
+    "rule_id": "bad-fixture",
+    "language": "python",
+    "vuln_type": "SSRF",
+    "cwe_id": "CWE-918",
+    "severity": "HIGH",
+    "confidence": 0.7,
+    "source_location": {
+      "file_path": "app.py",
+      "line_number": 1,
+      "column_number": 0,
+      "code_snippet": "url = request.args.get('url')"
+    },
+    "sink_location": {
+      "file_path": "app.py",
+      "line_number": 2,
+      "column_number": 0,
+      "code_snippet": "requests.get(url)"
+    },
+    "evidence_snippets": ["mismatched evidence id should fail"],
+    "data_flow_path": [
+      {
+        "file_path": "app.py",
+        "line_number": 1,
+        "column_number": 0,
+        "code_snippet": "url = request.args.get('url')"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "evidence": {
+    "finding_id": "OTHER-001",
+    "source_location": {
+      "file_path": "app.py",
+      "line_number": 1,
+      "column_number": 0,
+      "code_snippet": "url = request.args.get('url')"
+    },
+    "sink_location": {
+      "file_path": "app.py",
+      "line_number": 2,
+      "column_number": 0,
+      "code_snippet": "requests.get(url)"
+    },
+    "evidence_snippets": ["mismatched evidence id should fail"],
+    "data_flow_path": [
+      {
+        "file_path": "app.py",
+        "line_number": 1,
+        "column_number": 0,
+        "code_snippet": "url = request.args.get('url')"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  }
+}

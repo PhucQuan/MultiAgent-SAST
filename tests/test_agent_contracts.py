@@ -56,6 +56,7 @@ def _ai_input() -> AITriageInput:
     return AITriageInput(
         finding=finding,
         evidence=EvidenceBundle(
+            finding_id="F-001",
             source_location=source,
             sink_location=sink,
             evidence_snippets=finding.evidence_snippets,

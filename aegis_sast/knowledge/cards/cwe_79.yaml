@@ -1,0 +1,48 @@
+card_id: cwe-79-xss
+title: Cross-Site Scripting
+cwe_id: CWE-79
+finding_type: XSS
+description: User-controlled data is rendered into HTML, JavaScript, or attributes without context-aware escaping.
+languages:
+  python:
+    sources: ["request.args", "request.form"]
+    sinks: ["render_template_string", "Markup", "return HTML string"]
+    sanitizers: ["Jinja autoescape", "html.escape", "bleach.clean"]
+    insufficient_sanitizers: ["strip_tags", "regex remove script"]
+    false_positive_patterns: ["autoescape enabled", "html.escape"]
+    secure_fix_patterns: ["Use template autoescaping and context-aware encoding."]
+    framework_notes:
+      flask: ["Avoid Markup on untrusted data."]
+  javascript:
+    sources: ["req.query", "location.search", "innerHTML input"]
+    sinks: ["innerHTML", "dangerouslySetInnerHTML", "res.send"]
+    sanitizers: ["textContent", "escape-html", "DOMPurify"]
+    insufficient_sanitizers: ["replace('<script>', '')", "encodeURI"]
+    false_positive_patterns: ["textContent", "DOMPurify.sanitize"]
+    secure_fix_patterns: ["Render as text or sanitize with a vetted library."]
+    framework_notes:
+      express: ["Server-rendered HTML needs output encoding."]
+  java:
+    sources: ["HttpServletRequest.getParameter", "@RequestParam"]
+    sinks: ["response.getWriter", "ModelAndView raw HTML"]
+    sanitizers: ["OWASP Java Encoder", "Thymeleaf escaped output"]
+    insufficient_sanitizers: ["StringEscapeUtils for wrong context", "manual replace"]
+    false_positive_patterns: ["Encode.forHtml", "th:text"]
+    secure_fix_patterns: ["Use context-aware output encoding."]
+    framework_notes:
+      spring: ["Prefer escaped template expressions."]
+  php:
+    sources: ["$_GET", "$_POST", "$_REQUEST"]
+    sinks: ["echo", "print", "<?= raw output"]
+    sanitizers: ["htmlspecialchars with ENT_QUOTES", "blade escaped output"]
+    insufficient_sanitizers: ["strip_tags", "addslashes"]
+    false_positive_patterns: ["htmlspecialchars", "{{ escaped }}"]
+    secure_fix_patterns: ["Escape output for the HTML/JS/attribute context."]
+    framework_notes:
+      laravel: ["Use escaped Blade output by default."]
+evidence_rubric:
+  required: ["untrusted source", "HTML rendering sink", "no context-aware escaping"]
+  strong_signals: ["raw HTML sink", "explicit safe/Markup wrapper"]
+  weak_signals: ["template behavior unknown", "source not user-controlled"]
+  suppress_when: ["context-aware escaping", "sanitization with vetted library", "dead path"]
+remediation_notes: ["Use context-aware output encoding and avoid raw HTML rendering of untrusted data."]

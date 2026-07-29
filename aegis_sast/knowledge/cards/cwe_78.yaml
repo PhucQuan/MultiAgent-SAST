@@ -1,0 +1,48 @@
+card_id: cwe-78-command-injection
+title: OS Command Injection
+cwe_id: CWE-78
+finding_type: COMMAND_INJECTION
+description: User-controlled data reaches an operating system command boundary.
+languages:
+  python:
+    sources: ["request.args", "request.form", "input()"]
+    sinks: ["os.system", "subprocess.run", "subprocess.call", "os.popen"]
+    sanitizers: ["argument array with shell=False", "strict allowlist", "shlex.quote with shell command constraints"]
+    insufficient_sanitizers: ["strip", "replace semicolon", "blacklist metacharacters"]
+    false_positive_patterns: ["subprocess.run([", "shell=False", "allowlist command map"]
+    secure_fix_patterns: ["Use subprocess with argument arrays and shell=False."]
+    framework_notes:
+      flask: ["Route parameters and request values are untrusted."]
+  javascript:
+    sources: ["req.query", "req.body", "process.argv"]
+    sinks: ["child_process.exec", "execSync", "spawn with shell"]
+    sanitizers: ["spawn argument array", "strict allowlist"]
+    insufficient_sanitizers: ["replace(';', '')", "trim"]
+    false_positive_patterns: ["spawn(command, args)", "execFile"]
+    secure_fix_patterns: ["Use execFile or spawn with fixed command and argument array."]
+    framework_notes:
+      express: ["Request fields must not be interpolated into shell strings."]
+  java:
+    sources: ["HttpServletRequest.getParameter", "@RequestParam"]
+    sinks: ["Runtime.exec", "ProcessBuilder", "bash -c"]
+    sanitizers: ["fixed command allowlist", "ProcessBuilder argument list"]
+    insufficient_sanitizers: ["replace spaces", "regex blacklist"]
+    false_positive_patterns: ["new ProcessBuilder(list)", "enum command allowlist"]
+    secure_fix_patterns: ["Avoid shell interpretation and pass fixed arguments."]
+    framework_notes:
+      spring: ["Controller input is untrusted."]
+  php:
+    sources: ["$_GET", "$_POST", "$argv"]
+    sinks: ["system", "exec", "shell_exec", "passthru"]
+    sanitizers: ["escapeshellarg with fixed command", "allowlist"]
+    insufficient_sanitizers: ["trim", "strip_tags"]
+    false_positive_patterns: ["escapeshellarg", "allowlisted command"]
+    secure_fix_patterns: ["Avoid shell calls or use fixed commands with escaped args."]
+    framework_notes:
+      laravel: ["Request input remains untrusted."]
+evidence_rubric:
+  required: ["untrusted source", "command execution sink", "source-to-sink data flow"]
+  strong_signals: ["shell=True", "string command concatenation"]
+  weak_signals: ["fixed command without user argument", "unknown wrapper"]
+  suppress_when: ["argument array with shell disabled", "strict allowlist", "dead path"]
+remediation_notes: ["Avoid shell interpretation; use fixed commands and structured argument arrays."]

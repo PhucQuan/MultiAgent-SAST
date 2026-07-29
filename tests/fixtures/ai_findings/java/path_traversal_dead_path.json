@@ -1,0 +1,103 @@
+{
+  "finding": {
+    "finding_id": "JAVA-PATH-001",
+    "rule_id": "java-path-traversal",
+    "language": "java",
+    "vuln_type": "PATH_TRAVERSAL",
+    "cwe_id": "CWE-22",
+    "severity": "MEDIUM",
+    "confidence": 0.52,
+    "source_location": {
+      "file_path": "DownloadController.java",
+      "line_number": 21,
+      "column_number": 18,
+      "code_snippet": "String name = request.getParameter(\"file\");"
+    },
+    "sink_location": {
+      "file_path": "DownloadController.java",
+      "line_number": 25,
+      "column_number": 12,
+      "code_snippet": "Files.readString(Paths.get(base, name));"
+    },
+    "evidence_snippets": ["Potential request parameter reaches file read in an unreachable branch."],
+    "data_flow_path": [
+      {
+        "file_path": "DownloadController.java",
+        "line_number": 21,
+        "column_number": 18,
+        "code_snippet": "String name = request.getParameter(\"file\");"
+      },
+      {
+        "file_path": "DownloadController.java",
+        "line_number": 25,
+        "column_number": 12,
+        "code_snippet": "Files.readString(Paths.get(base, name));"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false,
+      "notes": ["No sanitizer observed."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 2,
+      "dfg_edge_count": 1,
+      "dead_path_suspected": true,
+      "unsupported_framework": false,
+      "notes": ["Sink appears after an unconditional return."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "evidence": {
+    "finding_id": "JAVA-PATH-001",
+    "source_location": {
+      "file_path": "DownloadController.java",
+      "line_number": 21,
+      "column_number": 18,
+      "code_snippet": "String name = request.getParameter(\"file\");"
+    },
+    "sink_location": {
+      "file_path": "DownloadController.java",
+      "line_number": 25,
+      "column_number": 12,
+      "code_snippet": "Files.readString(Paths.get(base, name));"
+    },
+    "evidence_snippets": ["Potential request parameter reaches file read in an unreachable branch."],
+    "data_flow_path": [
+      {
+        "file_path": "DownloadController.java",
+        "line_number": 21,
+        "column_number": 18,
+        "code_snippet": "String name = request.getParameter(\"file\");"
+      },
+      {
+        "file_path": "DownloadController.java",
+        "line_number": 25,
+        "column_number": 12,
+        "code_snippet": "Files.readString(Paths.get(base, name));"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false,
+      "notes": ["No sanitizer observed."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 2,
+      "dfg_edge_count": 1,
+      "dead_path_suspected": true,
+      "unsupported_framework": false,
+      "notes": ["Sink appears after an unconditional return."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "benchmark": {
+    "benchmark_id": "ai-fixtures-v1",
+    "dataset_name": "mock-ai-findings",
+    "case_id": "JAVA-PATH-001",
+    "expected_status": "suppressed",
+    "language": "java"
+  }
+}

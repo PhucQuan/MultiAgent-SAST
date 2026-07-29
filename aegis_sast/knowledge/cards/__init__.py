@@ -1,6 +1,5 @@
-"""Knowledge-card schemas and loaders for vulnerability triage."""
+"""Knowledge card package."""
 
-from aegis_sast.knowledge.loader import KnowledgeLoader
 from aegis_sast.knowledge.schema import (
     EvidenceRubric,
     KnowledgeCard,
@@ -12,7 +11,6 @@ from aegis_sast.knowledge.schema import (
 __all__ = [
     "EvidenceRubric",
     "KnowledgeCard",
-    "KnowledgeLoader",
     "KnowledgeLoaderInput",
     "KnowledgeLoaderResult",
     "LanguageKnowledgeSection",

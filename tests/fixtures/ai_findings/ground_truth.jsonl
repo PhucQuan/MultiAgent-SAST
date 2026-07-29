@@ -1,0 +1,4 @@
+{"finding_id":"PY-CMD-001","ground_truth_vuln":true,"expected_status":"confirmed"}
+{"finding_id":"JS-SQLI-001","ground_truth_vuln":false,"expected_status":"suppressed"}
+{"finding_id":"JAVA-PATH-001","ground_truth_vuln":false,"expected_status":"suppressed"}
+{"finding_id":"PHP-XSS-001","ground_truth_vuln":null,"expected_status":"needs-review"}

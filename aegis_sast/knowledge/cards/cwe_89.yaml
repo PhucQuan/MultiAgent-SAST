@@ -1,0 +1,49 @@
+card_id: cwe-89-sqli
+title: SQL Injection
+cwe_id: CWE-89
+finding_type: SQL_INJECTION
+description: User-controlled data changes the structure of a SQL query.
+languages:
+  python:
+    sources: ["request.args", "request.form", "input()"]
+    sinks: ["cursor.execute", "session.execute", "raw SQL string"]
+    sanitizers: ["parameterized query", "SQLAlchemy bindparam"]
+    insufficient_sanitizers: ["string replace", "manual quote escaping"]
+    false_positive_patterns: ["cursor.execute(query, params)", "text(...).bindparams"]
+    secure_fix_patterns: ["Use placeholders with a separate params tuple."]
+    framework_notes:
+      flask: ["Treat request values as untrusted."]
+      django: ["Prefer ORM filters over raw SQL."]
+  javascript:
+    sources: ["req.query", "req.body", "req.params"]
+    sinks: ["connection.query", "sequelize.query", "knex.raw"]
+    sanitizers: ["parameter binding", "query builder placeholders"]
+    insufficient_sanitizers: ["replace quotes", "blacklist keywords"]
+    false_positive_patterns: ["query(sql, values)", "where({ id: value })"]
+    secure_fix_patterns: ["Use parameter arrays or query-builder bindings."]
+    framework_notes:
+      express: ["Express request fields are untrusted."]
+  java:
+    sources: ["HttpServletRequest.getParameter", "@RequestParam"]
+    sinks: ["Statement.execute", "createStatement", "executeQuery"]
+    sanitizers: ["PreparedStatement parameters", "JPA typed parameters"]
+    insufficient_sanitizers: ["StringEscapeUtils", "manual quote escaping"]
+    false_positive_patterns: ["PreparedStatement.setString", "createQuery with parameters"]
+    secure_fix_patterns: ["Replace Statement string concatenation with PreparedStatement."]
+    framework_notes:
+      spring: ["Prefer repository methods or bound query parameters."]
+  php:
+    sources: ["$_GET", "$_POST", "$_REQUEST"]
+    sinks: ["mysqli_query", "PDO::query", "mysql_query"]
+    sanitizers: ["PDO prepared statements", "mysqli_stmt_bind_param"]
+    insufficient_sanitizers: ["addslashes", "htmlspecialchars"]
+    false_positive_patterns: ["prepare(", "bindParam", "bind_param"]
+    secure_fix_patterns: ["Use prepared statements and bound parameters."]
+    framework_notes:
+      laravel: ["Prefer query builder bindings or Eloquent."]
+evidence_rubric:
+  required: ["untrusted source", "SQL sink", "source-to-sink data flow"]
+  strong_signals: ["dynamic SQL concatenation", "no parameter binding"]
+  weak_signals: ["sink present without path", "unknown query builder behavior"]
+  suppress_when: ["effective prepared statement binding", "dead path"]
+remediation_notes: ["Use parameterized SQL APIs and avoid query string concatenation."]

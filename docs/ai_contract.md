@@ -25,13 +25,16 @@ Every AI-facing `NormalizedFinding` requires:
 - `finding_id`
 - `language`
 - `vuln_type`
+- `cwe_id`
 - `severity`
 - `confidence`
+- `static_confidence`
 - `source_location`
 - `sink_location`
 - `evidence_snippets`
 - `data_flow_path`
 - `sanitizer_info`
+- `graph_metadata`
 - `cross_file`
 - `call_chain_depth`
 - `rule_id`
@@ -83,10 +86,15 @@ The final judge emits `TriageDecision`:
 
 - `status`
 - `confidence`
+- `ai_confidence`
 - `vulnerability_explanation`
 - `remediation_note`
 - `supporting_evidence`
 - `limitations`
+- `route_taken`
+- `token_usage`
+- `latency_ms`
+- `model_name`
 
 The allowed final statuses are exactly `confirmed`, `likely`, `needs-review`, and `suppressed`.
 

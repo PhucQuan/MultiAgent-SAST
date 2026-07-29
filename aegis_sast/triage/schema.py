@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aegis_sast.core.models import NormalizedFinding as CoreNormalizedFinding
 from aegis_sast.core.models import TriageStatus
@@ -47,14 +47,26 @@ class SanitizerInfo(StrictContractModel):
     notes: List[str] = Field(default_factory=list)
 
 
+class GraphMetadata(StrictContractModel):
+    """Graph evidence supplied by the deterministic core."""
+
+    cfg_edge_count: int = Field(default=0, ge=0)
+    dfg_edge_count: int = Field(default=0, ge=0)
+    dead_path_suspected: bool = False
+    unsupported_framework: bool = False
+    notes: List[str] = Field(default_factory=list)
+
+
 class EvidenceBundle(StrictContractModel):
     """Structured evidence supplied to AI after deterministic analysis."""
 
+    finding_id: str
     source_location: SourceLocation
     sink_location: SourceLocation
     evidence_snippets: List[str] = Field(min_length=1)
     data_flow_path: List[SourceLocation] = Field(min_length=1)
     sanitizer_info: SanitizerInfo
+    graph_metadata: GraphMetadata = Field(default_factory=GraphMetadata)
     cross_file: bool
     call_chain_depth: int = Field(ge=0)
 
@@ -71,18 +83,29 @@ class NormalizedFinding(StrictContractModel):
     """AI-facing normalized finding contract."""
 
     finding_id: str
+    rule_id: str
     language: Literal["python", "javascript", "java", "php"]
     vuln_type: str
+    cwe_id: Optional[str] = None
     severity: SeverityLiteral
     confidence: float = Field(ge=0.0, le=1.0)
+    static_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     source_location: SourceLocation
     sink_location: SourceLocation
     evidence_snippets: List[str] = Field(min_length=1)
     data_flow_path: List[SourceLocation] = Field(min_length=1)
     sanitizer_info: SanitizerInfo
+    graph_metadata: GraphMetadata = Field(default_factory=GraphMetadata)
     cross_file: bool
     call_chain_depth: int = Field(ge=0)
-    rule_id: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_static_confidence(cls, data: Any) -> Any:
+        """Keep legacy confidence payloads valid while exposing static_confidence."""
+        if isinstance(data, dict) and "static_confidence" not in data:
+            data["static_confidence"] = data.get("confidence")
+        return data
 
     @field_validator("finding_id", "vuln_type", "rule_id")
     @classmethod
@@ -95,11 +118,13 @@ class NormalizedFinding(StrictContractModel):
     def to_evidence_bundle(self) -> EvidenceBundle:
         """Extract the evidence subset for node inputs."""
         return EvidenceBundle(
+            finding_id=self.finding_id,
             source_location=self.source_location,
             sink_location=self.sink_location,
             evidence_snippets=self.evidence_snippets,
             data_flow_path=self.data_flow_path,
             sanitizer_info=self.sanitizer_info,
+            graph_metadata=self.graph_metadata,
             cross_file=self.cross_file,
             call_chain_depth=self.call_chain_depth,
         )
@@ -124,16 +149,28 @@ class AITriageInput(StrictContractModel):
     evidence: EvidenceBundle
     benchmark: Optional[BenchmarkMetadata] = None
 
+    @model_validator(mode="after")
+    def finding_and_evidence_ids_must_match(self) -> "AITriageInput":
+        """Reject payloads where evidence belongs to a different finding."""
+        if self.finding.finding_id != self.evidence.finding_id:
+            raise ValueError("finding.finding_id must match evidence.finding_id")
+        return self
+
 
 class TriageDecision(StrictContractModel):
     """Final structured triage decision emitted by the judge node."""
 
+    finding_id: Optional[str] = None
     status: TriageStatus
     confidence: float = Field(ge=0.0, le=1.0)
     vulnerability_explanation: str
     remediation_note: str
     supporting_evidence: List[str] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
+    route_taken: List[str] = Field(default_factory=list)
+    token_usage: Dict[str, int] = Field(default_factory=dict)
+    latency_ms: Optional[float] = Field(default=None, ge=0.0)
+    model_name: Optional[str] = None
     reviewer: str = "judge-node-v1"
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -154,6 +191,11 @@ class TriageDecision(StrictContractModel):
     def recommendation(self) -> str:
         """Backward-compatible alias for deterministic triage code."""
         return self.remediation_note
+
+    @property
+    def ai_confidence(self) -> float:
+        """Contract alias for AI-specific confidence."""
+        return self.confidence
 
     @property
     def evidence_notes(self) -> List[str]:

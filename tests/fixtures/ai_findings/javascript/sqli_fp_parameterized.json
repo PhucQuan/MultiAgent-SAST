@@ -1,0 +1,107 @@
+{
+  "finding": {
+    "finding_id": "JS-SQLI-001",
+    "rule_id": "javascript-sqli",
+    "language": "javascript",
+    "vuln_type": "SQL_INJECTION",
+    "cwe_id": "CWE-89",
+    "severity": "HIGH",
+    "confidence": 0.64,
+    "source_location": {
+      "file_path": "routes/users.js",
+      "line_number": 8,
+      "column_number": 14,
+      "code_snippet": "const id = req.query.id"
+    },
+    "sink_location": {
+      "file_path": "routes/users.js",
+      "line_number": 9,
+      "column_number": 2,
+      "code_snippet": "db.query('select * from users where id = ?', [id])"
+    },
+    "evidence_snippets": ["req.query.id reaches db.query with parameter binding"],
+    "data_flow_path": [
+      {
+        "file_path": "routes/users.js",
+        "line_number": 8,
+        "column_number": 14,
+        "code_snippet": "const id = req.query.id"
+      },
+      {
+        "file_path": "routes/users.js",
+        "line_number": 9,
+        "column_number": 2,
+        "code_snippet": "db.query('select * from users where id = ?', [id])"
+      }
+    ],
+    "sanitizer_info": {
+      "present": true,
+      "effective": true,
+      "sanitizer_type": "PARAMETERIZED_QUERY",
+      "function_name": "db.query",
+      "notes": ["Placeholder and values array observed."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 1,
+      "dfg_edge_count": 1,
+      "dead_path_suspected": false,
+      "unsupported_framework": false,
+      "notes": ["Parameterized query evidence present."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "evidence": {
+    "finding_id": "JS-SQLI-001",
+    "source_location": {
+      "file_path": "routes/users.js",
+      "line_number": 8,
+      "column_number": 14,
+      "code_snippet": "const id = req.query.id"
+    },
+    "sink_location": {
+      "file_path": "routes/users.js",
+      "line_number": 9,
+      "column_number": 2,
+      "code_snippet": "db.query('select * from users where id = ?', [id])"
+    },
+    "evidence_snippets": ["req.query.id reaches db.query with parameter binding"],
+    "data_flow_path": [
+      {
+        "file_path": "routes/users.js",
+        "line_number": 8,
+        "column_number": 14,
+        "code_snippet": "const id = req.query.id"
+      },
+      {
+        "file_path": "routes/users.js",
+        "line_number": 9,
+        "column_number": 2,
+        "code_snippet": "db.query('select * from users where id = ?', [id])"
+      }
+    ],
+    "sanitizer_info": {
+      "present": true,
+      "effective": true,
+      "sanitizer_type": "PARAMETERIZED_QUERY",
+      "function_name": "db.query",
+      "notes": ["Placeholder and values array observed."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 1,
+      "dfg_edge_count": 1,
+      "dead_path_suspected": false,
+      "unsupported_framework": false,
+      "notes": ["Parameterized query evidence present."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "benchmark": {
+    "benchmark_id": "ai-fixtures-v1",
+    "dataset_name": "mock-ai-findings",
+    "case_id": "JS-SQLI-001",
+    "expected_status": "suppressed",
+    "language": "javascript"
+  }
+}

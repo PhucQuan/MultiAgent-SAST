@@ -1,0 +1,48 @@
+card_id: cwe-918-ssrf
+title: Server-Side Request Forgery
+cwe_id: CWE-918
+finding_type: SSRF
+description: User-controlled URL or host data is used in a server-side network request.
+languages:
+  python:
+    sources: ["request.args", "request.form", "input()"]
+    sinks: ["requests.get", "urllib.request.urlopen", "httpx.get"]
+    sanitizers: ["scheme and host allowlist", "block private IP ranges"]
+    insufficient_sanitizers: ["startswith('http')", "parse URL without allowlist"]
+    false_positive_patterns: ["allowlist host", "private IP blocked"]
+    secure_fix_patterns: ["Allowlist destinations and block internal address ranges."]
+    framework_notes:
+      flask: ["Request URL parameters are untrusted."]
+  javascript:
+    sources: ["req.query", "req.body"]
+    sinks: ["axios.get", "fetch", "http.request"]
+    sanitizers: ["host allowlist", "DNS/IP range validation"]
+    insufficient_sanitizers: ["startsWith('http')", "URL parse only"]
+    false_positive_patterns: ["allowedHosts.includes", "isPrivateIp blocked"]
+    secure_fix_patterns: ["Validate destination against an allowlist before request."]
+    framework_notes:
+      express: ["Proxy endpoints need strict destination policy."]
+  java:
+    sources: ["HttpServletRequest.getParameter", "@RequestParam"]
+    sinks: ["URL.openConnection", "HttpClient.send", "RestTemplate.getForObject"]
+    sanitizers: ["host allowlist", "private range block"]
+    insufficient_sanitizers: ["new URI validation only", "scheme check only"]
+    false_positive_patterns: ["allowedHosts.contains", "InetAddress range block"]
+    secure_fix_patterns: ["Resolve and validate destination before making requests."]
+    framework_notes:
+      spring: ["RestTemplate/WebClient destinations must not be arbitrary."]
+  php:
+    sources: ["$_GET", "$_POST"]
+    sinks: ["file_get_contents URL", "curl_exec", "Guzzle client request"]
+    sanitizers: ["host allowlist", "private IP block"]
+    insufficient_sanitizers: ["filter_var URL only", "scheme check only"]
+    false_positive_patterns: ["in_array host allowlist", "private range validation"]
+    secure_fix_patterns: ["Allowlist hosts and reject internal/private ranges."]
+    framework_notes:
+      laravel: ["HTTP client proxy features need destination validation."]
+evidence_rubric:
+  required: ["untrusted URL source", "server-side request sink", "destination policy missing"]
+  strong_signals: ["full URL controlled by user", "no host allowlist"]
+  weak_signals: ["fixed host with user path", "validation not shown"]
+  suppress_when: ["strict allowlist", "internal IP blocked", "dead path"]
+remediation_notes: ["Use destination allowlists, resolve DNS safely, and block private/internal ranges."]

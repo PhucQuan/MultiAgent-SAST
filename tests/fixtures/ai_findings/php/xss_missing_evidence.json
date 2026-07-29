@@ -1,0 +1,91 @@
+{
+  "finding": {
+    "finding_id": "PHP-XSS-001",
+    "rule_id": "php-xss",
+    "language": "php",
+    "vuln_type": "XSS",
+    "cwe_id": "CWE-79",
+    "severity": "MEDIUM",
+    "confidence": 0.46,
+    "source_location": {
+      "file_path": "profile.php",
+      "line_number": 4,
+      "column_number": 8,
+      "code_snippet": "$name = $_GET['name'];"
+    },
+    "sink_location": {
+      "file_path": "profile.php",
+      "line_number": 8,
+      "column_number": 0,
+      "code_snippet": "echo $name;"
+    },
+    "evidence_snippets": ["Source and sink are present but escaping context is not known."],
+    "data_flow_path": [
+      {
+        "file_path": "profile.php",
+        "line_number": 4,
+        "column_number": 8,
+        "code_snippet": "$name = $_GET['name'];"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false,
+      "notes": ["No escaping evidence provided."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 0,
+      "dfg_edge_count": 0,
+      "dead_path_suspected": false,
+      "unsupported_framework": false,
+      "notes": ["Data-flow path is incomplete."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "evidence": {
+    "finding_id": "PHP-XSS-001",
+    "source_location": {
+      "file_path": "profile.php",
+      "line_number": 4,
+      "column_number": 8,
+      "code_snippet": "$name = $_GET['name'];"
+    },
+    "sink_location": {
+      "file_path": "profile.php",
+      "line_number": 8,
+      "column_number": 0,
+      "code_snippet": "echo $name;"
+    },
+    "evidence_snippets": ["Source and sink are present but escaping context is not known."],
+    "data_flow_path": [
+      {
+        "file_path": "profile.php",
+        "line_number": 4,
+        "column_number": 8,
+        "code_snippet": "$name = $_GET['name'];"
+      }
+    ],
+    "sanitizer_info": {
+      "present": false,
+      "effective": false,
+      "notes": ["No escaping evidence provided."]
+    },
+    "graph_metadata": {
+      "cfg_edge_count": 0,
+      "dfg_edge_count": 0,
+      "dead_path_suspected": false,
+      "unsupported_framework": false,
+      "notes": ["Data-flow path is incomplete."]
+    },
+    "cross_file": false,
+    "call_chain_depth": 0
+  },
+  "benchmark": {
+    "benchmark_id": "ai-fixtures-v1",
+    "dataset_name": "mock-ai-findings",
+    "case_id": "PHP-XSS-001",
+    "expected_status": "needs-review",
+    "language": "php"
+  }
+}
