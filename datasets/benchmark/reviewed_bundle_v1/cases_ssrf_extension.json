@@ -1,0 +1,13 @@
+{
+  "schema_version": "aegis-reviewed-bundle-benchmark-v1",
+  "description": "Extension benchmark manifest for the reviewed SSRF bundle after the strict Python V1 trio.",
+  "cases": [
+    {
+      "case_id": "python-ssrf-extension",
+      "family": "SSRF",
+      "target": "examples/vulnerable_ssrf.py",
+      "reviewed_rules": "reports/rule_review/ssrf_seed/python_ssrf_semgrep_shape.legacy.yaml",
+      "goal": "Check whether the reviewed SSRF bundle keeps outbound-request sink coverage aligned with the default scanner on the dedicated Python SSRF example."
+    }
+  ]
+}

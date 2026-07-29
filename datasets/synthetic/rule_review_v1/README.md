@@ -49,3 +49,14 @@ Seed `python_sql_injection_semgrep_shape.yaml` la family mo rong sau 3 family V1
 - `raw(...)`
 
 Fixture nay dung suffix-style callable patterns thay vi pattern mo rong kieu `.execute(` de reviewed flow tap trung hon vao execute-family sinks.
+
+Seed `python_ssrf_semgrep_shape.yaml` la family mo rong tiep theo sau SQLi:
+
+- `requests.get(...)`
+- `urllib.request.urlopen(...)`
+
+Fixture nay giu reviewed sink set gan voi Python default rules hien co, de benchmark extension co the do ro:
+
+- coverage sink outbound request;
+- artifact provenance sau review;
+- va do lech giua `default` voi `reviewed bundle` neu sau nay SSRF detector thay doi.

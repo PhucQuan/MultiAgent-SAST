@@ -22,7 +22,7 @@ Cum tai lieu `20` den `31` hien tai da phan thanh 4 lop tien do ro rang:
    - `31`
    - Da co mini benchmark ablation co dataset synthetic, runner, JSON/Markdown output, va so lieu de viet phan thuc nghiem so bo.
 
-## File 32-38 bo sung gi
+## File 32-51 bo sung gi
 
 File `32-roadmap-4-6-thang-hybrid-sast-agent.md` chot huong trien khai tiep theo theo scope 4-6 thang, gom:
 
@@ -128,6 +128,24 @@ File `48-benchmark-extension-sql-injection.md` chot:
 - cach giu benchmark V1 strict 3 family nguyen ven, trong khi van do duoc SQLi;
 - va moc ket qua mong doi de xem SQLi da san sang cho benchmark/thesis chua.
 
+File `49-commit-moc-ky-thuat-va-context-map.md` chot:
+
+- map nhanh milestone commits da len remote;
+- tach ro batch nao da push va batch nao con nam o working tree;
+- va giam nguy co sot context ky thuat khi sua subsystem lon.
+
+File `50-rule-workbench-ssrf-extension.md` chot:
+
+- cach mo rong reviewed bundle flow sang `SSRF` sau SQLi;
+- vi sao SSRF la family tiep theo hop ly hon `XSS` o giai doan nay;
+- va cach build/compare family nay bang profile `generic`.
+
+File `51-benchmark-extension-ssrf.md` chot:
+
+- cach them benchmark manifest rieng cho SSRF extension;
+- cach giu benchmark V1 strict 3 family nguyen ven trong khi van do duoc them 1 family network-oriented;
+- va moc ket qua mong doi de dua SSRF vao bang benchmark mo rong cua khoa luan.
+
 ## Thu tu nen doc
 
 1. `00-tong-hop-da-lam.md`
@@ -170,10 +188,13 @@ File `48-benchmark-extension-sql-injection.md` chot:
 38. `46-mini-benchmark-review-bundles-v1.md`
 39. `47-rule-workbench-sql-injection-extension.md`
 40. `48-benchmark-extension-sql-injection.md`
-41. `06-lo-trinh-phat-trien.md`
-42. `07-ke-hoach-benchmark.md`
-43. `08-kich-ban-demo.md`
-44. `09-cau-hoi-phan-bien.md`
+41. `49-commit-moc-ky-thuat-va-context-map.md`
+42. `50-rule-workbench-ssrf-extension.md`
+43. `51-benchmark-extension-ssrf.md`
+44. `06-lo-trinh-phat-trien.md`
+45. `07-ke-hoach-benchmark.md`
+46. `08-kich-ban-demo.md`
+47. `09-cau-hoi-phan-bien.md`
 
 ## Muc luc tai lieu
 
@@ -228,3 +249,6 @@ File `48-benchmark-extension-sql-injection.md` chot:
 | `46-mini-benchmark-review-bundles-v1.md` | Runbook benchmark mini cho 3 reviewed bundles V1, gom summary `default vs reviewed` thanh artifact JSON/Markdown co the chay lai |
 | `47-rule-workbench-sql-injection-extension.md` | Huong dan mo rong reviewed bundle flow sang `SQL_INJECTION` sau V1, voi fixture, ly do chon sink pattern, va lenh build/compare |
 | `48-benchmark-extension-sql-injection.md` | Runbook them benchmark manifest rieng cho SQLi extension sau khi fix core matcher, giu nguyen benchmark V1 strict 3 family |
+| `49-commit-moc-ky-thuat-va-context-map.md` | Ghi lai milestone commits da push, cac batch chua commit, va cach giu context ky thuat cua repo khi sua tiep |
+| `50-rule-workbench-ssrf-extension.md` | Huong dan mo rong reviewed bundle flow sang `SSRF` sau SQLi, voi fixture, example rieng, va lenh build/compare |
+| `51-benchmark-extension-ssrf.md` | Runbook them benchmark manifest rieng cho SSRF extension, giu nguyen benchmark V1 strict 3 family |

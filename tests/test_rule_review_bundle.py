@@ -40,6 +40,14 @@ SQLI_FIXTURE_PATH = (
     / "seed_inputs"
     / "python_sql_injection_semgrep_shape.yaml"
 )
+SSRF_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "datasets"
+    / "synthetic"
+    / "rule_review_v1"
+    / "seed_inputs"
+    / "python_ssrf_semgrep_shape.yaml"
+)
 
 
 def _load_bundle_module():
@@ -247,4 +255,38 @@ def test_build_review_bundle_with_sqli_fixture_exports_reviewed_sink_set(tmp_pat
         "execute(",
         "executemany(",
         "raw(",
+    ]
+
+
+def test_build_review_bundle_with_ssrf_fixture_exports_reviewed_sink_set(tmp_path):
+    module = _load_bundle_module()
+    output_dir = tmp_path / "ssrf_fixture_bundle"
+
+    result = module.build_review_bundle(
+        input_path=SSRF_FIXTURE_PATH,
+        output_dir=output_dir,
+        language="python",
+        family="SSRF",
+        normalized_format="json",
+        validation_format="json",
+        profile="generic",
+        provenance_source="manual-semgrep-fixture",
+        snapshot_version="fixture-test",
+        legacy_format="json",
+    )
+
+    assert result["valid"] is True
+    assert result["warning_count"] == 0
+
+    normalized_payload = json.loads(result["normalized_path"].read_text(encoding="utf-8"))
+    legacy_payload = json.loads(result["legacy_path"].read_text(encoding="utf-8"))
+
+    assert normalized_payload["rule_count"] == 2
+    assert all(rule["family"] == "SSRF" for rule in normalized_payload["rules"])
+    assert all("CWE-918" in rule["taxonomy"]["cwe"] for rule in normalized_payload["rules"])
+
+    sink_patterns = sorted(item["pattern"] for item in legacy_payload["sinks"]["ssrf"])
+    assert sink_patterns == [
+        "requests.get(",
+        "urllib.request.urlopen(",
     ]

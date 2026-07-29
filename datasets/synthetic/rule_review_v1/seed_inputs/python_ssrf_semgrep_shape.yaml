@@ -1,0 +1,55 @@
+# Manual Semgrep-shaped seed fixture for Aegis rule-review flow testing.
+# This is a hand-written local fixture, not a raw Semgrep registry snapshot.
+
+rules:
+  - id: python.ssrf.requests-get-family
+    message: Potential SSRF through user-controlled outbound HTTP GET requests
+    severity: ERROR
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.form.get(...)
+          - pattern: input(...)
+    pattern-sinks:
+      - pattern: requests.get(...)
+    pattern-sanitizers:
+      - pattern: urllib.parse.urlparse(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-918
+      references:
+        - generic-ssrf
+      false_positives:
+        - strict-destination-allowlist
+        - destination-from-trusted-config
+      fix: Validate the scheme, host, port, and resolved IP against an allowlist before making the outbound request.
+
+  - id: python.ssrf.urlopen-family
+    message: Potential SSRF through user-controlled urlopen destinations
+    severity: WARNING
+    mode: taint
+    languages:
+      - python
+    pattern-sources:
+      - pattern-either:
+          - pattern: request.args.get(...)
+          - pattern: request.values.get(...)
+          - pattern: request.data
+    pattern-sinks:
+      - pattern: urllib.request.urlopen(...)
+    pattern-sanitizers:
+      - pattern: urllib.parse.urlparse(...)
+        exact: true
+    metadata:
+      cwe:
+        - CWE-918
+      references:
+        - generic-ssrf
+      false_positives:
+        - parsed-url-with-host-allowlist
+        - internal-network-blocklist
+      fix: Parse and validate the destination URL, then block loopback and internal address ranges before opening the connection.

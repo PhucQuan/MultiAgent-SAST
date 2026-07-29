@@ -21,6 +21,13 @@ SQLI_EXTENSION_MANIFEST_PATH = (
     / "reviewed_bundle_v1"
     / "cases_sql_injection_extension.json"
 )
+SSRF_EXTENSION_MANIFEST_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "datasets"
+    / "benchmark"
+    / "reviewed_bundle_v1"
+    / "cases_ssrf_extension.json"
+)
 
 
 def _load_module():
@@ -54,6 +61,17 @@ def test_load_manifest_and_resolve_cases_find_one_sqli_extension_case():
     assert len(cases) == 1
     assert cases[0]["case_id"] == "python-sql-injection-extension"
     assert cases[0]["family"] == "SQL_INJECTION"
+
+
+def test_load_manifest_and_resolve_cases_find_one_ssrf_extension_case():
+    module = _load_module()
+    manifest = module.load_manifest(SSRF_EXTENSION_MANIFEST_PATH)
+    cases = module.resolve_manifest_cases(manifest)
+
+    assert manifest["schema_version"] == "aegis-reviewed-bundle-benchmark-v1"
+    assert len(cases) == 1
+    assert cases[0]["case_id"] == "python-ssrf-extension"
+    assert cases[0]["family"] == "SSRF"
 
 
 def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):

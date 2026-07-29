@@ -104,6 +104,16 @@ class TestExtractSinks:
         sinks = plugin.extract_sinks(ast, path, rules)
         assert len(sinks) >= 1, "Should detect cursor.execute as sink"
 
+    def test_finds_requests_get_as_ssrf_sink(self, plugin, rules):
+        code = "import requests\nrequests.get(target)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "requests.get" and sink.sink_type.value == "SSRF"
+            for sink in sinks
+        ), "requests.get() should be detected as an SSRF sink"
+
     def test_execute_query_does_not_match_execute_sink(self, plugin, rules):
         code = "cursor.execute_query('SELECT * FROM users')\n"
         path = write_temp(code)
@@ -136,6 +146,16 @@ class TestExtractSinks:
         assert all(sink.sink_type.value != "PATH_TRAVERSAL" for sink in sinks), (
             "urlopen() should not be matched by the generic open() path sink"
         )
+
+    def test_finds_urllib_request_urlopen_as_ssrf_sink(self, plugin, rules):
+        code = "import urllib.request\nurllib.request.urlopen(target)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "urllib.request.urlopen" and sink.sink_type.value == "SSRF"
+            for sink in sinks
+        ), "urllib.request.urlopen() should be detected as an SSRF sink"
 
     def test_code_template_does_not_match_template_sink(self, plugin, rules):
         code = "CodeTemplate('hello ${name}')\n"

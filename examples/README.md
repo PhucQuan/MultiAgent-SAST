@@ -77,6 +77,22 @@ aegis-sast scan examples/vulnerable_deserialization.py
 
 ---
 
+### 5. `vulnerable_ssrf.py` - Server-Side Request Forgery
+
+Shows unsafe outbound HTTP requests driven by user input:
+- `requests.get()` with untrusted destinations
+- `urllib.request.urlopen()` on user-controlled URLs
+- A constant trusted destination example for contrast
+
+**Test it:**
+```bash
+aegis-sast scan examples/vulnerable_ssrf.py
+```
+
+**Expected findings:** 2-3 SSRF vulnerabilities (HIGH severity)
+
+---
+
 ## 🚀 Quick Test
 
 Scan all examples at once:
