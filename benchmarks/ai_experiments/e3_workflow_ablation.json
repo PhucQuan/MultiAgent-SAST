@@ -1,0 +1,9 @@
+{
+  "experiment_id": "E3-workflow-ablation-mock",
+  "description": "Record route, consistency, token, and latency fields for the multi-node workflow.",
+  "fixtures": "tests/fixtures/ai_findings",
+  "mode": "multi-node-workflow",
+  "run_count": 1,
+  "prompt_version": "deterministic-node-v1",
+  "knowledge_version": "cwe-cards-v1"
+}

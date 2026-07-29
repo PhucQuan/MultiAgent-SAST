@@ -1,0 +1,9 @@
+{
+  "experiment_id": "E2-knowledge-ablation-mock",
+  "description": "Compare workflow behavior with the multilingual knowledge layer enabled.",
+  "fixtures": "tests/fixtures/ai_findings",
+  "mode": "knowledge-assisted",
+  "run_count": 1,
+  "prompt_version": "deterministic-node-v1",
+  "knowledge_version": "cwe-cards-v1"
+}

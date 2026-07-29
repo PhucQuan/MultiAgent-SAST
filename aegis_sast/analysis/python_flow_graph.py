@@ -82,9 +82,11 @@ def _extract_call_info(call: ast.Call) -> Tuple[str, List[str]]:
     arguments = [_safe_unparse(arg) for arg in call.args]
     arguments.extend(
         [
-            f"{keyword.arg}={_safe_unparse(keyword.value)}"
-            if keyword.arg
-            else _safe_unparse(keyword.value)
+            (
+                f"{keyword.arg}={_safe_unparse(keyword.value)}"
+                if keyword.arg
+                else _safe_unparse(keyword.value)
+            )
             for keyword in call.keywords
         ]
     )
@@ -413,6 +415,7 @@ class PythonFlowGraphBuilder:
         self.graph.function_entries[statement.name] = entry.node_id
         self.graph.function_parameter_nodes.setdefault(statement.name, [])
         self.graph.function_return_nodes.setdefault(statement.name, [])
+        self.graph.add_edge(declaration.node_id, entry.node_id, "cfg", "define")
 
         local_env: Dict[str, Set[str]] = {}
         previous_id = entry.node_id
@@ -943,9 +946,8 @@ class PythonFlowGraphBuilder:
             parameter_name_by_node: Dict[str, str] = {}
             for node_id in parameter_node_ids:
                 node = self.graph.nodes[node_id]
-                parameter_name = (
-                    node.metadata.get("parameter_name")
-                    or (node.writes[0] if node.writes else node.node_id)
+                parameter_name = node.metadata.get("parameter_name") or (
+                    node.writes[0] if node.writes else node.node_id
                 )
                 parameter_name_by_node[node_id] = parameter_name
 
@@ -1014,9 +1016,7 @@ class PythonDataflowAnalyzer:
     def __init__(
         self,
         graph: PythonFlowGraph,
-        callee_taint_resolver: Optional[
-            Callable[[str, List[str], Set[str]], bool]
-        ] = None,
+        callee_taint_resolver: Optional[Callable[[str, List[str], Set[str]], bool]] = None,
     ):
         self.graph = graph
         self.callee_taint_resolver = callee_taint_resolver
@@ -1128,9 +1128,7 @@ class PythonDataflowAnalyzer:
         reads = list(node.reads) + list(node.arguments)
         read_is_tainted = False
         if not node.metadata.get("is_call_assignment"):
-            read_is_tainted = any(
-                self._mentions_taint(token, tainted_vars) for token in reads
-            )
+            read_is_tainted = any(self._mentions_taint(token, tainted_vars) for token in reads)
         callee_returns_tainted = False
 
         if (
@@ -1155,9 +1153,7 @@ class PythonDataflowAnalyzer:
                 for write_name in node.writes:
                     tainted_vars.discard(write_name)
 
-        if line_sanitizers and any(
-            self._mentions_taint(token, tainted_vars) for token in reads
-        ):
+        if line_sanitizers and any(self._mentions_taint(token, tainted_vars) for token in reads):
             known_keys = {self._sanitizer_key(item) for item in path_sanitizers}
             for sanitizer in line_sanitizers:
                 sanitizer_key = self._sanitizer_key(sanitizer)

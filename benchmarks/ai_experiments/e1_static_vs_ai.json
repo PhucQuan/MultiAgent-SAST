@@ -1,0 +1,9 @@
+{
+  "experiment_id": "E1-static-vs-ai-mock",
+  "description": "Compare static baseline labels with deterministic AI triage on mock fixtures.",
+  "fixtures": "tests/fixtures/ai_findings",
+  "mode": "static-vs-ai",
+  "run_count": 1,
+  "prompt_version": "deterministic-node-v1",
+  "knowledge_version": "cwe-cards-v1"
+}

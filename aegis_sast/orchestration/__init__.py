@@ -33,6 +33,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         SkepticReview,
     )
     from aegis_sast.orchestration.ai_workflow import AITriageWorkflow
+    from aegis_sast.orchestration.langgraph_adapter import (
+        LangGraphUnavailable,
+        build_langgraph_workflow,
+    )
     from aegis_sast.orchestration.nodes import (
         AuditorNode,
         JudgeNode,
@@ -58,6 +62,8 @@ __all__ = [
     "PlannerResult",
     "ReporterInput",
     "ReportEnrichment",
+    "LangGraphUnavailable",
+    "build_langgraph_workflow",
     "WorkflowRoute",
     "route_finding",
     "RepoProfile",
@@ -84,6 +90,14 @@ def __getattr__(name):
         from aegis_sast.orchestration.ai_workflow import AITriageWorkflow
 
         return AITriageWorkflow
+    if name == "build_langgraph_workflow":
+        from aegis_sast.orchestration.langgraph_adapter import build_langgraph_workflow
+
+        return build_langgraph_workflow
+    if name == "LangGraphUnavailable":
+        from aegis_sast.orchestration.langgraph_adapter import LangGraphUnavailable
+
+        return LangGraphUnavailable
     if name == "RepoIntake":
         from aegis_sast.orchestration.repo_intake import RepoIntake
 
