@@ -93,6 +93,20 @@ def dedupe_key(finding: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def coverage_key(finding: dict[str, Any]) -> tuple[Any, ...]:
+    """Build a comparison key that ignores pattern-label churn but keeps sink identity."""
+    detection = detection_metadata(finding)
+    sink = sink_location(finding)
+    sink_identity = detection.get("sink_function") or detection.get("sink_pattern")
+    return (
+        finding.get("file"),
+        finding.get("line"),
+        sink.get("column"),
+        finding.get("type"),
+        sink_identity,
+    )
+
+
 def summarize_report(report: dict[str, Any], report_path: Path) -> dict[str, Any]:
     """Extract the high-signal stats from one report."""
     findings = report.get("findings", [])
@@ -134,6 +148,7 @@ def summarize_report(report: dict[str, Any], report_path: Path) -> dict[str, Any
         "duplicate_groups": duplicate_items,
         "duplicate_delta": len(findings) - len(duplicate_groups),
         "unique_finding_keys": set(duplicate_groups.keys()),
+        "coverage_finding_keys": {coverage_key(finding) for finding in findings},
     }
 
 
@@ -141,6 +156,8 @@ def compare_summaries(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any
     """Compare two report summaries using deduped sink keys."""
     old_keys = old["unique_finding_keys"]
     new_keys = new["unique_finding_keys"]
+    old_coverage_keys = old["coverage_finding_keys"]
+    new_coverage_keys = new["coverage_finding_keys"]
 
     return {
         "old_total": old["total_findings"],
@@ -151,6 +168,11 @@ def compare_summaries(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any
         "unique_delta": len(new_keys) - len(old_keys),
         "removed_keys": old_keys - new_keys,
         "added_keys": new_keys - old_keys,
+        "old_coverage": len(old_coverage_keys),
+        "new_coverage": len(new_coverage_keys),
+        "coverage_delta": len(new_coverage_keys) - len(old_coverage_keys),
+        "removed_coverage_keys": old_coverage_keys - new_coverage_keys,
+        "added_coverage_keys": new_coverage_keys - old_coverage_keys,
         "by_type_delta": _counter_delta(old["by_type"], new["by_type"]),
         "by_sink_pattern_delta": _counter_delta(
             old["by_sink_pattern"],

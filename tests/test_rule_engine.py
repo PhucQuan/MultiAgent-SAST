@@ -58,6 +58,81 @@ class TestRuleEngineInit:
         # Should fall back gracefully (either empty or python rules)
         assert isinstance(rules, dict)
 
+    def test_extra_rules_paths_merge_overlay_into_builtin_rules(self, tmp_path):
+        overlay_rules = tmp_path / "overlay.yaml"
+        overlay_rules.write_text(
+            "\n".join(
+                [
+                    "sources:",
+                    '  - pattern: "request.headers.get"',
+                    '    type: "HTTP_HEADER"',
+                    '    severity: "HIGH"',
+                    "sinks:",
+                    "  rce:",
+                    '    - pattern: "subprocess.check_output("',
+                    '      type: "COMMAND_INJECTION"',
+                    '      severity: "CRITICAL"',
+                    '      description: "Overlay command sink"',
+                    "sanitizers:",
+                    '  - pattern: "safe_join("',
+                    '    mitigates: ["PATH_TRAVERSAL"]',
+                    '    description: "Overlay path guard"',
+                    "safe_patterns:",
+                    '  - "pathlib.Path.resolve()"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        engine = RuleEngine(language="python", extra_rules_paths=[overlay_rules])
+        rules = engine.get_rules()
+
+        source_patterns = [entry["pattern"] for entry in rules["sources"]]
+        rce_patterns = [entry["pattern"] for entry in rules["sinks"]["rce"]]
+        sanitizer_patterns = [entry["pattern"] for entry in rules["sanitizers"]]
+
+        assert "request.args.get" in source_patterns
+        assert "request.headers.get" in source_patterns
+        assert "os.system(" in rce_patterns
+        assert "subprocess.check_output(" in rce_patterns
+        assert "safe_join(" in sanitizer_patterns
+        assert "pathlib.Path.resolve()" in rules["safe_patterns"]
+
+    def test_extra_rules_paths_do_not_duplicate_existing_patterns(self, tmp_path):
+        overlay_rules = tmp_path / "overlay.yaml"
+        overlay_rules.write_text(
+            "\n".join(
+                [
+                    "sources:",
+                    '  - pattern: "request.args.get"',
+                    '    type: "HTTP_PARAM"',
+                    '    severity: "HIGH"',
+                    "sinks:",
+                    "  rce:",
+                    '    - pattern: "os.system("',
+                    '      type: "COMMAND_INJECTION"',
+                    '      severity: "CRITICAL"',
+                    '      description: "Duplicate overlay sink"',
+                    "sanitizers:",
+                    '  - pattern: "shlex.quote("',
+                    '    mitigates: ["COMMAND_INJECTION"]',
+                    '    description: "Duplicate overlay sanitizer"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        engine = RuleEngine(language="python", extra_rules_paths=[overlay_rules])
+        rules = engine.get_rules()
+
+        source_patterns = [entry["pattern"] for entry in rules["sources"]]
+        rce_patterns = [entry["pattern"] for entry in rules["sinks"]["rce"]]
+        sanitizer_patterns = [entry["pattern"] for entry in rules["sanitizers"]]
+
+        assert source_patterns.count("request.args.get") == 1
+        assert rce_patterns.count("os.system(") == 1
+        assert sanitizer_patterns.count("shlex.quote(") == 1
+
 
 class TestRuleEngineSources:
     def test_python_has_http_sources(self, python_engine):

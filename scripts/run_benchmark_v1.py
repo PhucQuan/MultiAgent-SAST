@@ -189,9 +189,10 @@ def run_benchmark_case(
         **common_kwargs,
     )
 
-    print(f"[case] {case['case_id']}: reviewed bundle scan...")
+    print(f"[case] {case['case_id']}: reviewed bundle overlay scan...")
     reviewed_result = run_manual_scan(
-        custom_rules_path=reviewed_rules,
+        custom_rules_path=None,
+        append_rules_paths=[reviewed_rules],
         output_dir=reviewed_scan_dir,
         **common_kwargs,
     )
@@ -221,12 +222,15 @@ def run_benchmark_case(
         "reviewed_findings": summary["reviewed"]["total_findings"],
         "finding_delta": summary["comparison"]["finding_delta"],
         "unique_delta": summary["comparison"]["unique_delta"],
+        "coverage_delta": summary["comparison"]["coverage_delta"],
         "default_mismatches": summary["default"]["mismatch_count"],
         "reviewed_mismatches": summary["reviewed"]["mismatch_count"],
         "default_by_sink_pattern": summary["default"]["by_sink_pattern"],
         "reviewed_by_sink_pattern": summary["reviewed"]["by_sink_pattern"],
         "added_keys": summary["comparison"]["added_keys"],
         "removed_keys": summary["comparison"]["removed_keys"],
+        "added_coverage_keys": summary["comparison"]["added_coverage_keys"],
+        "removed_coverage_keys": summary["comparison"]["removed_coverage_keys"],
     }
 
 
@@ -241,6 +245,7 @@ def aggregate_case_results(
     reviewed_findings = sum(item["reviewed_findings"] for item in case_results)
     finding_delta = reviewed_findings - default_findings
     unique_delta = sum(item["unique_delta"] for item in case_results)
+    coverage_delta = sum(item["coverage_delta"] for item in case_results)
     mismatch_delta = sum(
         item["reviewed_mismatches"] - item["default_mismatches"] for item in case_results
     )
@@ -249,12 +254,14 @@ def aggregate_case_results(
     by_family_reviewed = Counter()
     by_case_delta = {}
     by_case_unique_delta = {}
+    by_case_coverage_delta = {}
 
     for item in case_results:
         by_family_default[item["family"]] += item["default_findings"]
         by_family_reviewed[item["family"]] += item["reviewed_findings"]
         by_case_delta[item["case_id"]] = item["finding_delta"]
         by_case_unique_delta[item["case_id"]] = item["unique_delta"]
+        by_case_coverage_delta[item["case_id"]] = item["coverage_delta"]
 
     return {
         "schema_version": "aegis-reviewed-bundle-benchmark-result-v1",
@@ -268,11 +275,13 @@ def aggregate_case_results(
             "reviewed_findings": reviewed_findings,
             "finding_delta": finding_delta,
             "unique_delta": unique_delta,
+            "coverage_delta": coverage_delta,
             "mismatch_delta": mismatch_delta,
             "by_family_default": dict(by_family_default),
             "by_family_reviewed": dict(by_family_reviewed),
             "by_case_delta": by_case_delta,
             "by_case_unique_delta": by_case_unique_delta,
+            "by_case_coverage_delta": by_case_coverage_delta,
         },
     }
 
@@ -293,19 +302,21 @@ def render_markdown(summary: dict[str, Any]) -> str:
         "|---|---:|---:|---:|",
         f"| Findings | {aggregate['default_findings']} | {aggregate['reviewed_findings']} | {aggregate['finding_delta']:+d} |",
         f"| Unique sink keys | - | - | {aggregate['unique_delta']:+d} |",
+        f"| Coverage-equivalent keys | - | - | {aggregate['coverage_delta']:+d} |",
         f"| Source-pattern mismatches | - | - | {aggregate['mismatch_delta']:+d} |",
         "",
         "## Cases",
         "",
-        "| Case | Family | Default | Reviewed | Delta | Unique Delta |",
-        "|---|---|---:|---:|---:|---:|",
+        "| Case | Family | Default | Reviewed | Delta | Unique Delta | Coverage Delta |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ]
 
     for item in summary["cases"]:
         lines.append(
             f"| `{item['case_id']}` | `{item['family']}` | "
             f"{item['default_findings']} | {item['reviewed_findings']} | "
-            f"{item['finding_delta']:+d} | {item['unique_delta']:+d} |"
+            f"{item['finding_delta']:+d} | {item['unique_delta']:+d} | "
+            f"{item['coverage_delta']:+d} |"
         )
 
     lines.extend(
@@ -330,6 +341,14 @@ def render_markdown(summary: dict[str, Any]) -> str:
         if item["removed_keys"]:
             lines.append("- Removed keys:")
             for key in item["removed_keys"]:
+                lines.append(f"  - `{key}`")
+        if item["added_coverage_keys"]:
+            lines.append("- Added coverage-equivalent keys:")
+            for key in item["added_coverage_keys"]:
+                lines.append(f"  - `{key}`")
+        if item["removed_coverage_keys"]:
+            lines.append("- Removed coverage-equivalent keys:")
+            for key in item["removed_coverage_keys"]:
                 lines.append(f"  - `{key}`")
         lines.append("")
 
@@ -397,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
         f"(delta {aggregate['finding_delta']:+d})"
     )
     print(f"  - unique sink delta: {aggregate['unique_delta']:+d}")
+    print(f"  - coverage-equivalent delta: {aggregate['coverage_delta']:+d}")
     print(f"  - mismatch delta: {aggregate['mismatch_delta']:+d}")
     print(f"  - json: {json_path}")
     print(f"  - markdown: {markdown_path}")

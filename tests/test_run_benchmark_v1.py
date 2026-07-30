@@ -28,6 +28,13 @@ SSRF_EXTENSION_MANIFEST_PATH = (
     / "reviewed_bundle_v1"
     / "cases_ssrf_extension.json"
 )
+PYTHON_REVIEWED_SUITE_MANIFEST_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "datasets"
+    / "benchmark"
+    / "reviewed_bundle_v1"
+    / "cases_python_reviewed_suite.json"
+)
 
 
 def _load_module():
@@ -74,6 +81,22 @@ def test_load_manifest_and_resolve_cases_find_one_ssrf_extension_case():
     assert cases[0]["family"] == "SSRF"
 
 
+def test_load_manifest_and_resolve_cases_find_five_python_reviewed_suite_cases():
+    module = _load_module()
+    manifest = module.load_manifest(PYTHON_REVIEWED_SUITE_MANIFEST_PATH)
+    cases = module.resolve_manifest_cases(manifest)
+
+    assert manifest["schema_version"] == "aegis-reviewed-bundle-benchmark-v1"
+    assert len(cases) == 5
+    assert [case["family"] for case in cases] == [
+        "COMMAND_INJECTION",
+        "PATH_TRAVERSAL",
+        "INSECURE_DESERIALIZATION",
+        "SQL_INJECTION",
+        "SSRF",
+    ]
+
+
 def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
     module = _load_module()
     summary = module.aggregate_case_results(
@@ -85,6 +108,7 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
                 "reviewed_findings": 6,
                 "finding_delta": -1,
                 "unique_delta": -1,
+                "coverage_delta": -1,
                 "default_mismatches": 0,
                 "reviewed_mismatches": 0,
                 "goal": "",
@@ -95,6 +119,8 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
                 "reviewed_by_sink_pattern": {},
                 "added_keys": [],
                 "removed_keys": [],
+                "added_coverage_keys": [],
+                "removed_coverage_keys": [],
             },
             {
                 "case_id": "python-path-traversal",
@@ -103,6 +129,7 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
                 "reviewed_findings": 4,
                 "finding_delta": 1,
                 "unique_delta": 1,
+                "coverage_delta": 1,
                 "default_mismatches": 0,
                 "reviewed_mismatches": 0,
                 "goal": "",
@@ -113,6 +140,8 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
                 "reviewed_by_sink_pattern": {},
                 "added_keys": [],
                 "removed_keys": [],
+                "added_coverage_keys": [],
+                "removed_coverage_keys": [],
             },
         ],
         manifest_path=tmp_path / "cases.json",
@@ -125,6 +154,7 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
     assert aggregate["reviewed_findings"] == 10
     assert aggregate["finding_delta"] == 0
     assert aggregate["unique_delta"] == 0
+    assert aggregate["coverage_delta"] == 0
     assert aggregate["by_family_default"]["COMMAND_INJECTION"] == 7
     assert aggregate["by_family_reviewed"]["PATH_TRAVERSAL"] == 4
 
@@ -148,12 +178,15 @@ def test_render_markdown_contains_aggregate_and_case_rows(tmp_path):
                 "reviewed_findings": 3,
                 "finding_delta": 0,
                 "unique_delta": 0,
+                "coverage_delta": 0,
                 "default_mismatches": 0,
                 "reviewed_mismatches": 0,
                 "default_by_sink_pattern": {},
                 "reviewed_by_sink_pattern": {},
                 "added_keys": [],
                 "removed_keys": [],
+                "added_coverage_keys": [],
+                "removed_coverage_keys": [],
             }
         ],
         "aggregate": {
@@ -161,11 +194,13 @@ def test_render_markdown_contains_aggregate_and_case_rows(tmp_path):
             "reviewed_findings": 3,
             "finding_delta": 0,
             "unique_delta": 0,
+            "coverage_delta": 0,
             "mismatch_delta": 0,
             "by_family_default": {"INSECURE_DESERIALIZATION": 3},
             "by_family_reviewed": {"INSECURE_DESERIALIZATION": 3},
             "by_case_delta": {"python-insecure-deserialization": 0},
             "by_case_unique_delta": {"python-insecure-deserialization": 0},
+            "by_case_coverage_delta": {"python-insecure-deserialization": 0},
         },
     }
 
@@ -175,3 +210,57 @@ def test_render_markdown_contains_aggregate_and_case_rows(tmp_path):
     assert "| Metric | Default | Reviewed | Delta |" in content
     assert "`python-insecure-deserialization`" in content
     assert "Keep sink coverage stable." in content
+    assert "Coverage-equivalent keys" in content
+
+
+def test_run_benchmark_case_overlays_reviewed_rules_on_top_of_default_core(tmp_path, monkeypatch):
+    module = _load_module()
+    target = tmp_path / "demo.py"
+    reviewed_rules = tmp_path / "reviewed.yaml"
+    target.write_text("print('hello')\n", encoding="utf-8")
+    reviewed_rules.write_text("sources: []\nsinks: {}\nsanitisers: []\n", encoding="utf-8")
+
+    calls = []
+
+    def fake_run_manual_scan(**kwargs):
+        calls.append(kwargs)
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "scan.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "scan_metadata": {
+                        "target": str(kwargs["target"]),
+                        "files_scanned": 1,
+                    },
+                    "findings": [],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return {"written_reports": [report_path]}
+
+    monkeypatch.setattr(module, "run_manual_scan", fake_run_manual_scan)
+
+    result = module.run_benchmark_case(
+        case={
+            "case_id": "python-command-injection",
+            "family": "COMMAND_INJECTION",
+            "target": target,
+            "reviewed_rules": reviewed_rules,
+            "goal": "Overlay reviewed command sinks on top of the default core.",
+        },
+        output_root=tmp_path / "outputs",
+        formats=["json"],
+        max_depth=5,
+        mismatch_limit=5,
+    )
+
+    assert result["case_id"] == "python-command-injection"
+    assert len(calls) == 2
+    assert calls[0]["custom_rules_path"] is None
+    assert calls[0].get("append_rules_paths") is None
+    assert calls[1]["custom_rules_path"] is None
+    assert calls[1]["append_rules_paths"] == [reviewed_rules]

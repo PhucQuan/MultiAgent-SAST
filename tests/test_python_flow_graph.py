@@ -111,6 +111,84 @@ def test_python_dataflow_clears_taint_on_safe_reassignment(tmp_path):
     assert paths == []
 
 
+def test_python_dataflow_ignores_subprocess_env_keyword_for_command_injection(tmp_path):
+    """Taint flowing only into env= should not count as command injection."""
+    target = Path(tmp_path) / "service.py"
+    target.write_text(
+        "\n".join(
+            [
+                "def handler():",
+                "    env = os.environ.copy()",
+                "    cmd = ['echo', 'safe']",
+                "    subprocess.run(cmd, env=env)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    graph = PythonFlowGraphBuilder(
+        target,
+        target.read_text(encoding="utf-8"),
+    ).build()
+    analyzer = PythonDataflowAnalyzer(graph)
+
+    source = TaintSource(
+        CodeLocation(str(target), 2, 4, "env = os.environ.copy()"),
+        "ENVIRONMENT_VAR",
+        "env",
+        "os.environ",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 4, 4, "subprocess.run(cmd, env=env)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "subprocess.run",
+        "subprocess.run(",
+        arguments=["cmd", "env=env"],
+    )
+
+    paths = analyzer.trace_paths(source, [sink], [])
+    assert paths == []
+
+
+def test_python_dataflow_keeps_subprocess_primary_argument_for_command_injection(tmp_path):
+    """Taint flowing into the executable/args operand should still be flagged."""
+    target = Path(tmp_path) / "service.py"
+    target.write_text(
+        "\n".join(
+            [
+                "def handler():",
+                "    cmd = os.environ['DANGEROUS_CMD']",
+                "    env = {}",
+                "    subprocess.run(cmd, env=env)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    graph = PythonFlowGraphBuilder(
+        target,
+        target.read_text(encoding="utf-8"),
+    ).build()
+    analyzer = PythonDataflowAnalyzer(graph)
+
+    source = TaintSource(
+        CodeLocation(str(target), 2, 4, "cmd = os.environ['DANGEROUS_CMD']"),
+        "ENVIRONMENT_VAR",
+        "cmd",
+        "os.environ",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 4, 4, "subprocess.run(cmd, env=env)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "subprocess.run",
+        "subprocess.run(",
+        arguments=["cmd", "env=env"],
+    )
+
+    paths = analyzer.trace_paths(source, [sink], [])
+    assert len(paths) == 1
+
+
 def test_python_flow_graph_models_try_except_finally(tmp_path):
     """The explicit CFG should keep structured edges for try/except/finally blocks."""
     target = Path(tmp_path) / "service.py"

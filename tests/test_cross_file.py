@@ -249,3 +249,32 @@ class TestCrossFileDetection:
             "functions elsewhere in the repo"
         )
 
+    def test_cross_file_source_synthesis_does_not_use_unrelated_helpers_in_same_file(self):
+        tmp = make_cross_file_project(
+            utils_code="""\
+                from flask import request
+
+                def get_command():
+                    return request.args.get('cmd')
+
+                def get_constant():
+                    return "echo safe"
+            """,
+            app_code="""\
+                import os
+                from utils import get_constant
+
+                def run():
+                    cmd = get_constant()
+                    os.system(cmd)
+            """,
+        )
+
+        detector = make_detector()
+        result = detector.analyze_directory(tmp)
+
+        assert result.vulnerabilities == [], (
+            "Importing a constant-returning helper should not inherit request-based "
+            "sources from unrelated functions in the same module"
+        )
+

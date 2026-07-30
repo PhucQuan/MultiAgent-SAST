@@ -36,6 +36,12 @@ def cli():
 @cli.command()
 @click.argument("target_path", type=click.Path(exists=True))
 @click.option("--rules", type=click.Path(exists=True), help="Custom rules file (YAML/JSON)")
+@click.option(
+    "--append-rules",
+    multiple=True,
+    type=click.Path(exists=True),
+    help="Additional rules file to merge on top of the built-in rule set",
+)
 @click.option("--no-ai", is_flag=True, help="Disable AI verification")
 @click.option("--max-depth", type=int, default=5, help="Maximum analysis depth")
 @click.option(
@@ -47,7 +53,7 @@ def cli():
     help="Output formats",
 )
 @click.option("--output-dir", type=click.Path(), default="reports", help="Output directory")
-def scan(target_path, rules, no_ai, max_depth, output, output_dir):
+def scan(target_path, rules, append_rules, no_ai, max_depth, output, output_dir):
     """Scan a file or directory for security vulnerabilities."""
     console.print(
         Panel.fit(
@@ -77,8 +83,17 @@ def scan(target_path, rules, no_ai, max_depth, output, output_dir):
     _display_analyzer_status(registry)
     repo_profile = RepoIntake(registry).analyze_target(target)
     _display_repo_profile(repo_profile)
+    if rules or append_rules:
+        console.print(
+            "[dim]Rule controls:[/dim] "
+            f"replace={rules or 'none'} "
+            f"append={', '.join(append_rules) or 'none'}"
+        )
 
-    rule_engine = RuleEngine(config.custom_rules_path)
+    rule_engine = RuleEngine(
+        config.custom_rules_path,
+        extra_rules_paths=[Path(path) for path in append_rules],
+    )
     detector = VulnerabilityDetector(rule_engine, max_depth)
 
     ai_client = None

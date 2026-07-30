@@ -9,13 +9,19 @@ Examples:
   python scripts/scan_target.py C:\\path\\to\\repo --with-ai --output-dir reports/manual/custom
   python scripts/scan_target.py D:\\repo --exclude-dir test --exclude-dir third_party --progress-every 50
   python scripts/scan_target.py D:\\repo --exclude-profile focus --progress-every 50
+  python scripts/scan_target.py examples/vulnerable_rce.py --append-rules reports/rule_review/command_injection_seed/python_command_injection_semgrep_shape.legacy.yaml
+  python scripts/scan_target.py examples/vulnerable_rce.py --view --keep-last 2
+  python scripts/scan_target.py examples/vulnerable_rce.py --view --no-save
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import re
+import shutil
 import sys
+import tempfile
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -95,6 +101,12 @@ EXCLUDE_PROFILES = {
     },
 }
 DEFAULT_EXCLUDE_PROFILES = ("baseline",)
+ARTIFACT_PROFILES = {
+    "minimal": ["json"],
+    "review": ["json", "markdown"],
+    "full": ["json", "markdown", "sarif"],
+}
+TIMESTAMPED_RUN_RE = re.compile(r"^(?P<prefix>.+)_\d{8}_\d{6}$")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -106,7 +118,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rules",
         type=Path,
-        help="Optional custom YAML/JSON rules file",
+        help="Optional custom YAML/JSON rules file that replaces the built-in rule set",
+    )
+    parser.add_argument(
+        "--append-rules",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "Optional YAML/JSON rules file to merge on top of the built-in rule set. "
+            "Use this for reviewed/imported coverage bundles."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -118,7 +140,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         choices=["json", "markdown", "sarif"],
         default=[],
-        help="Repeatable report format selector. Defaults to json + markdown + sarif.",
+        help="Repeatable report format selector. Overrides --artifact-profile when set.",
+    )
+    parser.add_argument(
+        "--artifact-profile",
+        choices=sorted(ARTIFACT_PROFILES.keys()),
+        default="minimal",
+        help=(
+            "Preset report bundle for manual scans: minimal=json, "
+            "review=json+markdown, full=json+markdown+sarif."
+        ),
     )
     parser.add_argument(
         "--max-depth",
@@ -164,15 +195,82 @@ def build_parser() -> argparse.ArgumentParser:
         default=100,
         help="Print scan progress every N processed files when the target is a directory.",
     )
+    parser.add_argument(
+        "--keep-last",
+        type=int,
+        default=0,
+        help=(
+            "When greater than zero, keep only the newest N report directories for the "
+            "same target prefix under the current output parent."
+        ),
+    )
+    parser.add_argument(
+        "--view",
+        action="store_true",
+        help="Render the generated JSON report in the terminal after the scan finishes.",
+    )
+    parser.add_argument(
+        "--view-limit",
+        type=int,
+        default=8,
+        help="Maximum number of findings to show when --view is enabled.",
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Do not keep report artifacts on disk. Useful for terminal-only demo scans.",
+    )
     return parser
 
 
 def default_output_dir(target: Path) -> Path:
     """Build a stable default output directory for one manual scan."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return REPO_ROOT / "reports" / "manual_targets" / f"{manual_run_prefix(target)}_{timestamp}"
+
+
+def manual_run_prefix(target: Path) -> str:
+    """Return the stable manual-report prefix for one target path."""
     safe_name = target.resolve().name if target.exists() else target.name
-    safe_name = safe_name.replace(" ", "_")
-    return REPO_ROOT / "reports" / "manual_targets" / f"{safe_name}_{timestamp}"
+    return safe_name.replace(" ", "_")
+
+
+def resolve_output_formats(
+    formats: list[str] | None,
+    artifact_profile: str,
+    *,
+    ensure_json: bool = False,
+) -> list[str]:
+    """Resolve explicit formats or one artifact-profile preset into a stable list."""
+    resolved = list(formats or [])
+    if not resolved:
+        resolved = list(ARTIFACT_PROFILES[artifact_profile])
+
+    ordered: list[str] = []
+    if ensure_json and "json" not in resolved:
+        resolved = ["json", *resolved]
+
+    for format_name in resolved:
+        if format_name not in ordered:
+            ordered.append(format_name)
+    return ordered
+
+
+def resolve_emitted_formats(
+    formats: list[str] | None,
+    artifact_profile: str,
+    *,
+    view_report: bool = False,
+    persist_reports: bool = True,
+) -> list[str]:
+    """Resolve which report artifacts should actually be emitted for this run."""
+    if not persist_reports:
+        return ["json"] if view_report else []
+    return resolve_output_formats(
+        formats,
+        artifact_profile,
+        ensure_json=view_report,
+    )
 
 
 def print_analyzer_status(registry) -> None:
@@ -268,6 +366,33 @@ def print_scan_controls(
     print(f"  - progress every: {max(progress_every, 1)} files")
 
 
+def print_rule_controls(
+    custom_rules_path: Path | None,
+    append_rules_paths: list[Path],
+) -> None:
+    """Display how the current scan will source its rule set."""
+    print("Rule controls:")
+    print(f"  - replace rules: {custom_rules_path or 'none'}")
+    print(
+        "  - append rules: "
+        + (", ".join(str(path) for path in append_rules_paths) or "none")
+    )
+
+
+def print_artifact_controls(
+    output_formats: list[str],
+    keep_last: int,
+    view_report: bool,
+    persist_reports: bool,
+) -> None:
+    """Display how report artifacts will be emitted and retained."""
+    print("Artifact controls:")
+    print(f"  - output formats: {', '.join(output_formats) or 'none'}")
+    print(f"  - persist reports: {'yes' if persist_reports else 'no (--no-save)'}")
+    print(f"  - keep last runs: {keep_last if keep_last > 0 else 'all'}")
+    print(f"  - terminal viewer: {'enabled' if view_report else 'disabled'}")
+
+
 def print_scan_summary(scan_result, workflow_metadata: dict | None) -> None:
     """Display a concise end-of-run summary."""
     print("Scan summary:")
@@ -352,6 +477,61 @@ def export_reports(output_dir: Path, formats, scan_result, triage_records, workf
     return written
 
 
+def select_report_path(paths: list[Path], suffix: str) -> Path:
+    """Return the written artifact matching one suffix."""
+    for path in paths:
+        if path.suffix.lower() == suffix.lower():
+            return path
+    raise FileNotFoundError(f"Could not find a {suffix} report in the written artifacts.")
+
+
+def cleanup_manual_run_directories(
+    parent_dir: Path,
+    *,
+    target_prefix: str,
+    keep_last: int,
+) -> list[Path]:
+    """Delete older timestamped manual-run directories for one target prefix."""
+    stale_dirs = select_manual_run_directories_to_cleanup(
+        parent_dir,
+        target_prefix=target_prefix,
+        keep_last=keep_last,
+    )
+    parent_dir = parent_dir.resolve()
+    if stale_dirs and not str(parent_dir).startswith(str(REPO_ROOT.resolve())):
+        raise ValueError(f"Refusing to clean reports outside the workspace: {parent_dir}")
+    for stale_dir in stale_dirs:
+        shutil.rmtree(stale_dir)
+    return stale_dirs
+
+
+def select_manual_run_directories_to_cleanup(
+    parent_dir: Path,
+    *,
+    target_prefix: str,
+    keep_last: int,
+) -> list[Path]:
+    """Return older timestamped manual-run directories for one target prefix."""
+    if keep_last <= 0 or not parent_dir.exists():
+        return []
+
+    parent_dir = parent_dir.resolve()
+    candidate_dirs: list[Path] = []
+    for child in parent_dir.iterdir():
+        if not child.is_dir():
+            continue
+        match = TIMESTAMPED_RUN_RE.match(child.name)
+        if not match or match.group("prefix") != target_prefix:
+            continue
+        candidate_dirs.append(child)
+
+    candidate_dirs.sort(
+        key=lambda path: (path.stat().st_mtime, path.name),
+        reverse=True,
+    )
+    return candidate_dirs[keep_last:]
+
+
 def print_progress_update(update: dict) -> None:
     """Render lightweight progress updates for large manual scans."""
     event = update.get("event")
@@ -398,8 +578,10 @@ def run_manual_scan(
     *,
     target: Path,
     custom_rules_path: Path | None = None,
+    append_rules_paths: list[Path] | None = None,
     output_dir: Path | None = None,
     formats: list[str] | None = None,
+    artifact_profile: str = "full",
     max_depth: int = 5,
     with_ai: bool = False,
     exclude_dirs: list[str] | None = None,
@@ -407,6 +589,10 @@ def run_manual_scan(
     exclude_profiles: list[str] | None = None,
     no_default_excludes: bool = False,
     progress_every: int = 100,
+    keep_last: int = 0,
+    view_report: bool = False,
+    view_limit: int = 8,
+    persist_reports: bool = True,
     progress_callback=None,
     emit_console: bool = False,
 ) -> dict[str, Any]:
@@ -419,6 +605,12 @@ def run_manual_scan(
         custom_rules_path = custom_rules_path.resolve()
         if not custom_rules_path.exists():
             raise FileNotFoundError(f"Rules file does not exist: {custom_rules_path}")
+    resolved_append_rules: list[Path] = []
+    for append_path in append_rules_paths or []:
+        resolved_path = append_path.resolve()
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Rules file does not exist: {resolved_path}")
+        resolved_append_rules.append(resolved_path)
 
     try:
         from aegis_sast.analysis.rule_engine import RuleEngine
@@ -434,8 +626,19 @@ def run_manual_scan(
     config = get_config()
     config.enable_ai_verification = with_ai
     config.max_analysis_depth = max_depth
-    config.output_formats = formats or ["json", "markdown", "sarif"]
-    config.output_dir = output_dir or default_output_dir(target)
+    config.output_formats = resolve_emitted_formats(
+        formats,
+        artifact_profile,
+        view_report=view_report,
+        persist_reports=persist_reports,
+    )
+    default_dir = output_dir or default_output_dir(target)
+    temp_report_dir: tempfile.TemporaryDirectory[str] | None = None
+    if persist_reports:
+        config.output_dir = default_dir
+    else:
+        temp_report_dir = tempfile.TemporaryDirectory(prefix="aegis-sast-console-")
+        config.output_dir = Path(temp_report_dir.name)
     config.custom_rules_path = custom_rules_path
     set_config(config)
 
@@ -459,8 +662,21 @@ def run_manual_scan(
             resolved_exclude_globs,
             progress_every,
         )
+        print_rule_controls(custom_rules_path, resolved_append_rules)
+        print_artifact_controls(
+            config.output_formats,
+            keep_last,
+            view_report,
+            persist_reports,
+        )
 
-    detector = VulnerabilityDetector(RuleEngine(config.custom_rules_path), max_depth)
+    detector = VulnerabilityDetector(
+        RuleEngine(
+            config.custom_rules_path,
+            extra_rules_paths=resolved_append_rules,
+        ),
+        max_depth,
+    )
     selected_progress_callback = progress_callback
     if selected_progress_callback is None and emit_console:
         selected_progress_callback = print_progress_update
@@ -503,36 +719,71 @@ def run_manual_scan(
         triage_records = workflow_state.triage_records
         workflow_metadata = workflow_state.metadata
 
-    written_reports = export_reports(
-        config.output_dir,
-        config.output_formats,
-        scan_result,
-        triage_records,
-        workflow_metadata,
-    )
+    try:
+        written_reports = export_reports(
+            config.output_dir,
+            config.output_formats,
+            scan_result,
+            triage_records,
+            workflow_metadata,
+        )
 
-    if emit_console:
-        print_scan_summary(scan_result, workflow_metadata)
-        print("Reports:")
-        for path in written_reports:
-            print(f"  - {path}")
-        if scan_result.errors:
-            print("Errors:")
-            for error in scan_result.errors:
-                print(f"  - {error}")
+        cleaned_run_dirs: list[Path] = []
+        if persist_reports:
+            cleaned_run_dirs = cleanup_manual_run_directories(
+                config.output_dir.parent,
+                target_prefix=manual_run_prefix(target),
+                keep_last=keep_last,
+            )
 
-    return {
-        "config": config,
-        "registry": registry,
-        "repo_profile": repo_profile,
-        "active_profiles": active_profiles,
-        "exclude_dirs": resolved_exclude_dirs,
-        "exclude_globs": resolved_exclude_globs,
-        "scan_result": scan_result,
-        "triage_records": triage_records,
-        "workflow_metadata": workflow_metadata,
-        "written_reports": written_reports,
-    }
+        if emit_console:
+            print_scan_summary(scan_result, workflow_metadata)
+            if persist_reports:
+                print("Reports:")
+                for path in written_reports:
+                    print(f"  - {path}")
+            else:
+                print("Reports:")
+                print("  - not saved (--no-save)")
+            if cleaned_run_dirs:
+                print("Cleaned old runs:")
+                for path in cleaned_run_dirs:
+                    print(f"  - {path}")
+            if scan_result.errors:
+                print("Errors:")
+                for error in scan_result.errors:
+                    print(f"  - {error}")
+            if view_report and written_reports:
+                try:
+                    from report_console import print_report_overview  # noqa: PLC0415
+
+                    print()
+                    print_report_overview(
+                        select_report_path(written_reports, ".json"),
+                        max_findings=view_limit,
+                        preview_only=not persist_reports,
+                    )
+                except Exception as exc:  # pragma: no cover - terminal-view dependency dependent
+                    print(f"[warn] Terminal report viewer unavailable: {exc}")
+
+        return {
+            "config": config,
+            "registry": registry,
+            "repo_profile": repo_profile,
+            "active_profiles": active_profiles,
+            "exclude_dirs": resolved_exclude_dirs,
+            "exclude_globs": resolved_exclude_globs,
+            "append_rules_paths": resolved_append_rules,
+            "scan_result": scan_result,
+            "triage_records": triage_records,
+            "workflow_metadata": workflow_metadata,
+            "written_reports": written_reports,
+            "cleaned_run_dirs": cleaned_run_dirs,
+            "persist_reports": persist_reports,
+        }
+    finally:
+        if temp_report_dir is not None:
+            temp_report_dir.cleanup()
 
 
 def main() -> int:
@@ -544,8 +795,10 @@ def main() -> int:
         run_manual_scan(
             target=args.target,
             custom_rules_path=args.rules,
+            append_rules_paths=args.append_rules,
             output_dir=args.output_dir,
-            formats=args.format or ["json", "markdown", "sarif"],
+            formats=args.format,
+            artifact_profile=args.artifact_profile,
             max_depth=args.max_depth,
             with_ai=args.with_ai,
             exclude_dirs=args.exclude_dir,
@@ -553,13 +806,18 @@ def main() -> int:
             exclude_profiles=args.exclude_profile,
             no_default_excludes=args.no_default_excludes,
             progress_every=args.progress_every,
+            keep_last=args.keep_last,
+            view_report=args.view,
+            view_limit=args.view_limit,
+            persist_reports=not args.no_save,
             emit_console=True,
         )
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except RuntimeError as exc:
         print(f"[error] {exc}")
-        print("Run `python scripts/doctor_env.py` and install requirements.txt first.")
+        print("Environment check: python scripts/doctor_env.py")
+        print("Install dependencies: pip install -r requirements.txt")
         return 1
 
     return 0

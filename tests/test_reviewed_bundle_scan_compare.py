@@ -156,6 +156,7 @@ def test_build_comparison_summary_tracks_deltas_and_mismatches(tmp_path):
     assert summary["default"]["total_findings"] == 2
     assert summary["reviewed"]["total_findings"] == 1
     assert summary["comparison"]["finding_delta"] == -1
+    assert summary["comparison"]["coverage_delta"] == -1
     assert summary["comparison"]["by_type_delta"]["CODE_INJECTION"] == -1
     assert summary["default"]["mismatch_count"] == 1
     assert summary["reviewed"]["mismatch_count"] == 0

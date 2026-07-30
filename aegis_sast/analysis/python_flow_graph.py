@@ -14,6 +14,7 @@ from aegis_sast.core.models import (
     Sanitizer,
     TaintSink,
     TaintSource,
+    VulnerabilityType,
 )
 
 
@@ -1187,8 +1188,114 @@ class PythonDataflowAnalyzer:
         sink: TaintSink,
         tainted_vars: Set[str],
     ) -> bool:
-        candidates = list(node.arguments) + list(sink.arguments) + [node.label]
+        candidates = self._sink_relevant_candidates(node, sink)
+        if not candidates:
+            candidates = list(node.arguments) + list(sink.arguments) + [node.label]
         return any(self._mentions_taint(token, tainted_vars) for token in candidates)
+
+    def _sink_relevant_candidates(
+        self,
+        node: PythonFlowNode,
+        sink: TaintSink,
+    ) -> List[str]:
+        """Return only the sink arguments that matter for taint reachability."""
+        arguments = list(node.arguments) or list(sink.arguments)
+        if not arguments:
+            return [node.label]
+
+        if sink.sink_type in {
+            VulnerabilityType.COMMAND_INJECTION,
+            VulnerabilityType.CODE_INJECTION,
+        }:
+            return self._command_injection_candidates(arguments, sink)
+
+        if sink.sink_type == VulnerabilityType.PATH_TRAVERSAL:
+            return self._path_traversal_candidates(arguments, sink)
+
+        return arguments + [node.label]
+
+    def _command_injection_candidates(
+        self,
+        arguments: List[str],
+        sink: TaintSink,
+    ) -> List[str]:
+        """Select the arguments that actually influence command execution."""
+        function_name = (sink.function_name or "").strip()
+
+        if function_name in {
+            "subprocess.run",
+            "subprocess.call",
+            "subprocess.Popen",
+            "subprocess.check_call",
+            "subprocess.check_output",
+        }:
+            relevant = self._select_positional_or_named_arguments(
+                arguments,
+                named_arguments={"args"},
+                positional_indexes={0},
+            )
+            return relevant or arguments[:1]
+
+        if function_name in {"os.system", "eval", "exec", "__import__"}:
+            relevant = self._select_positional_or_named_arguments(
+                arguments,
+                named_arguments=set(),
+                positional_indexes={0},
+            )
+            return relevant or arguments[:1]
+
+        return arguments
+
+    def _path_traversal_candidates(
+        self,
+        arguments: List[str],
+        sink: TaintSink,
+    ) -> List[str]:
+        """Select the path-bearing arguments that influence file access."""
+        function_name = (sink.function_name or "").strip()
+
+        if function_name == "open" or function_name.endswith(".open"):
+            relevant = self._select_positional_or_named_arguments(
+                arguments,
+                named_arguments={"file"},
+                positional_indexes={0},
+            )
+            return relevant or arguments[:1]
+
+        return arguments
+
+    def _select_positional_or_named_arguments(
+        self,
+        arguments: List[str],
+        *,
+        named_arguments: Set[str],
+        positional_indexes: Set[int],
+    ) -> List[str]:
+        """Pick relevant positional arguments and specific keyword arguments."""
+        selected: List[str] = []
+        positional_index = 0
+
+        for argument in arguments:
+            keyword_name, keyword_value = self._split_keyword_argument(argument)
+            if keyword_name is None:
+                if positional_index in positional_indexes:
+                    selected.append(argument)
+                positional_index += 1
+                continue
+            if keyword_name in named_arguments:
+                selected.append(keyword_value)
+
+        return selected
+
+    @staticmethod
+    def _split_keyword_argument(argument: str) -> Tuple[str | None, str]:
+        """Split a simple keyword argument rendered as ``name=value``."""
+        keyword_name, separator, keyword_value = argument.partition("=")
+        if separator != "=":
+            return None, argument
+        if not re.match(r"^[A-Za-z_]\w*$", keyword_name.strip()):
+            return None, argument
+        return keyword_name.strip(), keyword_value.strip()
 
     def _build_dataflow_path(
         self,

@@ -84,6 +84,20 @@ class TestExtractSources:
         sources = plugin.extract_sources(ast, path, rules)
         assert sources == [], "open() should not be treated as a generic taint source"
 
+    def test_request_form_attribute_no_longer_counts_as_direct_source(self, plugin, rules):
+        code = "payload = request.form\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert sources == [], "request.form should require an accessor such as .get()"
+
+    def test_request_form_get_still_counts_as_source(self, plugin, rules):
+        code = "payload = request.form.get('payload')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert len(sources) >= 1, "request.form.get() should remain a taint source"
+
 
 # ---------------------------------------------------------------------------
 # Tests: extract_sinks

@@ -162,8 +162,19 @@ def build_comparison_summary(
             "new_total": comparison["new_total"],
             "old_unique": comparison["old_unique"],
             "new_unique": comparison["new_unique"],
+            "old_coverage": comparison["old_coverage"],
+            "new_coverage": comparison["new_coverage"],
+            "coverage_delta": comparison["coverage_delta"],
             "removed_keys": [_stringify_key(key) for key in sorted(comparison["removed_keys"])],
             "added_keys": [_stringify_key(key) for key in sorted(comparison["added_keys"])],
+            "removed_coverage_keys": [
+                _stringify_coverage_key(key)
+                for key in sorted(comparison["removed_coverage_keys"])
+            ],
+            "added_coverage_keys": [
+                _stringify_coverage_key(key)
+                for key in sorted(comparison["added_coverage_keys"])
+            ],
             "by_type_delta": dict(comparison["by_type_delta"]),
             "by_sink_pattern_delta": dict(comparison["by_sink_pattern_delta"]),
         },
@@ -194,6 +205,11 @@ def print_summary(summary: dict[str, Any], output_path: Path) -> None:
         "  - unique sink keys: "
         f"{comparison['old_unique']} -> {comparison['new_unique']} "
         f"(delta {comparison['unique_delta']:+d})"
+    )
+    print(
+        "  - coverage-equivalent keys: "
+        f"{comparison['old_coverage']} -> {comparison['new_coverage']} "
+        f"(delta {comparison['coverage_delta']:+d})"
     )
     print(
         "  - mismatch counts: "
@@ -238,6 +254,15 @@ def _stringify_key(key: tuple[Any, ...]) -> str:
     )
 
 
+def _stringify_coverage_key(key: tuple[Any, ...]) -> str:
+    """Render one pattern-agnostic coverage key in a readable single-line format."""
+    file_path, line, column, vuln_type, sink_identity = key
+    return (
+        f"{vuln_type}|{sink_identity or 'unknown'}|"
+        f"{file_path}:{line}:{column}"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one paired default-versus-reviewed scan."""
     parser = build_parser()
@@ -276,9 +301,10 @@ def main(argv: list[str] | None = None) -> int:
             **common_kwargs,
         )
 
-        print("Running reviewed bundle scan...")
+        print("Running reviewed bundle overlay scan...")
         reviewed_result = run_manual_scan(
-            custom_rules_path=reviewed_rules,
+            custom_rules_path=None,
+            append_rules_paths=[reviewed_rules],
             output_dir=reviewed_scan_dir,
             **common_kwargs,
         )
