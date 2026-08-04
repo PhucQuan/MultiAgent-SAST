@@ -10,7 +10,7 @@ Date: 2026-07-29
 | 1 AI contract | Complete | `aegis_sast/triage/schema.py`, `aegis_sast/orchestration/contracts.py` |
 | 2 Mock fixtures | Complete seed set plus generator | `tests/fixtures/ai_findings/`, `aegis_sast/ai/fixtures.py`, `scripts/generate_ai_mock_fixtures.py` |
 | 3 Knowledge layer | Complete seed layer | `aegis_sast/knowledge/schema.py`, `aegis_sast/knowledge/cards/*.yaml` |
-| 4 Gemini structured output | Complete testable wrapper | `StructuredGeminiClient`, retry/parser/token metadata tests, optional smoke script |
+| 4 Structured LLM output | Complete testable wrappers | `StructuredGroqClient`, `StructuredGeminiClient`, retry/parser/token metadata tests, optional smoke scripts |
 | 5 Core nodes | Complete deterministic AI nodes | Planner, KnowledgeLoader, Auditor, Skeptic, Judge, Reporter |
 | 6 Workflow/routing | Complete LangGraph-ready workflow | `AITriageWorkflow`, optional `langgraph_adapter.py` |
 | 7 Mock E2E tests | Complete for seed set | `tests/test_ai_workflow_e2e.py` |
@@ -65,12 +65,20 @@ Optional real Gemini smoke test:
 GEMINI_API_KEY=... /opt/anaconda3/bin/python scripts/smoke_gemini_structured.py
 ```
 
+Optional real Groq smoke test:
+
+```bash
+export GROQ_API_KEY="gsk_..."
+export GROQ_MODEL="llama-3.1-8b-instant"
+/opt/anaconda3/bin/python scripts/smoke_groq_structured.py
+```
+
 ## Remaining External Dependencies
 
 The following cannot be completed truthfully without external inputs:
 
 - 25-35 labeled findings from Quân. A synthetic 25-case generator is available until that dataset arrives.
-- Real Gemini API smoke run with a configured API key.
+- Real Groq or Gemini API smoke run with a configured API key.
 - Real E1/E2/E3 metrics on a stable benchmark dataset.
 - Final thesis charts based on real raw results.
 

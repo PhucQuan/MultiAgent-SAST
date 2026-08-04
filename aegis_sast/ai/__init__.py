@@ -4,6 +4,7 @@ New provider-oriented imports should prefer ``aegis_sast.llm``.
 """
 
 from aegis_sast.ai.gemini_client import GeminiClient, StructuredGeminiClient
+from aegis_sast.ai.groq_client import StructuredGroqClient
 from aegis_sast.ai.schemas import (
     AIExecutionMetadata,
     AIExecutionSummary,
@@ -19,5 +20,6 @@ __all__ = [
     "StructuredAIRequest",
     "StructuredAIResult",
     "StructuredGeminiClient",
+    "StructuredGroqClient",
     "TokenUsage",
 ]
