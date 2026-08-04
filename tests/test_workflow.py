@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from rich.progress import SpinnerColumn, TextColumn
 
 import aegis_sast.cli as cli_module
+from aegis_sast.core.config import reload_config
 from aegis_sast.core.models import (
     AIVerification,
     CodeLocation,
@@ -467,3 +468,31 @@ def test_cli_progress_columns_keep_spinner_for_utf8_streams():
     assert len(columns) == 2
     assert isinstance(columns[0], SpinnerColumn)
     assert isinstance(columns[1], TextColumn)
+
+
+def test_config_accepts_google_api_key_alias_and_new_default_model(
+    tmp_path,
+    monkeypatch,
+):
+    """Config should accept Google AI Studio env aliases without extra wiring."""
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "GOOGLE_API_KEY=test-google-ai-studio-key",
+                "ENABLE_AI_VERIFICATION=true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    config = reload_config()
+
+    assert config.gemini_api_key == "test-google-ai-studio-key"
+    assert config.gemini_model == "gemini-3.6-flash"
+    assert config.enable_ai_verification is True

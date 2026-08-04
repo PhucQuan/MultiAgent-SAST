@@ -39,7 +39,7 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.375rem;
   --background: oklch(0.968 0.004 248);
   --foreground: oklch(0.23 0.02 256);
   --surface: oklch(1 0 0);
@@ -90,7 +90,7 @@
     min-height: 100dvh;
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-size: 14px;
+    font-size: 13px;
   }
 
   button,

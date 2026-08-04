@@ -765,7 +765,7 @@ export function DashboardShell() {
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[296px_minmax(0,1fr)] xl:grid-cols-[296px_minmax(0,1fr)_460px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_400px]">
         {hasSidebar ? <div className="border-r border-border">{explorer}</div> : null}
 
         <div className="min-h-0 min-w-0 border-r border-border">

@@ -49,11 +49,11 @@ function NotePanel({
   children: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-muted px-4 py-3">
-      <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+    <div className="rounded-sm border border-border bg-surface-muted px-3 py-2.5">
+      <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {eyebrow}
       </div>
-      <p className="text-[12.5px] leading-7 text-foreground">{children}</p>
+      <p className="text-[12.5px] leading-relaxed text-foreground">{children}</p>
     </div>
   );
 }
@@ -100,16 +100,16 @@ export function FindingDetail({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="border-b border-border px-5 py-4">
+      <div className="border-b border-border px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="num text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="num text-[11px] uppercase tracking-wider text-muted-foreground">
               {finding.id}
             </div>
-            <h2 className="mt-1 text-[16px] font-semibold leading-7 text-foreground">
+            <h2 className="mt-0.5 text-[13.5px] font-semibold leading-5 text-foreground">
               {finding.message}
             </h2>
-            <div className="mt-2 font-mono text-[11.5px] text-muted-foreground">
+            <div className="mt-1.5 font-mono text-[11.5px] text-muted-foreground">
               {finding.filePath}
               <span>{finding.line ? `:${finding.line}` : ""}</span>
             </div>
@@ -118,7 +118,7 @@ export function FindingDetail({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-muted"
+              className="rounded-sm p-1 text-muted-foreground hover:bg-surface-muted"
               aria-label="Close detail"
             >
               <X className="h-4 w-4" />
@@ -126,7 +126,7 @@ export function FindingDetail({
           ) : null}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <SeverityTag severity={finding.severity} />
           <StatusTag status={finding.status} />
           <MetaTag>{formatConfidence(finding.confidence)}</MetaTag>
@@ -140,12 +140,12 @@ export function FindingDetail({
       </div>
 
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-0">
-        <TabsList className="h-11 w-full justify-start rounded-none border-b border-border bg-surface-muted px-3">
+        <TabsList className="h-9 w-full justify-start rounded-none border-b border-border bg-surface-muted px-2">
           {["overview", "evidence", "review"].map((tab) => (
             <TabsTrigger
               key={tab}
               value={tab}
-              className="h-8 rounded-lg px-3 text-[12.5px] capitalize data-[state=active]:bg-surface"
+              className="h-7 rounded-sm px-3 text-[12.5px] capitalize data-[state=active]:bg-surface"
             >
               {tab}
             </TabsTrigger>
@@ -189,9 +189,9 @@ export function FindingDetail({
             </DetailSection>
 
             {finding.manualReviewRequired ? (
-              <div className="flex items-start gap-2 border-b border-border bg-sev-medium/8 px-5 py-3">
+              <div className="flex items-start gap-2 border-b border-border bg-sev-medium/8 px-4 py-2.5">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sev-medium" />
-                <p className="text-[12.5px] leading-6 text-foreground">
+                <p className="text-[12px] leading-relaxed text-foreground">
                   Aegis triage marked this finding as inconclusive. Manual
                   confirmation is still required before it should be closed.
                 </p>
@@ -236,7 +236,7 @@ export function FindingDetail({
                   {finding.evidencePath.map((step, index) => (
                     <li
                       key={`${step}-${index}`}
-                      className="flex gap-3 rounded-lg border border-border bg-background px-3 py-2 font-mono text-[11.5px] text-foreground"
+                      className="flex gap-3 rounded-sm border border-border bg-background px-3 py-2 font-mono text-[11.5px] text-foreground"
                     >
                       <span className="num w-4 shrink-0 text-muted-foreground">
                         {index + 1}.
@@ -326,7 +326,7 @@ export function FindingDetail({
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-lg border border-border bg-background px-3 py-3"
+                      className="rounded-sm border border-border bg-background px-3 py-2.5"
                     >
                       <div className="text-[16px] font-semibold text-foreground">
                         {value ?? "n/a"}
@@ -346,7 +346,7 @@ export function FindingDetail({
                   {finding.reasoningNotes.map((reasoningNote) => (
                     <li
                       key={reasoningNote}
-                      className="rounded-lg border border-border bg-background px-3 py-2 text-[12px] leading-6 text-foreground"
+                      className="rounded-sm border border-border bg-background px-3 py-2 text-[12px] leading-relaxed text-foreground"
                     >
                       {reasoningNote}
                     </li>
@@ -365,7 +365,7 @@ export function FindingDetail({
                   {finding.agentReviews.map((review) => (
                     <li
                       key={review.key}
-                      className="rounded-lg border border-border bg-background px-3 py-3"
+                      className="rounded-sm border border-border bg-background px-3 py-3"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[12.5px] font-semibold text-foreground">
@@ -380,7 +380,7 @@ export function FindingDetail({
                             : "review bundle"}
                         </span>
                       </div>
-                      <p className="mt-2 text-[12px] leading-6 text-muted-foreground">
+                      <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
                         {review.summary}
                       </p>
                       {review.notes.length ? (
@@ -409,7 +409,7 @@ export function FindingDetail({
                       type="button"
                       onClick={() => onDisposition(disposition)}
                       className={cn(
-                        "min-h-[42px] rounded-lg border border-border px-3 py-2 text-[12.5px] font-medium transition-colors hover:bg-surface-muted",
+                        "min-h-[38px] rounded-sm border border-border px-3 py-2 text-[12.5px] font-medium transition-colors hover:bg-surface-muted",
                         active &&
                           "border-primary bg-primary text-primary-foreground hover:bg-primary",
                       )}
@@ -425,7 +425,7 @@ export function FindingDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9 w-full justify-start gap-2"
+                className="h-8 w-full justify-start gap-2"
                 onClick={onToggleMute}
               >
                 {feedback?.muted ? (
@@ -446,12 +446,12 @@ export function FindingDetail({
                 defaultValue={feedback?.note ?? ""}
                 rows={6}
                 placeholder="Record what you verified, who you asked, and what remains open."
-                className="min-h-[140px] resize-none rounded-lg border-border bg-background text-[12.5px]"
+                className="min-h-[128px] resize-none rounded-sm border-border bg-background text-[12.5px]"
               />
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
-                  className="h-9"
+                  className="h-8"
                   onClick={() => onSaveNote(noteRef.current?.value ?? "")}
                 >
                   Save note
@@ -459,7 +459,7 @@ export function FindingDetail({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-9 gap-1.5 text-muted-foreground"
+                  className="h-8 gap-1.5 text-muted-foreground"
                   onClick={() => {
                     if (noteRef.current) {
                       noteRef.current.value = "";
@@ -473,7 +473,7 @@ export function FindingDetail({
             </DetailSection>
 
             <DetailSection title="Local memory updated">
-              <div className="rounded-lg border border-border bg-background px-3 py-3">
+              <div className="rounded-sm border border-border bg-background px-3 py-2.5">
                 <span className="num text-[12px] text-muted-foreground">
                   {feedback?.updatedAt
                     ? formatDateTime(feedback.updatedAt)

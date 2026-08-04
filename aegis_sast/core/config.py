@@ -39,6 +39,15 @@ def _get_env(name: str) -> Optional[str]:
     )
 
 
+def _get_first_env(*names: str) -> Optional[str]:
+    """Read the first non-empty environment variable from a list of aliases."""
+    for name in names:
+        value = _get_env(name)
+        if value is not None and value.strip():
+            return value
+    return None
+
+
 def _parse_bool(name: str, default: bool) -> bool:
     """Parse a boolean environment variable."""
     value = _get_env(name)
@@ -80,7 +89,7 @@ class AegisConfig:
     """Main configuration class for Aegis-SAST."""
 
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
     cache_enabled: bool = True
     cache_dir: Path = field(default_factory=lambda: Path(".aegis_cache"))
     cache_ttl_days: int = 30
@@ -109,8 +118,13 @@ class AegisConfig:
         """Build configuration from environment variables and .env."""
         _load_dotenv()
         return cls(
-            gemini_api_key=_get_env("GEMINI_API_KEY") or "",
-            gemini_model=_get_env("GEMINI_MODEL") or "gemini-2.5-flash",
+            gemini_api_key=_get_first_env(
+                "GEMINI_API_KEY",
+                "GOOGLE_API_KEY",
+                "GOOGLE_GENAI_API_KEY",
+            )
+            or "",
+            gemini_model=_get_env("GEMINI_MODEL") or "gemini-3.6-flash",
             cache_enabled=_parse_bool("CACHE_ENABLED", True),
             cache_dir=_parse_path("CACHE_DIR", Path(".aegis_cache")) or Path(".aegis_cache"),
             cache_ttl_days=_parse_int("CACHE_TTL_DAYS", 30),
@@ -159,7 +173,7 @@ class AegisConfig:
 
             console = Console()
             console.print(
-                "[yellow]Warning: GEMINI_API_KEY is required for AI verification.[/yellow]"
+                "[yellow]Warning: GEMINI_API_KEY or GOOGLE_API_KEY is required for AI verification.[/yellow]"
             )
             console.print(
                 "[yellow]Disabling AI verification for the current run.[/yellow]"
