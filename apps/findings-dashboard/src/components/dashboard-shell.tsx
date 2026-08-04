@@ -558,9 +558,7 @@ export function DashboardShell() {
 
   const detail = (
     <FindingDetail
-      key={`${selectedFinding?.key ?? "empty-detail"}:${
-        selectedFinding ? reviewStore[selectedFinding.key]?.updatedAt ?? "none" : "none"
-      }`}
+      key={selectedFinding?.key ?? "empty-detail"}
       finding={selectedFinding}
       feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
       loading={loadingSelectedReport}
@@ -633,7 +631,15 @@ export function DashboardShell() {
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_420px]">
+      {selectedReport?.errors.length ? (
+        <div className="border-b border-border bg-sev-medium/8 px-4 py-3 text-[12.5px] text-foreground">
+          This report recorded {selectedReport.errors.length} scan error
+          {selectedReport.errors.length === 1 ? "" : "s"}. Review the raw report if
+          a file seems to be missing from the findings queue.
+        </div>
+      ) : null}
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[296px_minmax(0,1fr)] xl:grid-cols-[296px_minmax(0,1fr)_460px]">
         {hasSidebar ? <div className="border-r border-border">{explorer}</div> : null}
 
         <div className="min-h-0 min-w-0 border-r border-border">

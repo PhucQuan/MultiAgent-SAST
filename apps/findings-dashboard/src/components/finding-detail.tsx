@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef } from "react";
 import {
   AlertTriangle,
   RotateCcw,
@@ -21,7 +21,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { formatConfidence, formatDateTime, formatLabel, shortenPath } from "@/lib/dashboard-ui";
+import {
+  formatConfidence,
+  formatDateTime,
+  formatLabel,
+  shortenPath,
+} from "@/lib/dashboard-ui";
 import { cn } from "@/lib/utils";
 import type {
   NormalizedFinding,
@@ -35,6 +40,23 @@ const dispositions: ReviewerDisposition[] = [
   "false-positive",
   "suppressed",
 ];
+
+function NotePanel({
+  eyebrow,
+  children,
+}: {
+  eyebrow: string;
+  children: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-muted px-4 py-3">
+      <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {eyebrow}
+      </div>
+      <p className="text-[12.5px] leading-7 text-foreground">{children}</p>
+    </div>
+  );
+}
 
 interface FindingDetailProps {
   finding: NormalizedFinding | null;
@@ -57,7 +79,7 @@ export function FindingDetail({
   onReset,
   onClose,
 }: FindingDetailProps) {
-  const [note, setNote] = useState(feedback?.note ?? "");
+  const noteRef = useRef<HTMLTextAreaElement | null>(null);
 
   if (loading) {
     return (
@@ -70,29 +92,33 @@ export function FindingDetail({
   if (!finding) {
     return (
       <div className="flex h-full items-center justify-center bg-surface px-6 text-center text-[12.5px] text-muted-foreground">
-        Select a finding from the triage queue to inspect evidence and record a
-        local review decision.
+        Select a finding from the review queue to inspect evidence and record a
+        local reviewer decision.
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="border-b border-border px-4 py-3">
+      <div className="border-b border-border px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="num text-[11px] uppercase tracking-wider text-muted-foreground">
+            <div className="num text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               {finding.id}
             </div>
-            <h2 className="mt-0.5 text-[13.5px] font-semibold leading-5 text-foreground">
+            <h2 className="mt-1 text-[16px] font-semibold leading-7 text-foreground">
               {finding.message}
             </h2>
+            <div className="mt-2 font-mono text-[11.5px] text-muted-foreground">
+              {finding.filePath}
+              <span>{finding.line ? `:${finding.line}` : ""}</span>
+            </div>
           </div>
           {onClose ? (
             <button
               type="button"
               onClick={onClose}
-              className="rounded-sm p-1 text-muted-foreground hover:bg-surface-muted"
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-muted"
               aria-label="Close detail"
             >
               <X className="h-4 w-4" />
@@ -100,10 +126,11 @@ export function FindingDetail({
           ) : null}
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <SeverityTag severity={finding.severity} />
           <StatusTag status={finding.status} />
           <MetaTag>{formatConfidence(finding.confidence)}</MetaTag>
+          <MetaTag>{formatLabel(finding.language)}</MetaTag>
           {feedback?.disposition ? (
             <MetaTag className="border-primary/30 text-primary">
               {dispositionLabels[feedback.disposition]}
@@ -113,12 +140,12 @@ export function FindingDetail({
       </div>
 
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-0">
-        <TabsList className="h-9 w-full justify-start rounded-none border-b border-border bg-surface-muted px-2">
+        <TabsList className="h-11 w-full justify-start rounded-none border-b border-border bg-surface-muted px-3">
           {["overview", "evidence", "review"].map((tab) => (
             <TabsTrigger
               key={tab}
               value={tab}
-              className="h-7 rounded-sm text-[12.5px] capitalize data-[state=active]:bg-surface"
+              className="h-8 rounded-lg px-3 text-[12.5px] capitalize data-[state=active]:bg-surface"
             >
               {tab}
             </TabsTrigger>
@@ -127,41 +154,25 @@ export function FindingDetail({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <TabsContent value="overview" className="mt-0">
-            <DetailSection title="Location">
-              <div className="font-mono text-[12px] text-foreground">
-                {finding.filePath}
-                <span className="text-muted-foreground">
-                  {finding.line ? `:${finding.line}` : ""}
-                </span>
-              </div>
-              <div className="mt-2 divide-y divide-border">
+            <DetailSection title="Location and analysis">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <KeyValue label="Language" value={formatLabel(finding.language)} />
                 <KeyValue label="Family" value={formatLabel(finding.family)} />
                 <KeyValue
                   label="Source type"
                   value={finding.sourceType ? formatLabel(finding.sourceType) : "n/a"}
                 />
-                <KeyValue
-                  label="Sink function"
-                  value={finding.sinkFunction ?? "n/a"}
-                />
+                <KeyValue label="Sink function" value={finding.sinkFunction ?? "n/a"} />
                 <KeyValue
                   label="Analysis engine"
                   value={finding.analysisEngine ?? "n/a"}
                 />
-                <KeyValue
-                  label="Path length"
-                  value={finding.pathLength ?? "n/a"}
-                />
+                <KeyValue label="Path length" value={finding.pathLength ?? "n/a"} />
                 <KeyValue
                   label="Intermediates"
                   value={finding.intermediateStepCount ?? "n/a"}
                 />
-                <KeyValue
-                  label="Sanitizers"
-                  value={finding.sanitizerCount ?? "n/a"}
-                />
-                <KeyValue label="Confidence" value={formatConfidence(finding.confidence)} />
+                <KeyValue label="Sanitizers" value={finding.sanitizerCount ?? "n/a"} />
                 <KeyValue
                   label="Route"
                   value={
@@ -170,13 +181,17 @@ export function FindingDetail({
                       : "n/a"
                   }
                 />
+                <KeyValue
+                  label="Confidence"
+                  value={formatConfidence(finding.confidence)}
+                />
               </div>
             </DetailSection>
 
             {finding.manualReviewRequired ? (
-              <div className="flex items-start gap-2 border-b border-border bg-sev-medium/8 px-4 py-2.5">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sev-medium" />
-                <p className="text-[12px] text-foreground">
+              <div className="flex items-start gap-2 border-b border-border bg-sev-medium/8 px-5 py-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-sev-medium" />
+                <p className="text-[12.5px] leading-6 text-foreground">
                   Aegis triage marked this finding as inconclusive. Manual
                   confirmation is still required before it should be closed.
                 </p>
@@ -184,15 +199,17 @@ export function FindingDetail({
             ) : null}
 
             <DetailSection title="Triage summary">
-              <p className="text-[12.5px] leading-relaxed text-foreground">
-                {finding.explanation || "No triage explanation was attached to this finding."}
-              </p>
+              <NotePanel eyebrow="Assessment">
+                {finding.explanation ||
+                  "No triage explanation was attached to this finding."}
+              </NotePanel>
             </DetailSection>
 
             <DetailSection title="Remediation guidance">
-              <p className="text-[12.5px] leading-relaxed text-foreground">
-                {finding.recommendation || "No remediation recommendation was attached."}
-              </p>
+              <NotePanel eyebrow="Recommendation">
+                {finding.recommendation ||
+                  "No remediation recommendation was attached."}
+              </NotePanel>
             </DetailSection>
 
             <DetailSection title="Knowledge cards">
@@ -215,11 +232,11 @@ export function FindingDetail({
           <TabsContent value="evidence" className="mt-0">
             <DetailSection title="Evidence path">
               {finding.evidencePath.length ? (
-                <ol className="space-y-1.5">
+                <ol className="space-y-2">
                   {finding.evidencePath.map((step, index) => (
                     <li
                       key={`${step}-${index}`}
-                      className="flex gap-2 font-mono text-[11.5px] text-foreground"
+                      className="flex gap-3 rounded-lg border border-border bg-background px-3 py-2 font-mono text-[11.5px] text-foreground"
                     >
                       <span className="num w-4 shrink-0 text-muted-foreground">
                         {index + 1}.
@@ -237,7 +254,7 @@ export function FindingDetail({
 
             {finding.workflowRoute ? (
               <DetailSection title="Workflow route">
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <MetaTag className="font-mono">
                       {finding.workflowRoute.routeId}
@@ -246,10 +263,10 @@ export function FindingDetail({
                       <MetaTag key={step}>{formatLabel(step)}</MetaTag>
                     ))}
                   </div>
-                  <p className="text-[12.5px] leading-relaxed text-foreground">
+                  <NotePanel eyebrow="Why this route">
                     {finding.workflowRoute.reason ||
                       "No route rationale was attached to this finding."}
-                  </p>
+                  </NotePanel>
                 </div>
               </DetailSection>
             ) : null}
@@ -309,9 +326,9 @@ export function FindingDetail({
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-sm border border-border py-1.5"
+                      className="rounded-lg border border-border bg-background px-3 py-3"
                     >
-                      <div className="text-[13px] font-semibold text-foreground">
+                      <div className="text-[16px] font-semibold text-foreground">
                         {value ?? "n/a"}
                       </div>
                       <div className="text-[10.5px] uppercase tracking-wide text-muted-foreground">
@@ -325,13 +342,13 @@ export function FindingDetail({
 
             <DetailSection title="Reasoning notes">
               {finding.reasoningNotes.length ? (
-                <ul className="space-y-1.5">
-                  {finding.reasoningNotes.map((note) => (
+                <ul className="space-y-2">
+                  {finding.reasoningNotes.map((reasoningNote) => (
                     <li
-                      key={note}
-                      className="font-mono text-[11.5px] text-muted-foreground"
+                      key={reasoningNote}
+                      className="rounded-lg border border-border bg-background px-3 py-2 text-[12px] leading-6 text-foreground"
                     >
-                      {note}
+                      {reasoningNote}
                     </li>
                   ))}
                 </ul>
@@ -344,14 +361,14 @@ export function FindingDetail({
 
             {finding.agentReviews.length ? (
               <DetailSection title="Agent review bundle">
-                <ul className="space-y-2">
+                <ul className="space-y-3">
                   {finding.agentReviews.map((review) => (
                     <li
                       key={review.key}
-                      className="rounded-sm border border-border px-2.5 py-2"
+                      className="rounded-lg border border-border bg-background px-3 py-3"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[12.5px] font-medium text-foreground">
+                        <span className="text-[12.5px] font-semibold text-foreground">
                           {review.title}
                         </span>
                         <span className="num text-[11.5px] text-muted-foreground">
@@ -363,11 +380,11 @@ export function FindingDetail({
                             : "review bundle"}
                         </span>
                       </div>
-                      <p className="mt-1 text-[12px] text-muted-foreground">
+                      <p className="mt-2 text-[12px] leading-6 text-muted-foreground">
                         {review.summary}
                       </p>
                       {review.notes.length ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
+                        <div className="mt-3 flex flex-wrap gap-1.5">
                           {review.notes.map((item) => (
                             <MetaTag key={item}>{item}</MetaTag>
                           ))}
@@ -382,7 +399,7 @@ export function FindingDetail({
 
           <TabsContent value="review" className="mt-0">
             <DetailSection title="Reviewer disposition">
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 gap-2">
                 {dispositions.map((disposition) => {
                   const active = feedback?.disposition === disposition;
 
@@ -392,7 +409,7 @@ export function FindingDetail({
                       type="button"
                       onClick={() => onDisposition(disposition)}
                       className={cn(
-                        "rounded-sm border border-border px-2 py-1.5 text-[12.5px] font-medium transition-colors hover:bg-surface-muted",
+                        "min-h-[42px] rounded-lg border border-border px-3 py-2 text-[12.5px] font-medium transition-colors hover:bg-surface-muted",
                         active &&
                           "border-primary bg-primary text-primary-foreground hover:bg-primary",
                       )}
@@ -408,7 +425,7 @@ export function FindingDetail({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 w-full justify-start gap-2"
+                className="h-9 w-full justify-start gap-2"
                 onClick={onToggleMute}
               >
                 {feedback?.muted ? (
@@ -425,21 +442,30 @@ export function FindingDetail({
 
             <DetailSection title="Reviewer note">
               <Textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                rows={5}
+                ref={noteRef}
+                defaultValue={feedback?.note ?? ""}
+                rows={6}
                 placeholder="Record what you verified, who you asked, and what remains open."
-                className="resize-none rounded-sm border-border text-[12.5px]"
+                className="min-h-[140px] resize-none rounded-lg border-border bg-background text-[12.5px]"
               />
-              <div className="mt-2 flex items-center gap-2">
-                <Button size="sm" className="h-8" onClick={() => onSaveNote(note)}>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  className="h-9"
+                  onClick={() => onSaveNote(noteRef.current?.value ?? "")}
+                >
                   Save note
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 gap-1.5 text-muted-foreground"
-                  onClick={onReset}
+                  className="h-9 gap-1.5 text-muted-foreground"
+                  onClick={() => {
+                    if (noteRef.current) {
+                      noteRef.current.value = "";
+                    }
+                    onReset();
+                  }}
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> Reset local review
                 </Button>
@@ -447,11 +473,13 @@ export function FindingDetail({
             </DetailSection>
 
             <DetailSection title="Local memory updated">
-              <span className="num text-[12px] text-muted-foreground">
-                {feedback?.updatedAt
-                  ? formatDateTime(feedback.updatedAt)
-                  : "No local review recorded"}
-              </span>
+              <div className="rounded-lg border border-border bg-background px-3 py-3">
+                <span className="num text-[12px] text-muted-foreground">
+                  {feedback?.updatedAt
+                    ? formatDateTime(feedback.updatedAt)
+                    : "No local review recorded"}
+                </span>
+              </div>
             </DetailSection>
           </TabsContent>
         </div>

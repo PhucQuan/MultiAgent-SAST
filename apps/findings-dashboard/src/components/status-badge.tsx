@@ -8,6 +8,15 @@ import type {
   TriageStatus,
 } from "@/lib/report-types";
 
+const severityLabels: Record<Severity, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  info: "Info",
+  unknown: "Unknown",
+};
+
 const severityStyles: Record<Severity, string> = {
   critical: "border-sev-critical/25 bg-sev-critical/10 text-sev-critical",
   high: "border-sev-high/25 bg-sev-high/10 text-sev-high",
@@ -51,13 +60,13 @@ export function SeverityTag({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10.5px] font-semibold tracking-wide",
         severityStyles[severity],
         className,
       )}
     >
       <span className={cn("h-1.5 w-1.5 rounded-full", severityDot[severity])} />
-      {severity}
+      {severityLabels[severity]}
     </span>
   );
 }
@@ -72,7 +81,7 @@ export function StatusTag({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-sm border border-border bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground",
+        "inline-flex items-center rounded-full border border-border bg-surface-muted px-2 py-1 text-[10.5px] font-medium text-muted-foreground",
         status === "confirmed" && "border-primary/25 bg-primary/10 text-primary",
         status === "likely" && "border-sev-high/25 bg-sev-high/10 text-sev-high",
         status === "needs-review" &&
@@ -95,7 +104,7 @@ export function MetaTag({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground",
+        "inline-flex items-center rounded-full border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground",
         className,
       )}
     >
@@ -108,7 +117,7 @@ export function ConfidenceBar({ value }: { value: number | null }) {
   if (value === null) {
     return (
       <div className="flex items-center gap-2">
-        <div className="h-1 w-10 rounded-full bg-border" />
+        <div className="h-1.5 w-16 rounded-full bg-border" />
         <span className="num text-[11px] text-muted-foreground">n/a</span>
       </div>
     );
@@ -118,7 +127,7 @@ export function ConfidenceBar({ value }: { value: number | null }) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1 w-10 overflow-hidden rounded-full bg-border">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-border">
         <div
           className={cn(
             "h-full rounded-full",
@@ -146,19 +155,19 @@ export function StatCell({
   tone?: "default" | "warn" | "primary";
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 border-l border-border pl-3 first:border-l-0 first:pl-0">
-      <span className="truncate text-[11px] uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
+      <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
-      </span>
-      <span
+      </div>
+      <div
         className={cn(
-          "num text-sm font-semibold",
+          "num mt-1 text-lg font-semibold",
           tone === "warn" && "text-sev-high",
           tone === "primary" && "text-primary",
         )}
       >
         {value}
-      </span>
+      </div>
     </div>
   );
 }
@@ -173,9 +182,9 @@ export function DetailSection({
   aside?: ReactNode;
 }) {
   return (
-    <section className="border-b border-border px-4 py-3.5 last:border-b-0">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <section className="border-b border-border px-5 py-4 last:border-b-0">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           {title}
         </h3>
         {aside}
@@ -209,13 +218,13 @@ export function CodeBlock({
   const code = contextToCode(context);
 
   return (
-    <div className="overflow-hidden rounded-sm border border-border bg-surface-muted">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-muted">
       {caption ? (
-        <div className="border-b border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+        <div className="border-b border-border px-3 py-2 font-mono text-[11px] text-muted-foreground">
           {caption}
         </div>
       ) : null}
-      <pre className="overflow-x-auto px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground">
+      <pre className="overflow-x-auto px-3 py-3 font-mono text-[11.5px] leading-6 text-foreground">
         {code || emptyLabel}
       </pre>
     </div>
@@ -230,11 +239,11 @@ export function KeyValue({
   value: ReactNode;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1">
-      <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+    <div className="flex flex-col gap-1 rounded-lg border border-border bg-background px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="min-w-0 truncate text-right text-[12.5px] text-foreground">
+      <span className="min-w-0 break-all text-[12.5px] text-foreground sm:text-right">
         {value}
       </span>
     </div>
