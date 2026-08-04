@@ -115,11 +115,23 @@ class PythonDeepAnalyzer:
         source_rules: list[dict],
     ) -> list[TaintSource]:
         """
-        Create synthetic local sources for imported helpers that return tainted
-        values so normal intra-file taint tracking can keep working.
+        Create synthetic local sources for helper calls whose return values are
+        tainted by known source rules.
+
+        Two cases are supported:
+        - imported helpers resolved through ``import_map``
+        - helpers defined in the same file currently being analyzed
+
+        The file check stays strict so unrelated same-name helpers elsewhere in
+        the repo do not become synthetic sources.
         """
         synthetic: list[TaintSource] = []
         callee_rule_cache: dict[tuple[str, str], Optional[dict]] = {}
+        resolved_file_path: Optional[Path]
+        try:
+            resolved_file_path = file_path.resolve()
+        except OSError:
+            resolved_file_path = file_path
 
         try:
             lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -127,27 +139,31 @@ class PythonDeepAnalyzer:
             return synthetic
 
         def find_callee_source_rule(callee_name: str):
-            callee_file = import_map.get(callee_name)
-            if not callee_file:
-                return None
-
             entry = function_index.get(callee_name) if function_index is not None else None
             if entry is None:
                 return None
 
             try:
-                resolved_callee_file = callee_file.resolve()
                 resolved_entry_file = Path(entry.file_path).resolve()
             except OSError:
                 return None
 
-            if resolved_callee_file != resolved_entry_file:
+            callee_file = import_map.get(callee_name)
+            if callee_file is not None:
+                try:
+                    resolved_callee_file = callee_file.resolve()
+                except OSError:
+                    return None
+
+                if resolved_callee_file != resolved_entry_file:
+                    return None
+            elif resolved_file_path is not None and resolved_entry_file != resolved_file_path:
                 return None
 
-            cache_key = (str(resolved_callee_file), callee_name)
+            cache_key = (str(resolved_entry_file), callee_name)
             if cache_key not in callee_rule_cache:
                 callee_rule_cache[cache_key] = self._resolve_callee_source_rule(
-                    callee_file=resolved_callee_file,
+                    callee_file=resolved_entry_file,
                     callee_name=callee_name,
                     source_rules=source_rules,
                 )

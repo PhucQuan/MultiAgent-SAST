@@ -2,7 +2,11 @@
 
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
+from rich.progress import SpinnerColumn, TextColumn
+
+import aegis_sast.cli as cli_module
 from aegis_sast.core.models import (
     AIVerification,
     CodeLocation,
@@ -269,3 +273,24 @@ def test_scan_pipeline_service_returns_reusable_result_without_cli_logic(tmp_pat
     assert len(result.triage_records) == 1
     assert result.exported_reports == {}
     assert result.exit_code == 2
+
+
+def test_cli_progress_columns_skip_spinner_for_non_unicode_streams():
+    """CLI progress should avoid Unicode spinners on cp1252-style consoles."""
+    console_obj = SimpleNamespace(file=SimpleNamespace(encoding="cp1252"))
+
+    columns = cli_module._progress_columns_for_console(console_obj)
+
+    assert len(columns) == 1
+    assert isinstance(columns[0], TextColumn)
+
+
+def test_cli_progress_columns_keep_spinner_for_utf8_streams():
+    """CLI progress should keep the spinner when the output stream is Unicode-safe."""
+    console_obj = SimpleNamespace(file=SimpleNamespace(encoding="utf-8"))
+
+    columns = cli_module._progress_columns_for_console(console_obj)
+
+    assert len(columns) == 2
+    assert isinstance(columns[0], SpinnerColumn)
+    assert isinstance(columns[1], TextColumn)

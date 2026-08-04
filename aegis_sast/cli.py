@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.console import Console
@@ -14,6 +15,7 @@ from aegis_sast.orchestration import ScanPipelineRequest, ScanPipelineService
 from aegis_sast.orchestration.state import RepoProfile
 
 console = Console()
+_SPINNER_PROBE_TEXT = "\u280b"
 
 
 @click.group()
@@ -73,8 +75,7 @@ def scan(target_path, rules, append_rules, no_ai, max_depth, output, output_dir)
 
     service = ScanPipelineService()
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
+        *_progress_columns_for_console(console),
         console=console,
     ) as progress:
         task = progress.add_task("Running scan pipeline...", total=None)
@@ -135,6 +136,28 @@ def scan(target_path, rules, append_rules, no_ai, max_depth, output, output_dir)
 
     console.print("[green]No vulnerabilities detected[/green]")
     sys.exit(0)
+
+
+def _progress_columns_for_console(console_obj: Any) -> list[Any]:
+    """Return progress columns that stay safe on non-Unicode Windows streams."""
+    columns: list[Any] = [TextColumn("[progress.description]{task.description}")]
+    if _stream_supports_text(getattr(console_obj, "file", None), _SPINNER_PROBE_TEXT):
+        columns.insert(0, SpinnerColumn())
+    return columns
+
+
+def _stream_supports_text(stream: Any, text: str) -> bool:
+    """Best-effort check for whether one output stream can encode text safely."""
+    encoding = getattr(stream, "encoding", None) or getattr(sys.stdout, "encoding", None)
+    if not encoding:
+        return True
+
+    try:
+        text.encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return False
+
+    return True
 
 
 def _display_summary(scan_result: ScanResult) -> None:

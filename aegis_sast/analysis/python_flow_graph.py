@@ -411,6 +411,7 @@ class PythonFlowGraphBuilder:
             statement.name,
             metadata={"function_name": statement.name},
         )
+        self.graph.add_edge(declaration.node_id, entry.node_id, "cfg", "enter")
         self.graph.function_entries[statement.name] = entry.node_id
         self.graph.function_parameter_nodes.setdefault(statement.name, [])
         self.graph.function_return_nodes.setdefault(statement.name, [])
