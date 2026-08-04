@@ -28,14 +28,17 @@ class AuditorNode:
         repo_profile: RepoProfile,
     ) -> AuditorReview:
         """Generate an evidence-aware review before skeptical validation."""
+        triage_input = record.finding.to_triage_input()
+        evidence_pack = triage_input.get("evidence", {})
         route = record.decision.metadata.get("workflow_route", {})
         route_id = route.get("route_id", "unknown")
         route_steps = route.get("steps", [])
-        evidence_summary = record.finding.evidence_summary
-        graph_slice = evidence_summary.get("graph_slice", {})
+        evidence_summary = evidence_pack.get("summary", {})
+        graph_slice = evidence_pack.get("graph_slice", {})
         evidence_score = self._score_evidence(record.finding, record.decision.confidence)
         context = self.context_reader.read_for_finding(record.finding)
         notes = [
+            f"triage_input_schema={triage_input.get('schema_version', 'unknown')}",
             f"scan_profile={repo_profile.scan_profile}",
             f"language={record.finding.language}",
             f"severity={record.finding.severity.value}",
@@ -291,6 +294,30 @@ class JudgeNode:
             f"Judge finalized the finding as {final_status.value} "
             f"with confidence={final_confidence:.2f}."
         )
+        reason_codes = self._dedupe_reason_codes(
+            decision.reason_codes
+            + [f"workflow-route:{auditor_review.route_id}"]
+            + [f"risk-signal:{signal}" for signal in risk_signals]
+            + [
+                "mitigation-signal-present"
+                for _ in skeptic_review.mitigation_signals
+            ]
+            + (
+                ["skeptic-objection"]
+                if skeptic_review.objections
+                else []
+            )
+            + (
+                ["promoted-to-likely"]
+                if promotion_applied
+                else []
+            )
+        )
+        evidence_summary = dict(updated_record.finding.evidence_summary)
+        manual_review_required = final_status == TriageStatus.NEEDS_REVIEW or (
+            final_status == TriageStatus.SUPPRESSED
+            and updated_record.finding.severity in (Severity.CRITICAL, Severity.HIGH)
+        )
         judge_review = JudgeReview(
             finding_id=updated_record.finding.id,
             final_status=final_status,
@@ -312,11 +339,17 @@ class JudgeNode:
         triage_metadata = updated_record.finding.metadata.setdefault("triage", {})
         triage_metadata["final_status"] = final_status.value
         triage_metadata["final_confidence"] = final_confidence
+        triage_metadata["reviewer"] = "judge-node-v1"
+        triage_metadata["reason_codes"] = reason_codes
+        triage_metadata["evidence_summary"] = evidence_summary
+        triage_metadata["manual_review_required"] = manual_review_required
         triage_metadata["agent_reviews"] = {
             "auditor_review": auditor_review.to_dict(),
             "skeptic_review": skeptic_review.to_dict(),
             "judge_review": judge_review.to_dict(),
         }
+        updated_record.finding.metadata["reason_codes"] = reason_codes
+        updated_record.finding.metadata["manual_review_required"] = manual_review_required
         updated_record.finding.metadata["auditor_review"] = auditor_review.to_dict()
         updated_record.finding.metadata["skeptic_review"] = skeptic_review.to_dict()
         updated_record.finding.metadata["judge_review"] = judge_review.to_dict()
@@ -327,6 +360,9 @@ class JudgeNode:
             explanation=explanation,
             recommendation=recommendation,
             reviewer="judge-node-v1",
+            reason_codes=reason_codes,
+            evidence_summary=evidence_summary,
+            manual_review_required=manual_review_required,
             evidence_notes=(
                 decision.evidence_notes
                 + auditor_review.notes
@@ -336,6 +372,9 @@ class JudgeNode:
             ),
             metadata={
                 **decision.metadata,
+                "reason_codes": reason_codes,
+                "evidence_summary": evidence_summary,
+                "manual_review_required": manual_review_required,
                 "auditor_review": auditor_review.to_dict(),
                 "skeptic_review": skeptic_review.to_dict(),
                 "judge_review": judge_review.to_dict(),
@@ -398,3 +437,8 @@ class JudgeNode:
                 signals.append("shell-true-enabled")
 
         return signals
+
+    @staticmethod
+    def _dedupe_reason_codes(reason_codes: List[str]) -> List[str]:
+        """Return a stable reason-code list without duplicates."""
+        return list(dict.fromkeys(code for code in reason_codes if code))

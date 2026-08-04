@@ -14,7 +14,9 @@ import { FindingDetail } from "@/components/finding-detail";
 import { FindingQueue, type QueueFilters } from "@/components/finding-queue";
 import { ReportSidebar, type ReportEntry } from "@/components/report-sidebar";
 import { TopBar } from "@/components/top-bar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
 import { severityRank, triageRank } from "@/lib/dashboard-ui";
@@ -43,6 +45,22 @@ type ReportsIndexResponse = {
 
 type ReportDetailResponse = {
   report?: NormalizedReport;
+  error?: string;
+};
+
+type ScanApiResponse = {
+  scan?: {
+    selectedReportPath?: string | null;
+    summary?: {
+      files_scanned?: number;
+      total_vulnerabilities?: number;
+    };
+    ai?: {
+      requested?: boolean;
+      enabled?: boolean;
+      error?: string | null;
+    };
+  };
   error?: string;
 };
 
@@ -161,6 +179,11 @@ export function DashboardShell() {
   const [filters, setFilters] = useState<QueueFilters>(emptyFilters);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [scanSheetOpen, setScanSheetOpen] = useState(false);
+  const [scanTargetPath, setScanTargetPath] = useState("");
+  const [scanEnableAi, setScanEnableAi] = useState(false);
+  const [scanMaxDepth, setScanMaxDepth] = useState("5");
+  const [scanRunning, setScanRunning] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
@@ -171,7 +194,7 @@ export function DashboardShell() {
     writeReviewStore(reviewStore);
   }, [reviewStore]);
 
-  async function refreshWorkspaceReports(showToast = false) {
+  async function refreshWorkspaceReports(showToast = false): Promise<ReportSummaryCard[]> {
     setLoadingWorkspaceReports(true);
 
     try {
@@ -193,6 +216,8 @@ export function DashboardShell() {
           } available.`,
         });
       }
+
+      return nextReports;
     } catch (error) {
       const message =
         error instanceof Error
@@ -205,6 +230,8 @@ export function DashboardShell() {
       if (showToast) {
         toast.error("Refresh failed", { description: message });
       }
+
+      return [];
     } finally {
       setLoadingWorkspaceReports(false);
     }
@@ -270,6 +297,14 @@ export function DashboardShell() {
     workspaceReports.find((report) => report.id === effectiveSelectedReportId) ?? null;
   const selectedReportSummary =
     reportEntries.find((report) => report.id === effectiveSelectedReportId) ?? null;
+
+  function handleOpenScanSheet() {
+    if (!scanTargetPath.trim() && selectedReportSummary?.target) {
+      setScanTargetPath(selectedReportSummary.target);
+    }
+
+    setScanSheetOpen(true);
+  }
 
   useEffect(() => {
     if (
@@ -440,6 +475,95 @@ export function DashboardShell() {
     fileInputRef.current?.click();
   }
 
+  async function handleRunScan() {
+    const targetPath = scanTargetPath.trim();
+    if (!targetPath) {
+      toast.error("Target path is required", {
+        description: "Enter a local file or repository path before starting a scan.",
+      });
+      return;
+    }
+
+    const parsedDepth = Number(scanMaxDepth);
+    const maxDepth = Number.isFinite(parsedDepth)
+      ? Math.max(1, Math.min(parsedDepth, 20))
+      : 5;
+
+    setScanRunning(true);
+
+    try {
+      const response = await fetch("/api/scan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          targetPath,
+          enableAi: scanEnableAi,
+          maxDepth,
+        }),
+      });
+      const data = (await response.json()) as ScanApiResponse;
+
+      if (!response.ok || !data.scan) {
+        throw new Error(data.error ?? "Unable to run the local scan.");
+      }
+
+      const nextReports = await refreshWorkspaceReports(false);
+      const nextSelectedReportId =
+        data.scan.selectedReportPath ??
+        nextReports[0]?.id ??
+        null;
+
+      if (nextSelectedReportId) {
+        startTransition(() => {
+          setSelectedReportId(nextSelectedReportId);
+          setSelectedFindingKey(null);
+          setFilters(emptyFilters);
+        });
+        setLoadedWorkspaceReport(null);
+        setReportError(null);
+      }
+
+      setScanSheetOpen(false);
+
+      const filesScanned = data.scan.summary?.files_scanned ?? 0;
+      const findings = data.scan.summary?.total_vulnerabilities ?? 0;
+      const aiRequested = data.scan.ai?.requested === true;
+      const aiEnabled = data.scan.ai?.enabled === true;
+      const aiDetail = aiRequested
+        ? aiEnabled
+          ? "AI triage overlay applied."
+          : data.scan.ai?.error
+            ? `AI unavailable: ${data.scan.ai.error}`
+            : "AI triage unavailable for this run."
+        : "Deterministic triage only.";
+
+      if (filesScanned === 0) {
+        toast("Scan finished with no supported files", {
+          description: `Check the target path or local analyzer availability. ${aiDetail}`,
+        });
+      } else {
+        toast.success("Local scan complete", {
+          description: `${filesScanned} file${
+            filesScanned === 1 ? "" : "s"
+          } scanned, ${findings} finding${
+            findings === 1 ? "" : "s"
+          }. ${aiDetail}`,
+        });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to run the local scan.";
+
+      toast.error("Scan failed", { description: message });
+    } finally {
+      setScanRunning(false);
+    }
+  }
+
   async function handleImportFiles(files: FileList | null) {
     if (!files?.length) {
       return;
@@ -606,6 +730,8 @@ export function DashboardShell() {
         onImport={handleImportRequest}
         onRefresh={() => void refreshWorkspaceReports(true)}
         onExport={handleExportFeedback}
+        onRunScan={handleOpenScanSheet}
+        scanPending={scanRunning}
       />
 
       {!hasSidebar ? (
@@ -667,6 +793,101 @@ export function DashboardShell() {
         <SheetContent side="left" className="w-[300px] p-0">
           <SheetTitle className="sr-only">Reports</SheetTitle>
           {explorer}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={scanSheetOpen} onOpenChange={setScanSheetOpen}>
+        <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
+          <div className="flex h-full flex-col bg-background">
+            <div className="border-b border-border px-5 py-5">
+              <SheetTitle className="text-left text-[18px] font-semibold text-foreground">
+                Run local scan
+              </SheetTitle>
+              <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
+                Trigger the Python scan pipeline from the dashboard, export a
+                fresh JSON report, and reopen it here automatically.
+              </p>
+            </div>
+
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+              <div className="space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Target path
+                </div>
+                <Input
+                  value={scanTargetPath}
+                  onChange={(event) => setScanTargetPath(event.target.value)}
+                  placeholder="C:\\path\\to\\repo or examples/vulnerable_rce.py"
+                  className="h-11 rounded-lg border-border bg-surface text-[13px]"
+                />
+                <p className="text-[12px] leading-5 text-muted-foreground">
+                  Relative paths resolve from the Aegis-SAST repo root.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Max depth
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={scanMaxDepth}
+                    onChange={(event) => setScanMaxDepth(event.target.value)}
+                    className="h-11 rounded-lg border-border bg-surface text-[13px]"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-border bg-surface px-4 py-3">
+                  <label className="flex items-start gap-3">
+                    <Checkbox
+                      checked={scanEnableAi}
+                      onCheckedChange={(checked) => setScanEnableAi(checked === true)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="text-[13px] font-medium text-foreground">
+                        Enable AI triage overlay
+                      </div>
+                      <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+                        Keep deterministic detection as the source of truth, then
+                        let AI re-review each triage record if Gemini is available.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-surface-muted px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Safe defaults
+                </div>
+                <p className="mt-2 text-[12.5px] leading-6 text-foreground">
+                  Directory scans automatically skip common dependency, cache,
+                  and build-output folders such as <code>node_modules</code>,
+                  <code>.venv</code>, <code>.next</code>, and <code>dist</code>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-4">
+              <Button
+                variant="outline"
+                onClick={() => setScanSheetOpen(false)}
+                disabled={scanRunning}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => void handleRunScan()}
+                disabled={scanRunning || !scanTargetPath.trim()}
+              >
+                {scanRunning ? "Running scan..." : "Start scan"}
+              </Button>
+            </div>
+          </div>
         </SheetContent>
       </Sheet>
 

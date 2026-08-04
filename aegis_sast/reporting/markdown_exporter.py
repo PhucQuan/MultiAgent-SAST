@@ -107,6 +107,16 @@ class MarkdownExporter:
             value = workflow_metadata.get(key)
             if value:
                 lines.append(f"- **{label}**: `{value}`\n")
+        if workflow_metadata.get("deterministic_triage_summary"):
+            lines.append(
+                "- **Deterministic Triage**: "
+                f"`{workflow_metadata['deterministic_triage_summary']}`\n"
+            )
+        if workflow_metadata.get("ai_triage_summary"):
+            lines.append(
+                "- **AI Triage Summary**: "
+                f"`{workflow_metadata['ai_triage_summary']}`\n"
+            )
         lines.append("\n")
         return "".join(lines)
 
@@ -262,6 +272,16 @@ class MarkdownExporter:
         lines.append(f"\n**Decision**: {decision.explanation}\n")
         if decision.recommendation:
             lines.append(f"\n**Recommendation**: {decision.recommendation}\n")
+        if decision.reason_codes:
+            lines.append(
+                "\n**Reason Codes**: "
+                + ", ".join(decision.reason_codes)
+                + "\n"
+            )
+        lines.append(
+            "\n**Manual Review Required**: "
+            f"{'yes' if decision.manual_review_required else 'no'}\n"
+        )
 
         route = decision.metadata.get("workflow_route")
         if route:

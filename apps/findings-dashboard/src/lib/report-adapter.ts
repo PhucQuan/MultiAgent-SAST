@@ -59,6 +59,17 @@ function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
+function firstBoolean(candidates: unknown[]): boolean | null {
+  for (const candidate of candidates) {
+    const value = asBoolean(candidate);
+    if (value !== null) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -709,9 +720,16 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
   const reasonCodes = collectReasonCodes(rawFinding);
   const reasoningNotes = collectReasoningNotes(rawFinding, agentReviews);
   const manualReviewRequired =
-    finalStatus === "needs-review" ||
-    explanation.toLowerCase().includes("manual review") ||
-    recommendation.toLowerCase().includes("manual review");
+    firstBoolean([
+      getPath(rawFinding, ["triage_decision", "manual_review_required"]),
+      getPath(rawFinding, ["metadata", "manual_review_required"]),
+      getPath(rawFinding, ["metadata", "triage", "manual_review_required"]),
+    ]) ??
+    (
+      finalStatus === "needs-review" ||
+      explanation.toLowerCase().includes("manual review") ||
+      recommendation.toLowerCase().includes("manual review")
+    );
 
   return {
     id,

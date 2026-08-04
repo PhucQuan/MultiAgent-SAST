@@ -128,6 +128,8 @@ def test_vulnerability_to_dict():
     assert result["evidence"]["summary"]["path_length"] == 2
     assert "USER_INPUT" in result["evidence"]["summary"]["path_summary"][0]
     assert "os.system" in result["evidence"]["summary"]["path_summary"][-1]
+    assert result["triage_input"]["schema_version"] == "aegis-triage-input-v1"
+    assert result["triage_input"]["evidence"]["detection"]["sink_function"] == "os.system"
 
 
 def test_vulnerability_to_normalized_finding_with_ai():
@@ -155,6 +157,21 @@ def test_vulnerability_to_normalized_finding_with_ai():
         sink=sink,
         intermediate_steps=[step_loc],
         sanitizers=[sanitizer],
+        metadata={
+            "graph_summary": {
+                "node_count": 4,
+                "cfg_edge_count": 3,
+                "dfg_edge_count": 2,
+            },
+            "local_callee_summaries": [
+                {
+                    "function_name": "build_command",
+                    "call_site_line": 12,
+                    "dependent_parameters": ["user"],
+                    "return_count": 1,
+                }
+            ],
+        },
     )
     ai = AIVerification(
         is_vulnerable=True,
@@ -185,6 +202,10 @@ def test_vulnerability_to_normalized_finding_with_ai():
     assert payload["metadata"]["detection"]["source_type"] == "USER_INPUT"
     assert payload["metadata"]["detection"]["sink_function"] == "os.system"
     assert payload["metadata"]["triage"]["ai_model"] == "gemini-test"
+    assert payload["triage_input"]["schema_version"] == "aegis-triage-input-v1"
+    assert payload["triage_input"]["evidence"]["graph_slice"]["node_count"] == 4
+    assert payload["triage_input"]["evidence"]["graph_slice"]["local_helper_count"] == 1
+    assert payload["triage_input"]["evidence"]["local_helper_summaries"][0]["function_name"] == "build_command"
 
 
 def test_scan_result_summary():

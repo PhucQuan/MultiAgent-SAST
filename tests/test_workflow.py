@@ -248,7 +248,7 @@ def test_scan_pipeline_service_returns_reusable_result_without_cli_logic(tmp_pat
             return object()
 
         @staticmethod
-        def _run_scan(detector, target_path: Path) -> ScanResult:
+        def _run_scan(detector, target_path: Path, request: ScanPipelineRequest) -> ScanResult:
             return scan_result
 
         @staticmethod
@@ -273,6 +273,179 @@ def test_scan_pipeline_service_returns_reusable_result_without_cli_logic(tmp_pat
     assert len(result.triage_records) == 1
     assert result.exported_reports == {}
     assert result.exit_code == 2
+
+
+def test_scan_pipeline_service_applies_ai_overlay_after_workflow(tmp_path):
+    """AI should review triage records after deterministic workflow, not before it."""
+    target = Path(tmp_path) / "demo.py"
+    target.write_text(
+        "\n".join(
+            [
+                "from flask import request",
+                "import os",
+                "cmd = request.args.get('cmd')",
+                "safe_cmd = cmd",
+                "os.system(safe_cmd)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    source = TaintSource(
+        CodeLocation(str(target), 3, 1, "cmd = request.args.get('cmd')"),
+        "HTTP_PARAM",
+        "cmd",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 5, 1, "os.system(safe_cmd)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+    )
+    scan_result = ScanResult(
+        target_path=str(target),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[
+            Vulnerability(
+                id="VULN-SERVICE-AI-1",
+                vuln_type=VulnerabilityType.COMMAND_INJECTION,
+                severity=Severity.CRITICAL,
+                dataflow=DataFlowPath(
+                    source=source,
+                    sink=sink,
+                    intermediate_steps=[
+                        CodeLocation(str(target), 4, 1, "safe_cmd = cmd"),
+                    ],
+                ),
+            )
+        ],
+        files_scanned=1,
+    )
+    repo_profile = RepoProfile(
+        target_path=str(target),
+        scan_profile="python-deep",
+        detected_languages=["python"],
+        files_scanned=1,
+        framework_hints=["flask"],
+        metadata={"analysis_plan": {"python": "deep"}},
+    )
+
+    class FakeRegistry:
+        def get_supported_languages(self):
+            return ["python"]
+
+        def get_import_failures(self):
+            return {}
+
+    class StubAIClient:
+        def __init__(self):
+            self.client = object()
+            self.config = SimpleNamespace(gemini_model="stub-triage-model")
+
+        def _call_api(self, prompt):
+            return {
+                "status": "confirmed",
+                "confidence": 0.93,
+                "explanation": "The HTTP parameter still reaches os.system without mitigation.",
+                "recommendation": "Replace shell execution with a fixed argv list.",
+            }
+
+    class StubScanPipelineService(ScanPipelineService):
+        @staticmethod
+        def _create_repo_profile(registry, target_path: Path) -> RepoProfile:
+            return repo_profile
+
+        @staticmethod
+        def _build_detector(request, config):
+            return object()
+
+        @staticmethod
+        def _run_scan(detector, target_path: Path, request: ScanPipelineRequest) -> ScanResult:
+            return scan_result
+
+    service = StubScanPipelineService(
+        registry_factory=lambda: FakeRegistry(),
+        ai_client_factory=StubAIClient,
+    )
+    result = service.run(
+        ScanPipelineRequest(
+            target_path=target,
+            enable_ai_verification=True,
+            export_reports=False,
+        )
+    )
+
+    assert result.ai_enabled is True
+    assert result.triage_records[0].decision.status.value == "confirmed"
+    assert result.triage_records[0].decision.reviewer == "ai-triage-runner-v1"
+    assert result.triage_records[0].finding.metadata["triage"]["ai_triage_applied"] is True
+    assert result.workflow_metadata["deterministic_triage_summary"]["likely"] == 1
+    assert result.workflow_metadata["triage_summary"]["confirmed"] == 1
+    assert result.workflow_metadata["ai_triage_summary"]["changed_status_count"] == 1
+    assert result.workflow_metadata["ai_model"] == "stub-triage-model"
+
+
+def test_scan_pipeline_service_forwards_directory_exclusions(tmp_path):
+    """Service-level requests should forward directory exclusions to the detector."""
+    target_dir = Path(tmp_path) / "demo-repo"
+    target_dir.mkdir()
+    scan_result = ScanResult(
+        target_path=str(target_dir),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[],
+        files_scanned=0,
+    )
+    repo_profile = RepoProfile(
+        target_path=str(target_dir),
+        scan_profile="python-deep",
+        detected_languages=["python"],
+        files_scanned=0,
+        metadata={"analysis_plan": {"python": "deep"}},
+    )
+    captured = {}
+
+    class FakeRegistry:
+        def get_supported_languages(self):
+            return ["python"]
+
+        def get_import_failures(self):
+            return {}
+
+    class StubDetector:
+        def analyze_directory(self, target, exclude_dir_names=None, exclude_globs=None):
+            captured["target"] = target
+            captured["exclude_dir_names"] = exclude_dir_names
+            captured["exclude_globs"] = exclude_globs
+            return scan_result
+
+    class StubScanPipelineService(ScanPipelineService):
+        @staticmethod
+        def _create_repo_profile(registry, target_path: Path) -> RepoProfile:
+            return repo_profile
+
+        @staticmethod
+        def _build_detector(request, config):
+            return StubDetector()
+
+    result = StubScanPipelineService(
+        registry_factory=lambda: FakeRegistry(),
+    ).run(
+        ScanPipelineRequest(
+            target_path=target_dir,
+            enable_ai_verification=False,
+            exclude_dir_names=["node_modules", ".venv"],
+            exclude_globs=["*.min.js"],
+            export_reports=False,
+        )
+    )
+
+    assert result.scan_result is scan_result
+    assert captured["target"] == target_dir
+    assert captured["exclude_dir_names"] == ["node_modules", ".venv"]
+    assert captured["exclude_globs"] == ["*.min.js"]
 
 
 def test_cli_progress_columns_skip_spinner_for_non_unicode_streams():

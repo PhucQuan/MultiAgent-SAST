@@ -104,10 +104,14 @@ class JSONExporter:
             "framework_hints",
             "knowledge_card_count",
             "triage_summary",
+            "deterministic_triage_summary",
             "route_summary",
             "auditor_summary",
             "skeptic_summary",
             "judge_summary",
+            "ai_triage_applied",
+            "ai_model",
+            "ai_triage_summary",
         ]
         return {
             key: workflow_metadata[key]

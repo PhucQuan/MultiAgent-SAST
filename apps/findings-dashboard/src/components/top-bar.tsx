@@ -1,4 +1,4 @@
-import { Download, FileJson, RefreshCw } from "lucide-react";
+import { Download, FileJson, Play, RefreshCw } from "lucide-react";
 
 import { MetaTag, StatCell } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ interface TopBarProps {
   onImport: () => void;
   onRefresh: () => void;
   onExport: () => void;
+  onRunScan: () => void;
+  scanPending: boolean;
 }
 
 export function TopBar({
@@ -26,6 +28,8 @@ export function TopBar({
   onImport,
   onRefresh,
   onExport,
+  onRunScan,
+  scanPending,
 }: TopBarProps) {
   const actionable =
     (report?.triageSummary.confirmed ?? 0) + (report?.triageSummary.likely ?? 0);
@@ -90,6 +94,19 @@ export function TopBar({
         </div>
 
         <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
+          <Button
+            size="sm"
+            className="h-9 gap-1.5"
+            onClick={onRunScan}
+            disabled={scanPending}
+          >
+            {scanPending ? (
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}{" "}
+            {scanPending ? "Running scan" : "Run local scan"}
+          </Button>
           <Button
             variant="outline"
             size="sm"

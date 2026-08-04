@@ -15,6 +15,9 @@ class TriageDecision:
     explanation: str
     recommendation: Optional[str] = None
     reviewer: str = "deterministic-core"
+    reason_codes: List[str] = field(default_factory=list)
+    evidence_summary: Dict[str, Any] = field(default_factory=dict)
+    manual_review_required: bool = False
     evidence_notes: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -26,6 +29,9 @@ class TriageDecision:
             "explanation": self.explanation,
             "recommendation": self.recommendation,
             "reviewer": self.reviewer,
+            "reason_codes": self.reason_codes,
+            "evidence_summary": self.evidence_summary,
+            "manual_review_required": self.manual_review_required,
             "evidence_notes": self.evidence_notes,
             "metadata": self.metadata,
         }

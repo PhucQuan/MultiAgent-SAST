@@ -126,11 +126,67 @@ class EvidenceBundle:
         return bool(self.sanitizers)
 
     @property
+    def detection_metadata(self) -> Dict[str, Any]:
+        """Return stable detector metadata carried alongside the evidence."""
+        detection = self.metadata.get("detection", {})
+        return detection if isinstance(detection, dict) else {}
+
+    @property
+    def local_helper_summaries(self) -> List[Dict[str, Any]]:
+        """Return local helper summaries when cross-file tracing captured them."""
+        helpers = self.metadata.get("local_callee_summaries", [])
+        return helpers if isinstance(helpers, list) else []
+
+    @property
+    def graph_slice(self) -> Dict[str, Any]:
+        """Return a compact graph slice suitable for AI triage prompts."""
+        graph_summary = self.metadata.get("graph_summary", {})
+        graph_slice: Dict[str, Any] = {}
+
+        if graph_summary:
+            graph_slice.update(
+                {
+                    "node_count": graph_summary.get("node_count", 0),
+                    "cfg_edge_count": graph_summary.get("cfg_edge_count", 0),
+                    "dfg_edge_count": graph_summary.get("dfg_edge_count", 0),
+                }
+            )
+        if "cfg_path_node_ids" in self.metadata:
+            graph_slice["path_node_count"] = len(self.metadata.get("cfg_path_node_ids", []))
+        if "dfg_path_edges" in self.metadata:
+            graph_slice["path_edge_count"] = len(self.metadata.get("dfg_path_edges", []))
+        if self.local_helper_summaries:
+            graph_slice["local_helper_count"] = len(self.local_helper_summaries)
+
+        return graph_slice
+
+    @staticmethod
+    def _location_to_dict(location: CodeLocation) -> Dict[str, Any]:
+        """Serialize one code location into a stable JSON-friendly payload."""
+        return {
+            "file": location.file_path,
+            "line": location.line_number,
+            "column": location.column_number,
+            "snippet": location.code_snippet,
+        }
+
+    @staticmethod
+    def _sanitizer_to_dict(sanitizer: Sanitizer) -> Dict[str, Any]:
+        """Serialize one sanitizer entry into a stable JSON-friendly payload."""
+        return {
+            "type": sanitizer.sanitizer_type,
+            "function": sanitizer.function_name,
+            "location": EvidenceBundle._location_to_dict(sanitizer.location),
+            "mitigates": [
+                vuln_type.value for vuln_type in sanitizer.mitigates
+            ],
+        }
+
+    @property
     def path_summary(self) -> List[str]:
         """Return a compact source-to-sink path summary for triage/reporting."""
-        detection_metadata = self.metadata.get("detection", {})
-        source_type = detection_metadata.get("source_type")
-        sink_function = detection_metadata.get("sink_function")
+        source_type = self.detection_metadata.get("source_type")
+        sink_function = self.detection_metadata.get("sink_function")
 
         source_label = (
             f"SOURCE[{source_type}] {self.source}"
@@ -155,9 +211,6 @@ class EvidenceBundle:
     @property
     def summary(self) -> Dict[str, Any]:
         """Return a small, stable evidence summary for triage consumers."""
-        graph_summary = self.metadata.get("graph_summary", {})
-        local_callee_summaries = self.metadata.get("local_callee_summaries", [])
-
         summary = {
             "path_length": len(self.path_summary),
             "intermediate_step_count": len(self.intermediate_steps),
@@ -166,64 +219,50 @@ class EvidenceBundle:
             "path_summary": self.path_summary,
         }
 
-        graph_slice = {}
-        if graph_summary:
-            graph_slice.update(
-                {
-                    "node_count": graph_summary.get("node_count", 0),
-                    "cfg_edge_count": graph_summary.get("cfg_edge_count", 0),
-                    "dfg_edge_count": graph_summary.get("dfg_edge_count", 0),
-                }
-            )
-        if "cfg_path_node_ids" in self.metadata:
-            graph_slice["path_node_count"] = len(self.metadata.get("cfg_path_node_ids", []))
-        if "dfg_path_edges" in self.metadata:
-            graph_slice["path_edge_count"] = len(self.metadata.get("dfg_path_edges", []))
-        if local_callee_summaries:
-            graph_slice["local_helper_count"] = len(local_callee_summaries)
+        graph_slice = self.graph_slice
         if graph_slice:
             summary["graph_slice"] = graph_slice
 
         return summary
 
+    @property
+    def evidence_pack(self) -> Dict[str, Any]:
+        """Return a stable evidence pack for AI triage and benchmark exports."""
+        summary = self.summary
+        compact_summary = {
+            "path_length": summary.get("path_length", 0),
+            "intermediate_step_count": summary.get("intermediate_step_count", 0),
+            "sanitizer_count": summary.get("sanitizer_count", 0),
+            "has_sanitizers": summary.get("has_sanitizers", False),
+        }
+
+        return {
+            "source": self._location_to_dict(self.source),
+            "sink": self._location_to_dict(self.sink),
+            "intermediate_steps": [
+                self._location_to_dict(step) for step in self.intermediate_steps
+            ],
+            "sanitizers": [
+                self._sanitizer_to_dict(sanitizer) for sanitizer in self.sanitizers
+            ],
+            "path_summary": summary.get("path_summary", []),
+            "summary": compact_summary,
+            "graph_slice": self.graph_slice,
+            "detection": self.detection_metadata,
+            "local_helper_summaries": self.local_helper_summaries,
+        }
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert the evidence bundle to a JSON-friendly dictionary."""
         return {
-            "source": {
-                "file": self.source.file_path,
-                "line": self.source.line_number,
-                "column": self.source.column_number,
-                "snippet": self.source.code_snippet,
-            },
-            "sink": {
-                "file": self.sink.file_path,
-                "line": self.sink.line_number,
-                "column": self.sink.column_number,
-                "snippet": self.sink.code_snippet,
-            },
+            "source": self._location_to_dict(self.source),
+            "sink": self._location_to_dict(self.sink),
             "intermediate_steps": [
-                {
-                    "file": step.file_path,
-                    "line": step.line_number,
-                    "column": step.column_number,
-                    "snippet": step.code_snippet,
-                }
+                self._location_to_dict(step)
                 for step in self.intermediate_steps
             ],
             "sanitizers": [
-                {
-                    "type": sanitizer.sanitizer_type,
-                    "function": sanitizer.function_name,
-                    "location": {
-                        "file": sanitizer.location.file_path,
-                        "line": sanitizer.location.line_number,
-                        "column": sanitizer.location.column_number,
-                        "snippet": sanitizer.location.code_snippet,
-                    },
-                    "mitigates": [
-                        vuln_type.value for vuln_type in sanitizer.mitigates
-                    ],
-                }
+                self._sanitizer_to_dict(sanitizer)
                 for sanitizer in self.sanitizers
             ],
             "metadata": self.metadata,
@@ -334,10 +373,40 @@ class NormalizedFinding:
             "line": self.line_number,
             "message": self.message,
             "evidence": self.evidence.to_dict(),
+            "triage_input": self.to_triage_input(),
             "explanation": self.explanation,
             "recommendation": self.recommendation,
             "metadata": self.metadata,
             "detected_at": self.detected_at.isoformat(),
+        }
+
+    def to_triage_input(self) -> Dict[str, Any]:
+        """Build a stable AI-ready triage contract from the normalized finding."""
+        return {
+            "schema_version": "aegis-triage-input-v1",
+            "finding": {
+                "id": self.id,
+                "tool": self.tool,
+                "language": self.language,
+                "rule_id": self.rule_id,
+                "type": self.vulnerability_type,
+                "severity": self.severity.value,
+                "triage_status": self.triage_status.value,
+                "confidence": self.confidence,
+                "file": self.file_path,
+                "line": self.line_number,
+                "message": self.message,
+            },
+            "evidence": self.evidence.evidence_pack,
+            "guidance": {
+                "explanation": self.explanation,
+                "recommendation": self.recommendation,
+            },
+            "metadata": {
+                "detected_at": self.detected_at.isoformat(),
+                "detection": self.detection_metadata,
+                "triage": self.triage_metadata,
+            },
         }
 
 
@@ -504,6 +573,7 @@ class Vulnerability:
             "confidence": normalized.confidence,
             "message": normalized.message,
             "evidence": normalized.evidence.to_dict(),
+            "triage_input": normalized.to_triage_input(),
             "ai_verification": {
                 "is_vulnerable": self.ai_verification.is_vulnerable,
                 "confidence": self.ai_verification.confidence,

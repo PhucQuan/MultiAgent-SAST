@@ -82,6 +82,10 @@ def test_json_exporter_includes_workflow_summary_and_agent_reviews(tmp_path):
     assert "auditor_summary" in payload["workflow_summary"]
     assert "agent_reviews" in payload["findings"][0]
     assert "judge_review" in payload["findings"][0]["agent_reviews"]
+    assert "reason_codes" in payload["findings"][0]["triage_decision"]
+    assert "manual_review_required" in payload["findings"][0]["triage_decision"]
+    assert payload["findings"][0]["triage_input"]["schema_version"] == "aegis-triage-input-v1"
+    assert payload["findings"][0]["triage_input"]["evidence"]["graph_slice"]["local_helper_count"] == 1
 
 
 def test_markdown_exporter_includes_workflow_and_agent_review_sections(tmp_path):
@@ -102,6 +106,7 @@ def test_markdown_exporter_includes_workflow_and_agent_review_sections(tmp_path)
     assert "**Agent Reviews**" in content
     assert "auditor:" in content
     assert "**Evidence Summary**" in content
+    assert "**Reason Codes**" in content
     assert "**Graph Summary**" in content
     assert "**Local Helper Summaries**" in content
     assert "get_cmd" in content

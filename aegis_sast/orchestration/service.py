@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +17,7 @@ from aegis_sast.orchestration.state import RepoProfile, ScanWorkflowState
 from aegis_sast.orchestration.workflow import ScanWorkflow
 from aegis_sast.reporting.json_exporter import JSONExporter
 from aegis_sast.reporting.markdown_exporter import MarkdownExporter
-from aegis_sast.triage import TriageRecord
+from aegis_sast.triage import AITriageRunner, TriageRecord
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
@@ -33,6 +32,8 @@ class ScanPipelineRequest:
     append_rules_paths: list[Path] = field(default_factory=list)
     enable_ai_verification: bool = True
     max_analysis_depth: int = 5
+    exclude_dir_names: list[str] = field(default_factory=list)
+    exclude_globs: list[str] = field(default_factory=list)
     output_formats: list[str] = field(default_factory=lambda: ["json", "markdown"])
     output_dir: Path = field(default_factory=lambda: Path("reports"))
     export_reports: bool = True
@@ -42,6 +43,16 @@ class ScanPipelineRequest:
         self.target_path = Path(self.target_path)
         self.rules_path = Path(self.rules_path) if self.rules_path is not None else None
         self.append_rules_paths = [Path(path) for path in self.append_rules_paths]
+        self.exclude_dir_names = [
+            value.strip()
+            for value in self.exclude_dir_names
+            if isinstance(value, str) and value.strip()
+        ]
+        self.exclude_globs = [
+            value.strip()
+            for value in self.exclude_globs
+            if isinstance(value, str) and value.strip()
+        ]
         self.output_dir = Path(self.output_dir)
         self.output_formats = [value.lower() for value in self.output_formats]
 
@@ -75,7 +86,7 @@ class ScanPipelineResult:
 
 
 class ScanPipelineService:
-    """Run deterministic scan, optional AI verify, triage, and report export."""
+    """Run deterministic scan, optional AI triage, and report export."""
 
     def __init__(
         self,
@@ -93,10 +104,15 @@ class ScanPipelineService:
     def run(self, request: ScanPipelineRequest) -> ScanPipelineResult:
         """Execute the full scan pipeline for one target."""
         config = self._prepare_config(request)
+        if request.enable_ai_verification and self.ai_client_factory is not None:
+            config.enable_ai_verification = True
+            set_config(config)
         registry = self.registry_factory()
         repo_profile = self._create_repo_profile(registry, request.target_path)
         detector = self._build_detector(request, config)
-        scan_result = self._run_scan(detector, request.target_path)
+        scan_result = self._run_scan(detector, request.target_path, request)
+        repo_profile.files_scanned = scan_result.files_scanned or repo_profile.files_scanned
+        repo_profile.metadata.setdefault("actual_files_scanned", scan_result.files_scanned)
 
         ai_requested = request.enable_ai_verification
         ai_client = None
@@ -107,9 +123,6 @@ class ScanPipelineService:
             ai_client, ai_error = self._build_ai_client(config)
             ai_enabled = ai_client is not None
 
-        if ai_client and scan_result.vulnerabilities:
-            asyncio.run(self._verify_all(ai_client, scan_result))
-
         workflow_state = None
         triage_records: list[TriageRecord] = []
         workflow_metadata: dict[str, Any] = {}
@@ -117,6 +130,15 @@ class ScanPipelineService:
             workflow_state = self._run_workflow(scan_result, repo_profile)
             triage_records = list(workflow_state.triage_records)
             workflow_metadata = dict(workflow_state.metadata)
+            if ai_client and triage_records:
+                triage_records, workflow_metadata = self._apply_ai_triage_overlay(
+                    ai_client,
+                    triage_records,
+                    workflow_metadata,
+                )
+                workflow_state.triage_records = list(triage_records)
+                workflow_state.findings = [record.finding for record in triage_records]
+                workflow_state.metadata = dict(workflow_metadata)
 
         exported_reports: dict[str, Path] = {}
         if request.export_reports:
@@ -221,10 +243,14 @@ class ScanPipelineService:
         return client, None
 
     @staticmethod
-    def _run_scan(detector: Any, target: Path) -> ScanResult:
+    def _run_scan(detector: Any, target: Path, request: ScanPipelineRequest) -> ScanResult:
         """Run the detector against the provided target."""
         if target.is_dir():
-            return detector.analyze_directory(target)
+            return detector.analyze_directory(
+                target,
+                exclude_dir_names=request.exclude_dir_names,
+                exclude_globs=request.exclude_globs,
+            )
 
         start_time = datetime.now()
         vulnerabilities = detector.analyze_file(target)
@@ -238,22 +264,83 @@ class ScanPipelineService:
         )
 
     @staticmethod
-    async def _verify_all(ai_client: Any, scan_result: ScanResult) -> None:
-        """Verify all findings concurrently with the configured AI client."""
-        tasks = []
-        for vulnerability in scan_result.vulnerabilities:
-            tasks.append(
-                ai_client.async_verify_vulnerability(
-                    vuln_type=vulnerability.vuln_type,
-                    source_code=vulnerability.dataflow.source.location.code_snippet,
-                    dataflow_path=vulnerability.dataflow.get_path_summary(),
-                    sink_code=vulnerability.dataflow.sink.location.code_snippet,
-                )
-            )
+    def _apply_ai_triage_overlay(
+        ai_client: Any,
+        triage_records: list[TriageRecord],
+        workflow_metadata: dict[str, Any],
+    ) -> tuple[list[TriageRecord], dict[str, Any]]:
+        """Overlay AI review on top of deterministic triage records."""
+        model_name = getattr(getattr(ai_client, "config", None), "gemini_model", None)
+        runner = AITriageRunner(
+            response_provider=ai_client._call_api,
+            model_name=model_name,
+        )
+        reviewed_records = [runner.review_record(record) for record in triage_records]
+        ai_triage_summary = ScanPipelineService._summarize_ai_overlay(
+            triage_records,
+            reviewed_records,
+            model_name=model_name or "custom-provider",
+        )
 
-        results = await asyncio.gather(*tasks)
-        for index, result in enumerate(results):
-            scan_result.vulnerabilities[index].ai_verification = result
+        updated_metadata = dict(workflow_metadata)
+        updated_metadata["deterministic_triage_summary"] = dict(
+            updated_metadata.get("triage_summary", {})
+        )
+        updated_metadata["triage_summary"] = ScanPipelineService._summarize_triage_records(
+            reviewed_records
+        )
+        updated_metadata["ai_triage_applied"] = True
+        updated_metadata["ai_model"] = model_name or "custom-provider"
+        updated_metadata["ai_triage_summary"] = ai_triage_summary
+        return reviewed_records, updated_metadata
+
+    @staticmethod
+    def _summarize_triage_records(triage_records: list[TriageRecord]) -> dict[str, int]:
+        """Count final triage decisions by status."""
+        summary = {
+            "confirmed": 0,
+            "likely": 0,
+            "needs-review": 0,
+            "suppressed": 0,
+        }
+        for record in triage_records:
+            status = record.decision.status.value
+            summary[status] = summary.get(status, 0) + 1
+        return summary
+
+    @staticmethod
+    def _summarize_ai_overlay(
+        base_records: list[TriageRecord],
+        reviewed_records: list[TriageRecord],
+        *,
+        model_name: str,
+    ) -> dict[str, Any]:
+        """Summarize how much the AI overlay changed deterministic triage."""
+        changed_status_count = 0
+        changed_confidence_count = 0
+        fallback_count = 0
+
+        for base_record, reviewed_record in zip(base_records, reviewed_records, strict=False):
+            if base_record.decision.status != reviewed_record.decision.status:
+                changed_status_count += 1
+            if abs(base_record.decision.confidence - reviewed_record.decision.confidence) > 1e-9:
+                changed_confidence_count += 1
+            if reviewed_record.decision.metadata.get("fallback_used"):
+                fallback_count += 1
+
+        return {
+            "model": model_name,
+            "findings_reviewed": len(reviewed_records),
+            "changed_status_count": changed_status_count,
+            "changed_confidence_count": changed_confidence_count,
+            "fallback_count": fallback_count,
+            "base_triage_summary": ScanPipelineService._summarize_triage_records(
+                base_records
+            ),
+            "final_triage_summary": ScanPipelineService._summarize_triage_records(
+                reviewed_records
+            ),
+        }
 
     @staticmethod
     def _export_reports(

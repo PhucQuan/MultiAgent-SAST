@@ -42,10 +42,15 @@ class TriageEngine:
         ]
         triage_metadata["workflow_route"] = decision.metadata.get("workflow_route")
         triage_metadata["reviewer"] = decision.reviewer
+        triage_metadata["reason_codes"] = decision.reason_codes
+        triage_metadata["evidence_summary"] = decision.evidence_summary
+        triage_metadata["manual_review_required"] = decision.manual_review_required
         finding.metadata["knowledge_card_ids"] = [
             card.card_id for card in matched_cards
         ]
         finding.metadata["workflow_route"] = decision.metadata.get("workflow_route")
+        finding.metadata["reason_codes"] = decision.reason_codes
+        finding.metadata["manual_review_required"] = decision.manual_review_required
 
         return TriageRecord(finding=finding, decision=decision)
 
@@ -82,16 +87,25 @@ class TriageEngine:
         matched_cards: List[KnowledgeCard],
     ) -> TriageDecision:
         """Make a conservative triage decision based on evidence and knowledge."""
+        triage_input = finding.to_triage_input()
+        evidence_pack = triage_input.get("evidence", {})
         route = route_finding(finding)
-        evidence_summary = finding.evidence_summary
-        graph_slice = evidence_summary.get("graph_slice", {})
+        evidence_summary = evidence_pack.get("summary", {})
+        graph_slice = evidence_pack.get("graph_slice", {})
+        decision_evidence_summary = dict(evidence_summary)
+        if graph_slice:
+            decision_evidence_summary["graph_slice"] = graph_slice
         notes = [
+            f"triage_input_schema={triage_input.get('schema_version', 'unknown')}",
             f"matched_cards={len(matched_cards)}",
             f"path_length={evidence_summary.get('path_length', 0)}",
             f"intermediate_steps={evidence_summary.get('intermediate_step_count', 0)}",
             f"sanitizers={evidence_summary.get('sanitizer_count', 0)}",
             f"route={' -> '.join(route.steps)}",
         ]
+        reason_codes = [f"workflow-route:{route.route_id}"]
+        if matched_cards:
+            reason_codes.append("knowledge-card-match")
         if graph_slice:
             notes.append(
                 "graph_slice="
@@ -111,6 +125,7 @@ class TriageEngine:
 
         if finding.is_effectively_sanitized:
             notes.append("effective_sanitizer_detected=true")
+            reason_codes.append("effective-sanitizer")
             if status == TriageStatus.CONFIRMED:
                 status = TriageStatus.NEEDS_REVIEW
                 confidence = min(confidence, 0.65)
@@ -118,6 +133,7 @@ class TriageEngine:
                     "The dataflow includes a sanitizer that may neutralize the sink. "
                     "Manual review is still recommended before suppression."
                 )
+                reason_codes.append("high-severity-sanitized-path")
             elif status in (TriageStatus.LIKELY, TriageStatus.NEEDS_REVIEW):
                 status = TriageStatus.SUPPRESSED
                 confidence = min(confidence, 0.4)
@@ -125,6 +141,7 @@ class TriageEngine:
                     "Built-in triage found an effective sanitizer on the path, so the "
                     "finding is likely a false positive."
                 )
+                reason_codes.append("sanitized-path-suppressed")
 
         elif status == TriageStatus.NEEDS_REVIEW:
             if evidence_summary.get("intermediate_step_count", 0) > 0:
@@ -134,21 +151,28 @@ class TriageEngine:
                     "The finding contains a multi-step dataflow trace and no effective "
                     "sanitizer was observed."
                 )
+                reason_codes.append("multi-step-dataflow")
             elif finding.severity in (Severity.CRITICAL, Severity.HIGH):
                 confidence = max(confidence, 0.6)
                 explanation = (
                     "High-severity sink reached from user-controlled input, but the "
                     "current evidence is still too shallow for confirmation."
                 )
+                reason_codes.append("high-severity-shallow-evidence")
 
         if status == TriageStatus.SUPPRESSED and finding.severity in (
             Severity.CRITICAL,
             Severity.HIGH,
         ):
             notes.append("suppressed_high_severity=true")
+            reason_codes.append("suppressed-high-severity")
 
         notes.extend(
             [f"knowledge_card={card.card_id}" for card in matched_cards]
+        )
+        manual_review_required = status == TriageStatus.NEEDS_REVIEW or (
+            status == TriageStatus.SUPPRESSED
+            and finding.severity in (Severity.CRITICAL, Severity.HIGH)
         )
 
         return TriageDecision(
@@ -157,10 +181,17 @@ class TriageEngine:
             explanation=explanation,
             recommendation=recommendation,
             reviewer="triage-engine-v1",
+            reason_codes=self._dedupe_reason_codes(reason_codes),
+            evidence_summary=decision_evidence_summary,
+            manual_review_required=manual_review_required,
             evidence_notes=notes,
             metadata={
+                "triage_input_schema": triage_input.get("schema_version"),
                 "knowledge_card_ids": [card.card_id for card in matched_cards],
                 "workflow_route": route.to_dict(),
+                "reason_codes": self._dedupe_reason_codes(reason_codes),
+                "evidence_summary": decision_evidence_summary,
+                "manual_review_required": manual_review_required,
             },
         )
 
@@ -171,3 +202,8 @@ class TriageEngine:
             if card.remediation_notes:
                 return card.remediation_notes[0]
         return None
+
+    @staticmethod
+    def _dedupe_reason_codes(reason_codes: List[str]) -> List[str]:
+        """Keep reason codes stable and free of duplicates."""
+        return list(dict.fromkeys(code for code in reason_codes if code))

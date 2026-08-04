@@ -162,6 +162,8 @@ class SARIFFormatter:
                 "severity": finding.severity.value,
                 "triage_status": record.decision.status.value,
                 "confidence": record.decision.confidence,
+                "manual_review_required": record.decision.manual_review_required,
+                "reason_codes": record.decision.reason_codes,
                 "language": finding.language,
                 "recommendation": record.decision.recommendation,
                 "knowledge_cards": record.decision.metadata.get("knowledge_card_ids", []),
@@ -283,10 +285,14 @@ class SARIFFormatter:
             "framework_hints",
             "knowledge_card_count",
             "triage_summary",
+            "deterministic_triage_summary",
             "route_summary",
             "auditor_summary",
             "skeptic_summary",
             "judge_summary",
+            "ai_triage_applied",
+            "ai_model",
+            "ai_triage_summary",
         ]
         return {
             key: workflow_metadata[key]
