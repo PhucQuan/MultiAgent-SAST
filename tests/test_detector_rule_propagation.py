@@ -3,6 +3,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from aegis_sast.analysis.python_deep_analysis import PythonDeepAnalyzer
 from aegis_sast.analysis.rule_engine import RuleEngine
 from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
 from aegis_sast.core.models import (
@@ -206,12 +207,12 @@ def test_cross_file_source_synthesis_only_uses_resolved_imports(tmp_path):
     )
     fake_ast = FakeTree(FakeTreeNode("module", children=[assignment]))
 
-    detector = make_detector(RuleEngine(language="python"), FakeLanguagePlugin("python", "py"))
-    synthetic_sources = detector._extract_cross_file_sources(
-        ast=fake_ast,
+    analyzer = PythonDeepAnalyzer()
+    synthetic_sources = analyzer.extract_cross_file_sources(
+        syntax_tree=fake_ast,
         file_path=target,
         import_map={},
-        func_index=SimpleNamespace(get=lambda name: SimpleNamespace(file_path=str(noise))),
+        function_index=SimpleNamespace(get=lambda name: SimpleNamespace(file_path=str(noise))),
         source_rules=[{"pattern": "input(", "type": "USER_INPUT"}],
     )
 

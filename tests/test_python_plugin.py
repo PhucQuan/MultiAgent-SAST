@@ -7,6 +7,8 @@ from pathlib import Path
 import tempfile
 import textwrap
 
+pytest.importorskip("tree_sitter_python")
+
 from aegis_sast.plugins.python_plugin import PythonPlugin
 from aegis_sast.analysis.rule_engine import RuleEngine
 

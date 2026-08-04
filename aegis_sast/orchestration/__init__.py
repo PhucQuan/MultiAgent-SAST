@@ -26,6 +26,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         SkepticValidatorNode,
     )
     from aegis_sast.orchestration.repo_intake import RepoIntake
+    from aegis_sast.orchestration.service import (
+        ScanPipelineRequest,
+        ScanPipelineResult,
+        ScanPipelineService,
+    )
     from aegis_sast.orchestration.workflow import ScanWorkflow
 
 __all__ = [
@@ -43,6 +48,9 @@ __all__ = [
     "ScanWorkflow",
     "SkepticReview",
     "SkepticValidatorNode",
+    "ScanPipelineRequest",
+    "ScanPipelineResult",
+    "ScanPipelineService",
     "SourceContextReader",
     "SourceContextWindow",
 ]
@@ -94,4 +102,16 @@ def __getattr__(name):
         from aegis_sast.orchestration.nodes import JudgeNode
 
         return JudgeNode
+    if name == "ScanPipelineRequest":
+        from aegis_sast.orchestration.service import ScanPipelineRequest
+
+        return ScanPipelineRequest
+    if name == "ScanPipelineResult":
+        from aegis_sast.orchestration.service import ScanPipelineResult
+
+        return ScanPipelineResult
+    if name == "ScanPipelineService":
+        from aegis_sast.orchestration.service import ScanPipelineService
+
+        return ScanPipelineService
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

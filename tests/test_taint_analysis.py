@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 import textwrap
 
+pytest.importorskip("tree_sitter_python")
+
 from aegis_sast.analysis.rule_engine import RuleEngine
 from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
 from aegis_sast.core.registry import get_registry

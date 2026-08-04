@@ -1,6 +1,7 @@
 """Regression tests for directory-scan exclusions and progress updates."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import aegis_sast.analysis.vulnerability_detector as detector_module
 from aegis_sast.analysis.rule_engine import RuleEngine
@@ -73,26 +74,25 @@ def test_analyze_directory_respects_exclusions(tmp_path, monkeypatch):
     monkeypatch.setattr(detector.registry, "get_supported_extensions", lambda: ["py", "js"])
 
     captured = {}
+    sentinel_context = SimpleNamespace(function_index=SimpleNamespace(index={}))
 
-    class FakeFunctionIndex:
-        def __init__(self):
-            self.index = {}
-
-        def build(self, root, exclude_dir_names=None, exclude_globs=None):
+    class FakePythonDeepAnalyzer:
+        def build_context(self, root, exclude_dir_names=None, exclude_globs=None):
             captured["root"] = root
             captured["exclude_dirs"] = set(exclude_dir_names or [])
             captured["exclude_globs"] = list(exclude_globs or [])
+            return sentinel_context
 
-    monkeypatch.setattr(detector_module, "FunctionIndex", FakeFunctionIndex)
+    monkeypatch.setattr(detector_module, "PythonDeepAnalyzer", FakePythonDeepAnalyzer)
 
     scanned = []
 
-    def fake_analyze_file(file_path, project_root=None, _func_index=None):
+    def fake_analyze_file(file_path, project_root=None, _python_context=None, _python_deep_analyzer=None):
         scanned.append(
             (
                 file_path.relative_to(tmp_path).as_posix(),
                 project_root,
-                _func_index,
+                _python_context,
             )
         )
         return []
@@ -111,7 +111,7 @@ def test_analyze_directory_respects_exclusions(tmp_path, monkeypatch):
     assert captured["exclude_dirs"] == {"test", "third_party"}
     assert captured["exclude_globs"] == ["*.min.js"]
     assert all(project_root == tmp_path for _, project_root, _ in scanned)
-    assert all(isinstance(index_obj, FakeFunctionIndex) for _, _, index_obj in scanned)
+    assert all(context is sentinel_context for _, _, context in scanned)
 
 
 def test_analyze_directory_reports_progress(tmp_path, monkeypatch):
@@ -122,15 +122,16 @@ def test_analyze_directory_reports_progress(tmp_path, monkeypatch):
     detector = VulnerabilityDetector(RuleEngine(language="python"))
     monkeypatch.setattr(detector.registry, "get_supported_extensions", lambda: ["py"])
 
-    class FakeFunctionIndex:
-        def __init__(self):
-            self.index = {}
+    class FakePythonDeepAnalyzer:
+        def build_context(self, root, exclude_dir_names=None, exclude_globs=None):
+            return SimpleNamespace(function_index=SimpleNamespace(index={"sample": object()}))
 
-        def build(self, root, exclude_dir_names=None, exclude_globs=None):
-            self.index["sample"] = object()
-
-    monkeypatch.setattr(detector_module, "FunctionIndex", FakeFunctionIndex)
-    monkeypatch.setattr(detector, "analyze_file", lambda file_path, project_root=None, _func_index=None: [])
+    monkeypatch.setattr(detector_module, "PythonDeepAnalyzer", FakePythonDeepAnalyzer)
+    monkeypatch.setattr(
+        detector,
+        "analyze_file",
+        lambda file_path, project_root=None, _python_context=None, _python_deep_analyzer=None: [],
+    )
 
     updates = []
     result = detector.analyze_directory(
@@ -165,14 +166,11 @@ def test_analyze_directory_dedupes_duplicate_findings_and_renumbers_ids(tmp_path
     detector = VulnerabilityDetector(RuleEngine(language="python"))
     monkeypatch.setattr(detector.registry, "get_supported_extensions", lambda: ["py"])
 
-    class FakeFunctionIndex:
-        def __init__(self):
-            self.index = {}
+    class FakePythonDeepAnalyzer:
+        def build_context(self, root, exclude_dir_names=None, exclude_globs=None):
+            return SimpleNamespace(function_index=SimpleNamespace(index={}))
 
-        def build(self, root, exclude_dir_names=None, exclude_globs=None):
-            self.index = {}
-
-    monkeypatch.setattr(detector_module, "FunctionIndex", FakeFunctionIndex)
+    monkeypatch.setattr(detector_module, "PythonDeepAnalyzer", FakePythonDeepAnalyzer)
 
     duplicate_group = [
         _make_vulnerability(first_file, source_line=1, sink_line=9),
@@ -187,7 +185,7 @@ def test_analyze_directory_dedupes_duplicate_findings_and_renumbers_ids(tmp_path
         sink_pattern="os.system(",
     )
 
-    def fake_analyze_file(file_path, project_root=None, _func_index=None):
+    def fake_analyze_file(file_path, project_root=None, _python_context=None, _python_deep_analyzer=None):
         if file_path == first_file:
             return list(duplicate_group)
         return [unique_vulnerability]

@@ -10,6 +10,8 @@ import textwrap
 from pathlib import Path
 import tempfile
 
+pytest.importorskip("tree_sitter_python")
+
 from aegis_sast.analysis.rule_engine import RuleEngine
 from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
 from aegis_sast.analysis.call_graph import FunctionIndex, ImportResolver

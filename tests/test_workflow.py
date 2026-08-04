@@ -15,7 +15,12 @@ from aegis_sast.core.models import (
     Vulnerability,
     VulnerabilityType,
 )
-from aegis_sast.orchestration import ScanWorkflow
+from aegis_sast.orchestration import (
+    ScanPipelineRequest,
+    ScanPipelineService,
+    ScanWorkflow,
+)
+from aegis_sast.orchestration.state import RepoProfile
 
 
 def test_scan_workflow_builds_state_with_route_and_triage_summaries():
@@ -164,3 +169,103 @@ def test_scan_workflow_promotes_strong_sqli_to_likely(tmp_path):
     assert state.metadata["skeptic_summary"]["executed"] == 1
     assert state.triage_records[0].decision.status.value == "likely"
     assert state.triage_records[0].decision.confidence >= 0.72
+
+
+def test_scan_pipeline_service_returns_reusable_result_without_cli_logic(tmp_path):
+    """The scan service should package orchestration output without CLI coupling."""
+    target = Path(tmp_path) / "demo.py"
+    target.write_text(
+        "\n".join(
+            [
+                "from flask import request",
+                "import os",
+                "cmd = request.args.get('cmd')",
+                "os.system(cmd)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    source = TaintSource(
+        CodeLocation(str(target), 3, 1, "cmd = request.args.get('cmd')"),
+        "HTTP_PARAM",
+        "cmd",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 4, 1, "os.system(cmd)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+    )
+    vulnerability = Vulnerability(
+        id="VULN-SERVICE-1",
+        vuln_type=VulnerabilityType.COMMAND_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(source=source, sink=sink),
+        ai_verification=AIVerification(
+            is_vulnerable=True,
+            confidence=0.95,
+            explanation="User input reaches shell execution.",
+            recommendation="Use an argument array and avoid shell invocation.",
+            model_used="test-model",
+        ),
+    )
+    scan_result = ScanResult(
+        target_path=str(target),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[vulnerability],
+        files_scanned=1,
+    )
+    repo_profile = RepoProfile(
+        target_path=str(target),
+        scan_profile="python-deep",
+        detected_languages=["python"],
+        files_scanned=1,
+        framework_hints=["flask"],
+        metadata={"analysis_plan": {"python": "deep"}},
+    )
+
+    class FakeRegistry:
+        def get_supported_languages(self):
+            return ["python"]
+
+        def get_import_failures(self):
+            return {"javascript": "not registered"}
+
+    class StubScanPipelineService(ScanPipelineService):
+        @staticmethod
+        def _create_repo_profile(registry, target_path: Path) -> RepoProfile:
+            return repo_profile
+
+        @staticmethod
+        def _build_detector(request, config):
+            return object()
+
+        @staticmethod
+        def _run_scan(detector, target_path: Path) -> ScanResult:
+            return scan_result
+
+        @staticmethod
+        def _build_ai_client(config):
+            return None, None
+
+    service = StubScanPipelineService(registry_factory=lambda: FakeRegistry())
+    request = ScanPipelineRequest(
+        target_path=target,
+        enable_ai_verification=False,
+        export_reports=False,
+    )
+
+    result = service.run(request)
+
+    assert result.repo_profile is repo_profile
+    assert result.scan_result is scan_result
+    assert result.supported_languages == ["python"]
+    assert result.ai_requested is False
+    assert result.ai_enabled is False
+    assert result.workflow_metadata["triage_summary"]["confirmed"] == 1
+    assert len(result.triage_records) == 1
+    assert result.exported_reports == {}
+    assert result.exit_code == 2
