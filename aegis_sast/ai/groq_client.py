@@ -19,6 +19,7 @@ from aegis_sast.triage.schema import TriageDecision
 
 GROQ_OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
+DEFAULT_USER_AGENT = "aegis-sast/1.0 (+https://github.com/PhucQuan/SAST_tool4pentester)"
 
 
 class StructuredGroqClient:
@@ -32,6 +33,7 @@ class StructuredGroqClient:
         base_url: str = GROQ_OPENAI_BASE_URL,
         max_attempts: int = 3,
         timeout_seconds: float = 30.0,
+        user_agent: str = DEFAULT_USER_AGENT,
         transport: Optional[Callable[[StructuredAIRequest], str]] = None,
     ):
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
@@ -39,6 +41,7 @@ class StructuredGroqClient:
         self.base_url = base_url.rstrip("/")
         self.max_attempts = max_attempts
         self.timeout_seconds = timeout_seconds
+        self.user_agent = user_agent
         self.transport = transport
         self._last_usage: Optional[TokenUsage] = None
 
@@ -127,6 +130,8 @@ class StructuredGroqClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": self.user_agent,
             },
             method="POST",
         )
@@ -135,7 +140,7 @@ class StructuredGroqClient:
                 response_data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Groq API HTTP {exc.code}: {body}") from exc
+            raise RuntimeError(_format_groq_http_error(exc.code, body)) from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"Groq API request failed: {exc.reason}") from exc
 
@@ -170,3 +175,21 @@ def _usage_from_response(response_data: dict) -> Optional[TokenUsage]:
         completion_tokens=int(usage.get("completion_tokens", 0) or 0),
         total_tokens=int(usage.get("total_tokens", 0) or 0),
     )
+
+
+def _format_groq_http_error(status_code: int, body: str) -> str:
+    """Return actionable Groq HTTP error text."""
+    if status_code == 403 and "1010" in body:
+        return (
+            "Groq API HTTP 403 / Cloudflare 1010: request was blocked before model "
+            "execution. Check GROQ_API_KEY, model permissions, network/VPN/proxy, and "
+            "try again with the built-in User-Agent header. Raw body: "
+            f"{body}"
+        )
+    if status_code == 403:
+        return (
+            "Groq API HTTP 403: request forbidden. Check model permissions for "
+            "GROQ_MODEL and project/org access. Raw body: "
+            f"{body}"
+        )
+    return f"Groq API HTTP {status_code}: {body}"

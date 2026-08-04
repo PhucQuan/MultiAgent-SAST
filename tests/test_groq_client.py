@@ -4,6 +4,7 @@ import json
 import urllib.error
 
 from aegis_sast.ai.groq_client import (
+    DEFAULT_USER_AGENT,
     DEFAULT_GROQ_MODEL,
     GROQ_OPENAI_BASE_URL,
     StructuredGroqClient,
@@ -121,6 +122,8 @@ def test_groq_http_payload_uses_openai_compatible_chat_endpoint(monkeypatch):
     assert captured["url"] == f"{GROQ_OPENAI_BASE_URL}/chat/completions"
     assert captured["timeout"] == 7
     assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["headers"]["User-agent"] == DEFAULT_USER_AGENT
+    assert captured["headers"]["Accept"] == "application/json"
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert captured["payload"]["messages"][1]["role"] == "user"
     assert result.parsed.status.value == "confirmed"
@@ -146,3 +149,32 @@ def test_groq_http_errors_are_normalized(monkeypatch):
 
     assert result.parsed.status.value == "needs-review"
     assert "Groq API HTTP 401" in result.parsed.limitations[0]
+
+
+def test_groq_cloudflare_1010_error_has_actionable_message(monkeypatch):
+    class FakeErrorBody:
+        def read(self):
+            return b"error code: 1010\n"
+
+        def close(self):
+            return None
+
+    def fake_urlopen(_request, timeout):
+        raise urllib.error.HTTPError(
+            url="https://api.groq.com/openai/v1/chat/completions",
+            code=403,
+            msg="Forbidden",
+            hdrs=None,
+            fp=FakeErrorBody(),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    result = StructuredGroqClient(api_key="test-key").generate_triage_decision(
+        request=_request(),
+        fallback_finding_id="F-001",
+    )
+
+    assert result.parsed.status.value == "needs-review"
+    assert "Cloudflare 1010" in result.parsed.limitations[0]
+    assert "network/VPN/proxy" in result.parsed.limitations[0]
