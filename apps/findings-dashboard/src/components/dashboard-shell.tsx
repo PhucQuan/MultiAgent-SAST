@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { FindingDetail } from "@/components/finding-detail";
@@ -796,17 +796,27 @@ export function DashboardShell() {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={scanSheetOpen} onOpenChange={setScanSheetOpen}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
-          <div className="flex h-full flex-col bg-background">
-            <div className="border-b border-border px-5 py-5">
-              <SheetTitle className="text-left text-[18px] font-semibold text-foreground">
-                Run local scan
-              </SheetTitle>
-              <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
-                Trigger the Python scan pipeline from the dashboard, export a
-                fresh JSON report, and reopen it here automatically.
-              </p>
+      {scanSheetOpen ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/45">
+          <div className="flex h-full w-full max-w-[460px] flex-col border-l border-border bg-background shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-5">
+              <div>
+                <SheetTitle className="text-left text-[18px] font-semibold text-foreground">
+                  Run local scan
+                </SheetTitle>
+                <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
+                  Trigger the Python scan pipeline from the dashboard, export a
+                  fresh JSON report, and reopen it here automatically.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScanSheetOpen(false)}
+                className="rounded-sm p-1.5 text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+                aria-label="Close scan panel"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
@@ -815,6 +825,7 @@ export function DashboardShell() {
                   Target path
                 </div>
                 <Input
+                  autoFocus
                   value={scanTargetPath}
                   onChange={(event) => setScanTargetPath(event.target.value)}
                   placeholder="C:\\path\\to\\repo or examples/vulnerable_rce.py"
@@ -888,8 +899,8 @@ export function DashboardShell() {
               </Button>
             </div>
           </div>
-        </SheetContent>
-      </Sheet>
+        </div>
+      ) : null}
 
       <Sheet open={!isWide && detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
