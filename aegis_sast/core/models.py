@@ -475,6 +475,7 @@ class Vulnerability:
             "source_pattern": source.pattern,
             "sink_pattern": sink.pattern,
             "sink_function": sink.function_name,
+            "sink_arguments": list(sink.arguments),
             "is_sanitized": self.dataflow.is_sanitized(),
         }
         evidence_metadata = dict(self.dataflow.metadata)
@@ -512,6 +513,7 @@ class Vulnerability:
             "source_pattern": source.pattern,
             "sink_pattern": sink.pattern,
             "sink_function": sink.function_name,
+            "sink_arguments": list(sink.arguments),
             "is_sanitized": self.dataflow.is_sanitized(),
             "dataflow_metadata": dict(self.dataflow.metadata),
             "evidence_summary": evidence_bundle.summary,

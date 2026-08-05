@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -35,10 +36,26 @@ PYTHON_REVIEWED_SUITE_MANIFEST_PATH = (
     / "reviewed_bundle_v1"
     / "cases_python_reviewed_suite.json"
 )
+OWASP_SCORE_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "score_owasp_benchmark.py"
+)
 
 
 def _load_module():
     spec = importlib.util.spec_from_file_location("run_benchmark_v1", SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_owasp_score_module():
+    spec = importlib.util.spec_from_file_location(
+        "score_owasp_benchmark",
+        OWASP_SCORE_SCRIPT_PATH,
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -264,3 +281,104 @@ def test_run_benchmark_case_overlays_reviewed_rules_on_top_of_default_core(tmp_p
     assert calls[0].get("append_rules_paths") is None
     assert calls[1]["custom_rules_path"] is None
     assert calls[1]["append_rules_paths"] == [reviewed_rules]
+
+
+def test_owasp_score_report_computes_case_level_metrics_across_modes(tmp_path):
+    module = _load_owasp_score_module()
+    expected_path = tmp_path / "expectedresults-0.1.csv"
+    expected_path.write_text(
+        "\n".join(
+            [
+                "# test name, category, real vulnerability, cwe",
+                "BenchmarkTest00001,pathtraver,true,22",
+                "BenchmarkTest00002,pathtraver,false,22",
+                "BenchmarkTest00003,cmdi,true,78",
+                "BenchmarkTest00004,sqli,false,89",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "scan_metadata": {"target": str(tmp_path / "testcode"), "files_scanned": 4},
+        "findings": [
+            {
+                "file": str(tmp_path / "BenchmarkTest00001.py"),
+                "type": "PATH_TRAVERSAL",
+                "triage_status": "likely",
+            },
+            {
+                "file": str(tmp_path / "BenchmarkTest00002.py"),
+                "type": "PATH_TRAVERSAL",
+                "triage_status": "needs-review",
+            },
+            {
+                "file": str(tmp_path / "BenchmarkTest00003.py"),
+                "type": "COMMAND_INJECTION",
+                "triage_status": "suppressed",
+            },
+            {
+                "file": str(tmp_path / "BenchmarkTest00004.py"),
+                "type": "PATH_TRAVERSAL",
+                "triage_status": "likely",
+            },
+        ],
+    }
+
+    summary = module.score_report(
+        report,
+        module.load_expected_cases(expected_path),
+        families=["PATH_TRAVERSAL", "COMMAND_INJECTION"],
+    )
+
+    all_mode = summary["modes"]["all"]
+    visible_mode = summary["modes"]["visible"]
+    high_conf_mode = summary["modes"]["high-confidence"]
+
+    path_all = next(item for item in all_mode["families"] if item["family"] == "PATH_TRAVERSAL")
+    cmd_all = next(item for item in all_mode["families"] if item["family"] == "COMMAND_INJECTION")
+    cmd_visible = next(item for item in visible_mode["families"] if item["family"] == "COMMAND_INJECTION")
+
+    assert path_all["tp"] == 1
+    assert path_all["fp"] == 2
+    assert path_all["fn"] == 0
+    assert path_all["detected_case_count"] == 3
+    assert cmd_all["tp"] == 1
+    assert cmd_all["fp"] == 0
+    assert cmd_all["fn"] == 0
+    assert cmd_visible["tp"] == 0
+    assert cmd_visible["fn"] == 1
+    assert high_conf_mode["aggregate"]["detected_case_count"] == 2
+
+
+def test_owasp_score_report_auto_selects_mapped_families(tmp_path):
+    module = _load_owasp_score_module()
+    expected_path = tmp_path / "expectedresults-1.2.csv"
+    expected_path.write_text(
+        "\n".join(
+            [
+                "# test name, category, real vulnerability, cwe",
+                "BenchmarkTest01000,pathtraver,true,22",
+                "BenchmarkTest01001,cmdi,false,78",
+                "BenchmarkTest01002,weakrand,true,330",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "scan_metadata": {"target": str(tmp_path / "src"), "files_scanned": 3},
+        "findings": [
+            {
+                "file": str(tmp_path / "BenchmarkTest01000.java"),
+                "type": "PATH_TRAVERSAL",
+                "triage_status": "confirmed",
+            }
+        ],
+    }
+
+    summary = module.score_report(report, module.load_expected_cases(expected_path))
+
+    assert summary["families"] == ["COMMAND_INJECTION", "PATH_TRAVERSAL"]
+    assert summary["expected_case_count"] == 3
+    assert summary["modes"]["all"]["aggregate"]["tp"] == 1

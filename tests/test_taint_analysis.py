@@ -105,6 +105,105 @@ class TestSingleFileTaint:
         vulns = detector.analyze_file(path)
         assert vulns == [], f"Expected no findings, got: {vulns}"
 
+    def test_parameterized_sql_query_is_not_reported(self):
+        code = """\
+            from flask import request
+
+            def search(cursor):
+                name = request.args.get('name')
+                query = "SELECT * FROM users WHERE name = ?"
+                cursor.execute(query, (name,))
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("SQL" not in v.vuln_type.value for v in vulns), (
+            f"Parameterized execute() should not be reported as SQLi: {vulns}"
+        )
+
+    def test_detects_path_traversal_from_request_form_getlist_into_read_text(self):
+        code = """\
+            from flask import request
+            import pathlib
+
+            def read_file():
+                values = request.form.getlist('file')
+                name = values[0] if values else ''
+                base = pathlib.Path('/tmp')
+                target = base / name
+                return target.read_text()
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Expected PATH_TRAVERSAL from getlist()->Path.read_text(), got: {types}"
+        )
+
+    def test_detects_path_traversal_from_request_header_names(self):
+        code = """\
+            from flask import request
+
+            def read_file():
+                param = ''
+                for name in request.headers.keys():
+                    param = name
+                    break
+                open(param, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Expected PATH_TRAVERSAL from request.headers.keys(), got: {types}"
+        )
+
+    def test_detects_path_traversal_across_match_case_assignment(self):
+        code = """\
+            from flask import request
+
+            def read_file():
+                param = request.headers.get('file')
+                guess = 'A'
+                match guess:
+                    case 'A':
+                        bar = param
+                    case 'B':
+                        bar = 'safe.txt'
+                    case _:
+                        bar = 'fallback.txt'
+                open(bar, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Expected PATH_TRAVERSAL across match/case assignment, got: {types}"
+        )
+
+    def test_xss_with_html_escape_is_detected_but_marked_lower_severity(self):
+        code = """\
+            from flask import request, render_template_string
+            import html
+
+            def show():
+                payload = request.args.get('q')
+                safe_payload = html.escape(payload)
+                return render_template_string(safe_payload)
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        xss = [v for v in vulns if v.vuln_type.value == "XSS"]
+        assert xss, f"Expected XSS finding from render_template_string(), got: {vulns}"
+        assert xss[0].dataflow.is_sanitized() is True, "html.escape() should sanitize the XSS path"
+        assert xss[0].severity == Severity.MEDIUM, (
+            f"Sanitized XSS should be lowered to MEDIUM severity, got: {xss[0].severity}"
+        )
+
 
 class TestSeverity:
     def test_sqli_is_critical(self):

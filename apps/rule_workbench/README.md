@@ -13,6 +13,7 @@ Then open `http://127.0.0.1:8765`.
 ## Scope
 
 - build a review bundle from a local Semgrep-shaped seed
+- build an AI-ready draft pack from a natural-language description plus a local seed snapshot
 - validate the normalized output
 - preview generated artifacts
 - export an optional legacy bridge for `scan_target.py --rules`

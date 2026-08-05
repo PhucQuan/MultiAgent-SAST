@@ -4,8 +4,10 @@ import {
   startTransition,
   useDeferredValue,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { PanelLeft, X } from "lucide-react";
 import { toast } from "sonner";
@@ -40,6 +42,13 @@ import type {
 
 type ReportsIndexResponse = {
   reports?: ReportSummaryCard[];
+  meta?: {
+    totalReports: number;
+    activeReports: number;
+    archiveReports: number;
+    includeArchive: boolean;
+    recentLimit: number;
+  };
   error?: string;
 };
 
@@ -64,6 +73,40 @@ type ScanApiResponse = {
   error?: string;
 };
 
+type ScanJobStatus = "queued" | "running" | "completed" | "failed";
+
+type ScanJobProgress = {
+  stage: string | null;
+  message: string | null;
+  totalFiles: number | null;
+  filesScanned: number | null;
+  filesProcessed: number | null;
+  findings: number | null;
+  errors: number | null;
+  currentFile: string | null;
+  indexedFunctions: number | null;
+  durationSeconds: number | null;
+};
+
+type ScanJobResponse = {
+  job?: {
+    id: string;
+    status: ScanJobStatus;
+    targetPath: string;
+    enableAi: boolean;
+    maxDepth: number;
+    progressEvery: number;
+    startedAt: string;
+    updatedAt: string;
+    finishedAt: string | null;
+    progress: ScanJobProgress;
+    logs: string[];
+    result: ScanApiResponse["scan"] | null;
+    error: string | null;
+  };
+  error?: string;
+};
+
 const emptyFilters: QueueFilters = {
   search: "",
   status: "all",
@@ -71,6 +114,27 @@ const emptyFilters: QueueFilters = {
   language: "all",
   family: "all",
   includeMuted: false,
+};
+
+const defaultReportsMeta = {
+  totalReports: 0,
+  activeReports: 0,
+  archiveReports: 0,
+  includeArchive: false,
+  recentLimit: 12,
+};
+
+const emptyScanJobProgress: ScanJobProgress = {
+  stage: null,
+  message: null,
+  totalFiles: null,
+  filesScanned: null,
+  filesProcessed: null,
+  findings: null,
+  errors: null,
+  currentFile: null,
+  indexedFunctions: null,
+  durationSeconds: null,
 };
 
 function sortByTimestamp<
@@ -147,23 +211,33 @@ function sortFindings(
 }
 
 function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(() =>
-    typeof window !== "undefined" ? window.matchMedia(query).matches : false,
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined") {
+        return () => undefined;
+      }
+
+      const mediaQuery = window.matchMedia(query);
+      const handler = () => onStoreChange();
+
+      mediaQuery.addEventListener("change", handler);
+      return () => mediaQuery.removeEventListener("change", handler);
+    },
+    () =>
+      typeof window !== "undefined" ? window.matchMedia(query).matches : false,
+    () => false,
   );
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(query);
-
-    const handler = (event: MediaQueryListEvent) => setMatches(event.matches);
-
-    mediaQuery.addEventListener("change", handler);
-    return () => mediaQuery.removeEventListener("change", handler);
-  }, [query]);
-
-  return matches;
 }
 
-export function DashboardShell() {
+function useHydrated() {
+  return useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
+}
+
+function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [workspaceReports, setWorkspaceReports] = useState<ReportSummaryCard[]>([]);
   const [importedReports, setImportedReports] = useState<NormalizedReport[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -173,32 +247,53 @@ export function DashboardShell() {
   const [loadingWorkspaceReports, setLoadingWorkspaceReports] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [reportsMeta, setReportsMeta] = useState(defaultReportsMeta);
   const [reviewStore, setReviewStore] = useState<ReviewerFeedbackStore>(() =>
-    readReviewStore(),
+    hydrated ? readReviewStore() : {},
   );
   const [filters, setFilters] = useState<QueueFilters>(emptyFilters);
+  const [showArchiveReports, setShowArchiveReports] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [scanSheetOpen, setScanSheetOpen] = useState(false);
   const [scanTargetPath, setScanTargetPath] = useState("");
   const [scanEnableAi, setScanEnableAi] = useState(false);
   const [scanMaxDepth, setScanMaxDepth] = useState("5");
-  const [scanRunning, setScanRunning] = useState(false);
+  const [scanJobId, setScanJobId] = useState<string | null>(null);
+  const [scanJobStatus, setScanJobStatus] = useState<ScanJobStatus | null>(null);
+  const [scanJobProgress, setScanJobProgress] =
+    useState<ScanJobProgress>(emptyScanJobProgress);
+  const [scanJobLogs, setScanJobLogs] = useState<string[]>([]);
+  const [scanJobResult, setScanJobResult] =
+    useState<ScanApiResponse["scan"] | null>(null);
+  const [scanJobError, setScanJobError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handledScanJobRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
   const hasSidebar = useMediaQuery("(min-width: 1024px)");
   const isWide = useMediaQuery("(min-width: 1280px)");
+  const scanRunning = scanJobStatus === "queued" || scanJobStatus === "running";
 
   useEffect(() => {
-    writeReviewStore(reviewStore);
-  }, [reviewStore]);
+    if (!hydrated) {
+      return;
+    }
 
-  async function refreshWorkspaceReports(showToast = false): Promise<ReportSummaryCard[]> {
+    writeReviewStore(reviewStore);
+  }, [hydrated, reviewStore]);
+
+  async function refreshWorkspaceReports(
+    showToast = false,
+    includeArchive = showArchiveReports,
+  ): Promise<ReportSummaryCard[]> {
     setLoadingWorkspaceReports(true);
 
     try {
-      const response = await fetch("/api/reports", { cache: "no-store" });
+      const response = await fetch(
+        includeArchive ? "/api/reports?includeArchive=1" : "/api/reports",
+        { cache: "no-store" },
+      );
       const data = (await response.json()) as ReportsIndexResponse;
 
       if (!response.ok) {
@@ -207,13 +302,22 @@ export function DashboardShell() {
 
       const nextReports = sortByTimestamp(data.reports ?? []);
       setWorkspaceReports(nextReports);
+      setReportsMeta({
+        ...defaultReportsMeta,
+        ...data.meta,
+        includeArchive,
+      });
       setListError(null);
 
       if (showToast) {
         toast.success("Reports refreshed", {
-          description: `${nextReports.length} workspace report${
-            nextReports.length === 1 ? "" : "s"
-          } available.`,
+          description: includeArchive
+            ? `${nextReports.length} report${
+                nextReports.length === 1 ? "" : "s"
+              } loaded.`
+            : `${nextReports.length} recent scan${
+                nextReports.length === 1 ? "" : "s"
+              } shown.`,
         });
       }
 
@@ -225,6 +329,10 @@ export function DashboardShell() {
           : "Unable to load workspace reports.";
 
       setWorkspaceReports([]);
+      setReportsMeta({
+        ...defaultReportsMeta,
+        includeArchive,
+      });
       setListError(message);
 
       if (showToast) {
@@ -242,7 +350,10 @@ export function DashboardShell() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/reports", { cache: "no-store" });
+        const response = await fetch(
+          showArchiveReports ? "/api/reports?includeArchive=1" : "/api/reports",
+          { cache: "no-store" },
+        );
         const data = (await response.json()) as ReportsIndexResponse;
 
         if (!response.ok) {
@@ -251,11 +362,20 @@ export function DashboardShell() {
 
         if (!cancelled) {
           setWorkspaceReports(sortByTimestamp(data.reports ?? []));
+          setReportsMeta({
+            ...defaultReportsMeta,
+            ...data.meta,
+            includeArchive: showArchiveReports,
+          });
           setListError(null);
         }
       } catch (error) {
         if (!cancelled) {
           setWorkspaceReports([]);
+          setReportsMeta({
+            ...defaultReportsMeta,
+            includeArchive: showArchiveReports,
+          });
           setListError(
             error instanceof Error
               ? error.message
@@ -272,7 +392,7 @@ export function DashboardShell() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showArchiveReports]);
 
   const importedEntries: ReportEntry[] = sortByTimestamp(
     importedReports.map((report) => ({
@@ -305,6 +425,133 @@ export function DashboardShell() {
 
     setScanSheetOpen(true);
   }
+
+  function applyScanJob(job: NonNullable<ScanJobResponse["job"]>) {
+    setScanJobId(job.id);
+    setScanJobStatus(job.status);
+    setScanJobProgress(job.progress ?? emptyScanJobProgress);
+    setScanJobLogs(job.logs ?? []);
+    setScanJobResult(job.result ?? null);
+    setScanJobError(job.error ?? null);
+  }
+
+  const finalizeCompletedScan = useEffectEvent(
+    async (job: NonNullable<ScanJobResponse["job"]>) => {
+      if (handledScanJobRef.current === job.id) {
+        return;
+      }
+
+      handledScanJobRef.current = job.id;
+
+      const nextReports = await refreshWorkspaceReports(false);
+      const selectedReportPath = job.result?.selectedReportPath;
+      const nextSelectedReportId = selectedReportPath ?? nextReports[0]?.id ?? null;
+
+      if (nextSelectedReportId) {
+        startTransition(() => {
+          setSelectedReportId(nextSelectedReportId);
+          setSelectedFindingKey(null);
+          setFilters(emptyFilters);
+        });
+        setLoadedWorkspaceReport(null);
+        setReportError(null);
+      }
+
+      const filesScanned = job.result?.summary?.files_scanned ?? 0;
+      const findings = job.result?.summary?.total_vulnerabilities ?? 0;
+      const aiRequested = job.result?.ai?.requested === true;
+      const aiEnabled = job.result?.ai?.enabled === true;
+      const aiDetail = aiRequested
+        ? aiEnabled
+          ? "AI triage overlay applied."
+          : job.result?.ai?.error
+            ? `AI unavailable: ${job.result.ai.error}`
+            : "AI triage unavailable for this run."
+        : "Deterministic triage only.";
+
+      if (filesScanned === 0) {
+        toast("Scan finished with no supported files", {
+          description: `Check the target path or local analyzer availability. ${aiDetail}`,
+        });
+        return;
+      }
+
+      toast.success("Local scan complete", {
+        description: `${filesScanned} file${
+          filesScanned === 1 ? "" : "s"
+        } scanned, ${findings} finding${
+          findings === 1 ? "" : "s"
+        }. ${aiDetail}`,
+      });
+    },
+  );
+
+  const finalizeFailedScan = useEffectEvent(
+    (job: NonNullable<ScanJobResponse["job"]>) => {
+      if (handledScanJobRef.current === job.id) {
+        return;
+      }
+
+      handledScanJobRef.current = job.id;
+      toast.error("Scan failed", {
+        description: job.error ?? "Unable to run the local scan.",
+      });
+    },
+  );
+
+  useEffect(() => {
+    if (!scanJobId || !scanRunning) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollJob = async () => {
+      try {
+        const response = await fetch(
+          `/api/scan?jobId=${encodeURIComponent(scanJobId)}`,
+          { cache: "no-store" },
+        );
+        const data = (await response.json()) as ScanJobResponse;
+
+        if (!response.ok || !data.job) {
+          throw new Error(data.error ?? "Unable to load scan status.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        applyScanJob(data.job);
+
+        if (data.job.status === "completed") {
+          await finalizeCompletedScan(data.job);
+        } else if (data.job.status === "failed") {
+          finalizeFailedScan(data.job);
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        const message =
+          error instanceof Error ? error.message : "Unable to load scan status.";
+        setScanJobStatus("failed");
+        setScanJobError(message);
+        toast.error("Scan status failed", { description: message });
+      }
+    };
+
+    void pollJob();
+    const intervalId = window.setInterval(() => {
+      void pollJob();
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [scanJobId, scanRunning]);
 
   useEffect(() => {
     if (
@@ -489,7 +736,17 @@ export function DashboardShell() {
       ? Math.max(1, Math.min(parsedDepth, 20))
       : 5;
 
-    setScanRunning(true);
+    setScanJobId(null);
+    setScanJobStatus("queued");
+    setScanJobProgress({
+      ...emptyScanJobProgress,
+      stage: "queued",
+      message: "Submitting local scan request.",
+    });
+    setScanJobLogs(["Preparing local scan request..."]);
+    setScanJobResult(null);
+    setScanJobError(null);
+    handledScanJobRef.current = null;
 
     try {
       const response = await fetch("/api/scan", {
@@ -503,64 +760,26 @@ export function DashboardShell() {
           maxDepth,
         }),
       });
-      const data = (await response.json()) as ScanApiResponse;
+      const data = (await response.json()) as ScanJobResponse;
 
-      if (!response.ok || !data.scan) {
-        throw new Error(data.error ?? "Unable to run the local scan.");
+      if (!response.ok || !data.job) {
+        throw new Error(data.error ?? "Unable to start the local scan.");
       }
 
-      const nextReports = await refreshWorkspaceReports(false);
-      const nextSelectedReportId =
-        data.scan.selectedReportPath ??
-        nextReports[0]?.id ??
-        null;
-
-      if (nextSelectedReportId) {
-        startTransition(() => {
-          setSelectedReportId(nextSelectedReportId);
-          setSelectedFindingKey(null);
-          setFilters(emptyFilters);
-        });
-        setLoadedWorkspaceReport(null);
-        setReportError(null);
-      }
-
-      setScanSheetOpen(false);
-
-      const filesScanned = data.scan.summary?.files_scanned ?? 0;
-      const findings = data.scan.summary?.total_vulnerabilities ?? 0;
-      const aiRequested = data.scan.ai?.requested === true;
-      const aiEnabled = data.scan.ai?.enabled === true;
-      const aiDetail = aiRequested
-        ? aiEnabled
-          ? "AI triage overlay applied."
-          : data.scan.ai?.error
-            ? `AI unavailable: ${data.scan.ai.error}`
-            : "AI triage unavailable for this run."
-        : "Deterministic triage only.";
-
-      if (filesScanned === 0) {
-        toast("Scan finished with no supported files", {
-          description: `Check the target path or local analyzer availability. ${aiDetail}`,
-        });
-      } else {
-        toast.success("Local scan complete", {
-          description: `${filesScanned} file${
-            filesScanned === 1 ? "" : "s"
-          } scanned, ${findings} finding${
-            findings === 1 ? "" : "s"
-          }. ${aiDetail}`,
-        });
-      }
+      applyScanJob(data.job);
+      toast("Local scan started", {
+        description: "Progress and logs will update live in this panel.",
+      });
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Unable to run the local scan.";
+          : "Unable to start the local scan.";
 
+      setScanJobStatus("failed");
+      setScanJobError(message);
+      setScanJobLogs((current) => [...current, `Failed to start scan: ${message}`]);
       toast.error("Scan failed", { description: message });
-    } finally {
-      setScanRunning(false);
     }
   }
 
@@ -665,6 +884,41 @@ export function DashboardShell() {
     });
   }
 
+  const scanProgressPercent =
+    scanJobProgress.totalFiles &&
+    scanJobProgress.totalFiles > 0 &&
+    scanJobProgress.filesProcessed !== null
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(
+              (scanJobProgress.filesProcessed / scanJobProgress.totalFiles) * 100,
+            ),
+          ),
+        )
+      : null;
+
+  const scanStatusLabel =
+    scanJobStatus === "queued"
+      ? "Queued"
+      : scanJobStatus === "running"
+        ? "Running"
+        : scanJobStatus === "completed"
+          ? "Completed"
+          : scanJobStatus === "failed"
+            ? "Failed"
+            : "Idle";
+
+  const scanStatusClassName =
+    scanJobStatus === "completed"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : scanJobStatus === "failed"
+        ? "border-destructive/30 bg-destructive/10 text-destructive"
+        : scanRunning
+          ? "border-primary/25 bg-primary/8 text-primary"
+          : "border-border bg-surface text-muted-foreground";
+
   const explorer = (
     <ReportSidebar
       reports={reportEntries}
@@ -677,6 +931,13 @@ export function DashboardShell() {
       feedbackStore={reviewStore}
       loading={loadingWorkspaceReports}
       error={listError}
+      showArchiveReports={showArchiveReports}
+      onToggleArchiveReports={() =>
+        setShowArchiveReports((current) => !current)
+      }
+      totalReports={reportsMeta.totalReports}
+      archiveReports={reportsMeta.archiveReports}
+      recentLimit={reportsMeta.recentLimit}
     />
   );
 
@@ -798,15 +1059,24 @@ export function DashboardShell() {
 
       {scanSheetOpen ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/45">
-          <div className="flex h-full w-full max-w-[460px] flex-col border-l border-border bg-background shadow-2xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="run-local-scan-title"
+            className="flex h-full w-full max-w-[460px] flex-col border-l border-border bg-background shadow-2xl"
+          >
             <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-5">
               <div>
-                <SheetTitle className="text-left text-[18px] font-semibold text-foreground">
+                <h2
+                  id="run-local-scan-title"
+                  className="text-left text-[18px] font-semibold text-foreground"
+                >
                   Run local scan
-                </SheetTitle>
+                </h2>
                 <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
                   Trigger the Python scan pipeline from the dashboard, export a
-                  fresh JSON report, and reopen it here automatically.
+                  fresh JSON report, and reopen it here automatically. Large
+                  repositories can take several minutes to finish.
                 </p>
               </div>
               <button
@@ -820,6 +1090,92 @@ export function DashboardShell() {
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+              <div className={`rounded-lg border px-4 py-3 ${scanStatusClassName}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                      Scan status
+                    </div>
+                    <div className="mt-1 text-[15px] font-semibold">
+                      {scanStatusLabel}
+                    </div>
+                  </div>
+
+                  {scanProgressPercent !== null ? (
+                    <div className="text-right">
+                      <div className="num text-[18px] font-semibold">
+                        {scanProgressPercent}%
+                      </div>
+                      <div className="text-[11px] text-current/80">
+                        {scanJobProgress.filesProcessed ?? 0}/
+                        {scanJobProgress.totalFiles ?? 0} files
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/8">
+                  <div
+                    className="h-full rounded-full bg-current transition-[width]"
+                    style={{
+                      width:
+                        scanProgressPercent !== null ? `${scanProgressPercent}%` : "0%",
+                    }}
+                  />
+                </div>
+
+                <div className="mt-3 grid gap-2 text-[12px] sm:grid-cols-2">
+                  <div>
+                    <span className="text-current/75">Stage:</span>{" "}
+                    <span className="font-medium">
+                      {scanJobProgress.stage ?? "not started"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-current/75">Findings:</span>{" "}
+                    <span className="num font-medium">
+                      {scanJobProgress.findings ?? 0}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-current/75">Files scanned:</span>{" "}
+                    <span className="num font-medium">
+                      {scanJobProgress.filesScanned ?? 0}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-current/75">Errors:</span>{" "}
+                    <span className="num font-medium">
+                      {scanJobProgress.errors ?? 0}
+                    </span>
+                  </div>
+                </div>
+
+                {scanJobProgress.message ? (
+                  <p className="mt-3 text-[12px] leading-5 text-current/85">
+                    {scanJobProgress.message}
+                  </p>
+                ) : null}
+
+                {scanJobProgress.currentFile ? (
+                  <p className="mt-2 truncate font-mono text-[11.5px] text-current/80">
+                    {scanJobProgress.currentFile}
+                  </p>
+                ) : null}
+
+                {scanJobStatus === "completed" && scanJobResult?.selectedReportPath ? (
+                  <p className="mt-2 truncate font-mono text-[11.5px] text-current/80">
+                    Report: {scanJobResult.selectedReportPath}
+                  </p>
+                ) : null}
+
+                {scanJobError ? (
+                  <p className="mt-2 text-[12px] leading-5 text-current">
+                    {scanJobError}
+                  </p>
+                ) : null}
+              </div>
+
               <div className="space-y-2">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Target path
@@ -830,6 +1186,7 @@ export function DashboardShell() {
                   onChange={(event) => setScanTargetPath(event.target.value)}
                   placeholder="C:\\path\\to\\repo or examples/vulnerable_rce.py"
                   className="h-11 rounded-lg border-border bg-surface text-[13px]"
+                  disabled={scanRunning}
                 />
                 <p className="text-[12px] leading-5 text-muted-foreground">
                   Relative paths resolve from the Aegis-SAST repo root.
@@ -848,6 +1205,7 @@ export function DashboardShell() {
                     value={scanMaxDepth}
                     onChange={(event) => setScanMaxDepth(event.target.value)}
                     className="h-11 rounded-lg border-border bg-surface text-[13px]"
+                    disabled={scanRunning}
                   />
                 </div>
 
@@ -857,6 +1215,7 @@ export function DashboardShell() {
                       checked={scanEnableAi}
                       onCheckedChange={(checked) => setScanEnableAi(checked === true)}
                       className="mt-0.5"
+                      disabled={scanRunning}
                     />
                     <div>
                       <div className="text-[13px] font-medium text-foreground">
@@ -880,6 +1239,34 @@ export function DashboardShell() {
                   and build-output folders such as <code>node_modules</code>,
                   <code>.venv</code>, <code>.next</code>, and <code>dist</code>.
                 </p>
+                <p className="mt-2 text-[12px] leading-5 text-muted-foreground">
+                  For large codebases like PyTorch, start with AI off and a max
+                  depth of 3.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border bg-background">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    Live log
+                  </div>
+                  <div className="num text-[11.5px] text-muted-foreground">
+                    {scanJobLogs.length} line{scanJobLogs.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="max-h-[240px] overflow-y-auto px-4 py-3 font-mono text-[11.5px] leading-6 text-foreground">
+                  {scanJobLogs.length ? (
+                    scanJobLogs.map((line, index) => (
+                      <div key={`${line}-${index}`} className="break-words">
+                        {line}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">
+                      Start a scan to see detector progress and exported artifact logs here.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -887,9 +1274,8 @@ export function DashboardShell() {
               <Button
                 variant="outline"
                 onClick={() => setScanSheetOpen(false)}
-                disabled={scanRunning}
               >
-                Cancel
+                {scanRunning ? "Hide panel" : "Close"}
               </Button>
               <Button
                 onClick={() => void handleRunScan()}
@@ -911,5 +1297,16 @@ export function DashboardShell() {
 
       <Toaster position="bottom-right" />
     </div>
+  );
+}
+
+export function DashboardShell() {
+  const hydrated = useHydrated();
+
+  return (
+    <DashboardShellContent
+      key={hydrated ? "dashboard-hydrated" : "dashboard-ssr"}
+      hydrated={hydrated}
+    />
   );
 }

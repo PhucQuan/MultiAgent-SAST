@@ -159,6 +159,102 @@ def test_importer_infers_exact_true_for_call_like_patterns_without_override():
     assert rule["detection"]["sink_patterns"][0]["exact"] is True
 
 
+def test_importer_keeps_pattern_inside_sources_with_focus_metavariable():
+    module = _load_importer_module()
+    document = {
+        "rules": [
+            {
+                "id": "java.spring.tainted-file-path.demo",
+                "message": "Detected user input controlling a file path.",
+                "severity": "ERROR",
+                "mode": "taint",
+                "languages": ["java"],
+                "pattern-sources": [
+                    {
+                        "patterns": [
+                            {
+                                "pattern-either": [
+                                    {
+                                        "pattern-inside": (
+                                            "$METHODNAME(..., @$REQ(...) $TYPE $SOURCE,...) {\n"
+                                            "  ...\n"
+                                            "}"
+                                        )
+                                    }
+                                ]
+                            },
+                            {
+                                "metavariable-regex": {
+                                    "metavariable": "$REQ",
+                                    "regex": "(RequestBody|PathVariable|RequestParam)",
+                                }
+                            },
+                            {"focus-metavariable": "$SOURCE"},
+                        ]
+                    }
+                ],
+                "pattern-sinks": [{"pattern-either": [{"pattern": "new File(...)"}]}],
+                "metadata": {"cwe": ["CWE-23: Relative Path Traversal"]},
+            }
+        ]
+    }
+
+    normalized = module.normalize_semgrep_document(
+        document,
+        language_filter="java",
+        provenance_source="semgrep",
+    )
+
+    assert normalized["rule_count"] == 1
+    rule = normalized["rules"][0]
+    assert rule["family"] == "PATH_TRAVERSAL"
+    assert len(rule["detection"]["source_patterns"]) == 1
+    assert rule["detection"]["source_patterns"][0]["focus_metavariable"] == "$SOURCE"
+    assert "$METHODNAME" in rule["detection"]["source_patterns"][0]["pattern"]
+    assert len(rule["detection"]["sink_patterns"]) == 1
+
+
+def test_importer_propagates_focus_metavariable_inside_nested_sink_group():
+    module = _load_importer_module()
+    document = {
+        "rules": [
+            {
+                "id": "java.spring.file-output.demo",
+                "message": "Detected user input controlling a file path.",
+                "severity": "ERROR",
+                "mode": "taint",
+                "languages": ["java"],
+                "pattern-sources": [{"pattern": "@RequestParam String path"}],
+                "pattern-sinks": [
+                    {
+                        "patterns": [
+                            {
+                                "pattern-either": [
+                                    {"pattern": "new FileOutputStream($FILE, ...)"},
+                                    {"pattern": "ResourceUtils.getFile($FILE, ...)"},
+                                ]
+                            },
+                            {"focus-metavariable": "$FILE"},
+                        ]
+                    }
+                ],
+                "metadata": {"cwe": ["CWE-22"]},
+            }
+        ]
+    }
+
+    normalized = module.normalize_semgrep_document(
+        document,
+        language_filter="java",
+        provenance_source="semgrep",
+    )
+
+    assert normalized["rule_count"] == 1
+    sink_patterns = normalized["rules"][0]["detection"]["sink_patterns"]
+    assert len(sink_patterns) == 2
+    assert {entry["focus_metavariable"] for entry in sink_patterns} == {"$FILE"}
+
+
 def test_cli_writes_normalized_json_document(tmp_path):
     module = _load_importer_module()
     input_path = tmp_path / "semgrep_subset.json"
@@ -202,3 +298,84 @@ def test_cli_writes_normalized_json_document(tmp_path):
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["rule_count"] == 1
     assert payload["rules"][0]["provenance"]["snapshot_version"] == "cli-test"
+
+
+def test_cli_accepts_directory_and_merges_multiple_semgrep_documents(tmp_path):
+    module = _load_importer_module()
+    input_dir = tmp_path / "semgrep_rules"
+    output_path = tmp_path / "normalized_bundle.json"
+    input_dir.mkdir(parents=True)
+
+    (input_dir / "command.json").write_text(
+        json.dumps(
+            {
+                "rules": [
+                    {
+                        "id": "python.command.demo",
+                        "message": "Potential command injection",
+                        "severity": "ERROR",
+                        "mode": "taint",
+                        "languages": ["python"],
+                        "pattern-sources": [{"pattern": "request.args.get(...)"}],
+                        "pattern-sinks": [{"pattern": "subprocess.run(..., shell=True, ...)"}],
+                        "metadata": {"cwe": ["CWE-78"], "owasp": ["A05:2025"]},
+                    }
+                ]
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (input_dir / "sql.json").write_text(
+        json.dumps(
+            {
+                "rules": [
+                    {
+                        "id": "python.sql.demo",
+                        "message": "Potential SQL injection",
+                        "severity": "ERROR",
+                        "mode": "taint",
+                        "languages": ["python"],
+                        "pattern-sources": [{"pattern": "request.form.get(...)"}],
+                        "pattern-sinks": [{"pattern": "cursor.execute(...)"}],
+                        "metadata": {"cwe": ["CWE-89"], "owasp": ["A03:2021"]},
+                    }
+                ]
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (input_dir / "ignore.txt").write_text("not a rule document", encoding="utf-8")
+
+    exit_code = module.main(
+        [
+            str(input_dir),
+            "--output",
+            str(output_path),
+            "--language",
+            "python",
+            "--format",
+            "json",
+            "--snapshot-version",
+            "dir-test",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["rule_count"] == 2
+    assert payload["source_document_count"] == 2
+    assert payload["source_path"] == str(input_dir)
+    assert payload["source_documents"] == [
+        str(input_dir / "command.json"),
+        str(input_dir / "sql.json"),
+    ]
+    assert {rule["rule_id"] for rule in payload["rules"]} == {
+        "python.command.demo",
+        "python.sql.demo",
+    }
+    assert {rule["provenance"]["source_path"] for rule in payload["rules"]} == {
+        str(input_dir / "command.json"),
+        str(input_dir / "sql.json"),
+    }

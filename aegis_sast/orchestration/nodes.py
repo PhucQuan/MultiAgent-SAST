@@ -134,6 +134,17 @@ class SkepticValidatorNode:
             "trusted_hosts",
         ],
     }
+    SQL_DYNAMIC_TOKENS = [' + ', 'f"', "f'", ".format(", '" %', "' %"]
+    SQL_BINDING_TOKENS = [
+        ".setstring(",
+        ".setint(",
+        ".setlong(",
+        ".setobject(",
+        ".setnull(",
+        ".setdate(",
+        ".settimestamp(",
+        ".registeroutparameter(",
+    ]
 
     def review(
         self,
@@ -163,7 +174,11 @@ class SkepticValidatorNode:
             record.finding.vulnerability_type,
             [],
         ):
-            if token.lower() in context_text:
+            if self._is_mitigation_token_present(
+                record.finding.vulnerability_type,
+                token,
+                context_text,
+            ):
                 mitigation_signals.append(
                     f"Context contains mitigation-like token: {token}"
                 )
@@ -206,6 +221,30 @@ class SkepticValidatorNode:
                 "route_id": auditor_review.route_id,
             },
         )
+
+    @classmethod
+    def _is_mitigation_token_present(
+        cls,
+        vulnerability_type: str,
+        token: str,
+        context_text: str,
+    ) -> bool:
+        """Return True when a mitigation token is genuinely convincing."""
+        normalized = token.lower()
+        if normalized not in context_text:
+            return False
+
+        if vulnerability_type != "SQL_INJECTION":
+            return True
+
+        if normalized != "preparedstatement":
+            return True
+
+        has_dynamic_sql = any(item in context_text for item in cls.SQL_DYNAMIC_TOKENS)
+        has_bindings = any(item in context_text for item in cls.SQL_BINDING_TOKENS)
+        has_placeholder = "?" in context_text
+
+        return not has_dynamic_sql and has_bindings and has_placeholder
 
     @staticmethod
     def _collect_context_text(auditor_review: AuditorReview) -> str:

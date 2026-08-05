@@ -92,3 +92,63 @@ def test_triage_engine_suppresses_sanitized_low_confidence_flow():
     assert "sanitizers=1" in record.decision.evidence_notes
     assert "effective-sanitizer" in record.decision.reason_codes
     assert record.decision.manual_review_required is True
+
+
+def test_triage_engine_suppresses_local_operator_subprocess_without_shell_true():
+    """Local argv/env driven subprocess usage should not look like a remote exploit."""
+    source_loc = CodeLocation("tool.py", 5, 1, "cmd = sys.argv[1]")
+    sink_loc = CodeLocation(
+        "tool.py",
+        8,
+        1,
+        "subprocess.run(['python', cmd], shell=False)",
+    )
+    source = TaintSource(source_loc, "COMMAND_LINE_ARGS", "cmd", "sys.argv")
+    sink = TaintSink(
+        sink_loc,
+        VulnerabilityType.COMMAND_INJECTION,
+        "subprocess.run",
+        "subprocess.run(",
+        arguments=["['python', cmd]", "shell=False"],
+    )
+    vuln = Vulnerability(
+        id="VULN-102",
+        vuln_type=VulnerabilityType.COMMAND_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(source=source, sink=sink),
+    )
+
+    record = TriageEngine().triage_vulnerability(vuln)
+
+    assert record.decision.status.value == "suppressed"
+    assert record.decision.confidence <= 0.35
+    assert "local-operator-input-source" in record.decision.reason_codes
+    assert "operator-controlled-source-suppressed" in record.decision.reason_codes
+    assert record.decision.manual_review_required is True
+
+
+def test_triage_engine_suppresses_local_operator_path_traversal_noise():
+    """Operator-controlled file paths should be deprioritized in tooling flows."""
+    source_loc = CodeLocation("tool.py", 3, 1, "log_path = os.environ.get('LOG_PATH')")
+    sink_loc = CodeLocation("tool.py", 6, 1, "with open(log_path) as f:")
+    source = TaintSource(source_loc, "ENVIRONMENT_VAR", "log_path", "os.environ")
+    sink = TaintSink(
+        sink_loc,
+        VulnerabilityType.PATH_TRAVERSAL,
+        "open",
+        "open(",
+        arguments=["log_path"],
+    )
+    vuln = Vulnerability(
+        id="VULN-103",
+        vuln_type=VulnerabilityType.PATH_TRAVERSAL,
+        severity=Severity.HIGH,
+        dataflow=DataFlowPath(source=source, sink=sink),
+    )
+
+    record = TriageEngine().triage_vulnerability(vuln)
+
+    assert record.decision.status.value == "suppressed"
+    assert "local-operator-input-source" in record.decision.reason_codes
+    assert "operator-controlled-source-suppressed" in record.decision.reason_codes
+    assert record.decision.manual_review_required is True

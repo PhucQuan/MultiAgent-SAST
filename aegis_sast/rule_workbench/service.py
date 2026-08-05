@@ -10,6 +10,8 @@ from typing import Any, Iterable
 from .models import (
     RuleWorkbenchBundleRequest,
     RuleWorkbenchBundleResult,
+    RuleWorkbenchDraftRequest,
+    RuleWorkbenchDraftResult,
 )
 from .storage import RuleWorkbenchStorage
 
@@ -69,6 +71,59 @@ WORKBENCH_V1_FAMILIES = {
     "PATH_TRAVERSAL",
     "INSECURE_DESERIALIZATION",
 }
+LANGUAGE_PREFIXES = {
+    "python": "PY",
+    "javascript": "JS",
+    "java": "JAVA",
+    "php": "PHP",
+}
+FAMILY_DEFAULTS = {
+    "COMMAND_INJECTION": {
+        "cwe": ["CWE-78"],
+        "owasp": ["A05:2025"],
+        "severity": "CRITICAL",
+        "knowledge_refs": ["generic-command-injection"],
+        "fp_hints": ["constant-command-string", "argument-array-with-shell-false"],
+        "remediation_notes": ["Prefer subprocess argument arrays and keep shell disabled."],
+    },
+    "PATH_TRAVERSAL": {
+        "cwe": ["CWE-22"],
+        "owasp": ["A01:2025"],
+        "severity": "HIGH",
+        "knowledge_refs": ["generic-path-traversal"],
+        "fp_hints": ["trusted-base-dir-join", "normalized-path-under-root"],
+        "remediation_notes": ["Resolve the path under a trusted base directory and reject escapes."],
+    },
+    "INSECURE_DESERIALIZATION": {
+        "cwe": ["CWE-502"],
+        "owasp": ["A08:2025"],
+        "severity": "CRITICAL",
+        "knowledge_refs": ["generic-insecure-deserialization"],
+        "fp_hints": ["safe-loader-only", "trusted-static-payload"],
+        "remediation_notes": ["Prefer safe loaders or structured formats instead of unsafe object deserialization."],
+    },
+    "SQL_INJECTION": {
+        "cwe": ["CWE-89"],
+        "owasp": ["A05:2025"],
+        "severity": "CRITICAL",
+        "knowledge_refs": ["generic-sql-injection"],
+        "fp_hints": ["parameterized-query", "strict-type-cast-before-query"],
+        "remediation_notes": ["Use parameterized queries and avoid string-built SQL."],
+    },
+    "SSRF": {
+        "cwe": ["CWE-918"],
+        "owasp": ["A01:2025"],
+        "severity": "HIGH",
+        "knowledge_refs": ["generic-ssrf"],
+        "fp_hints": ["allowlist-hosts", "internal-only-fixed-endpoint"],
+        "remediation_notes": ["Restrict outbound destinations and resolve user-controlled URLs against an allowlist."],
+    },
+}
+DRAFT_PATTERN_LIMITS = {
+    "source_patterns": 4,
+    "sink_patterns": 5,
+    "sanitizers": 4,
+}
 CWE_RE = re.compile(r"^CWE-\d+$")
 OWASP_RE = re.compile(r"^A\d{1,2}:\d{4}$")
 LEGACY_FAMILY_TO_CATEGORY = {
@@ -87,6 +142,9 @@ LEGACY_FAMILY_TO_CATEGORY = {
     "OPEN_REDIRECT": "open_redirect",
 }
 LEGACY_CALLABLE_HEAD_RE = re.compile(r"^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\(")
+LEGACY_CONSTRUCTOR_HEAD_RE = re.compile(
+    r"^new\s+([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)(?:<[^>]+>)?\("
+)
 
 
 class RuleWorkbenchService:
@@ -106,6 +164,59 @@ class RuleWorkbenchService:
     def load_normalized_document(self, path: Path) -> dict[str, Any]:
         """Load a normalized rule YAML/JSON document."""
         return self.storage.load_mapping_document(path)
+
+    def merge_normalized_documents(
+        self,
+        documents: Iterable[dict[str, Any]],
+        *,
+        source_paths: Iterable[Path | None] | None = None,
+    ) -> dict[str, Any]:
+        """Merge one or more normalized documents into a deduplicated rule-set document."""
+        normalized_documents = list(documents)
+        if not normalized_documents:
+            raise ValueError("At least one normalized document is required for merging.")
+
+        resolved_source_paths = list(source_paths or [])
+        if resolved_source_paths and len(resolved_source_paths) != len(normalized_documents):
+            raise ValueError("source_paths must match the number of normalized documents.")
+
+        merged_rules: list[dict[str, Any]] = []
+        merged_skipped_rules: list[dict[str, Any]] = []
+        merged_source_documents: list[str] = []
+        seen_rule_keys: set[str] = set()
+        seen_source_documents: set[str] = set()
+
+        for index, document in enumerate(normalized_documents):
+            fallback_path = resolved_source_paths[index] if index < len(resolved_source_paths) else None
+
+            for source_document in _source_documents_for_merge(document, fallback_path=fallback_path):
+                if source_document in seen_source_documents:
+                    continue
+                seen_source_documents.add(source_document)
+                merged_source_documents.append(source_document)
+
+            skipped_rules = document.get("skipped_rules", [])
+            if isinstance(skipped_rules, list):
+                merged_skipped_rules.extend(item for item in skipped_rules if isinstance(item, dict))
+
+            for rule in _extract_rules(document):
+                dedupe_key = _rule_dedupe_key(rule)
+                if dedupe_key in seen_rule_keys:
+                    continue
+                seen_rule_keys.add(dedupe_key)
+                merged_rules.append(rule)
+
+        merged_document = {
+            "schema_version": "aegis-normalized-rule-set-v1",
+            "generated_by": "aegis_sast.rule_workbench.service",
+            "source_path": merged_source_documents[0] if len(merged_source_documents) == 1 else None,
+            "source_document_count": len(merged_source_documents),
+            "source_documents": merged_source_documents,
+            "rule_count": len(merged_rules),
+            "rules": merged_rules,
+            "skipped_rules": merged_skipped_rules,
+        }
+        return merged_document
 
     def normalize_semgrep_document(
         self,
@@ -566,6 +677,264 @@ class RuleWorkbenchService:
             warning_count=validation_report["warning_count"],
         )
 
+    def build_draft_bundle(self, request: RuleWorkbenchDraftRequest) -> RuleWorkbenchDraftResult:
+        """Build one AI-ready draft bundle from a natural-language description and a local seed."""
+        description = (request.description or "").strip()
+        if not description:
+            raise ValueError("A natural-language description is required for draft generation.")
+
+        language = request.language.strip().lower()
+        family = request.family.strip().upper()
+        if language not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported draft language: {request.language}")
+        if family not in SUPPORTED_FAMILIES:
+            raise ValueError(f"Unsupported draft family: {request.family}")
+
+        paths = self.storage.build_draft_paths(
+            seed_input_path=request.seed_input_path,
+            output_dir=request.output_dir,
+            normalized_format=request.normalized_format,
+            validation_format=request.validation_format,
+            legacy_format=request.legacy_format,
+        )
+
+        seed_context = self._load_seed_context(
+            seed_input_path=request.seed_input_path,
+            language=language,
+            family=family,
+            snapshot_version=request.snapshot_version,
+        )
+        self.storage.write_json_report(seed_context, paths.seed_context_path)
+
+        draft_document = self._build_draft_document(
+            request=request,
+            seed_context=seed_context,
+            language=language,
+            family=family,
+        )
+        self.write_normalized_document(
+            draft_document,
+            paths.draft_path,
+            request.normalized_format,
+        )
+
+        draft_prompt = self._build_draft_prompt(
+            request=request,
+            draft_document=draft_document,
+            seed_context=seed_context,
+        )
+        self.storage.write_text_report(draft_prompt, paths.prompt_path)
+
+        validation_report = self.validate_normalized_document(
+            draft_document,
+            profile=request.profile,
+        )
+        self.write_validation_report(
+            validation_report,
+            format_name=request.validation_format,
+            output_path=paths.validation_path,
+        )
+
+        if request.legacy_format and paths.legacy_path and paths.legacy_report_path:
+            legacy_document, legacy_report = self.export_legacy_rules(
+                draft_document,
+                language_filter=language,
+                family_filter=family,
+            )
+            self.write_legacy_document(
+                legacy_document,
+                paths.legacy_path,
+                request.legacy_format,
+            )
+            self.write_report(legacy_report, paths.legacy_report_path)
+
+        return RuleWorkbenchDraftResult(
+            paths=paths,
+            valid=validation_report["valid"],
+            rules_checked=validation_report["rules_checked"],
+            error_count=validation_report["error_count"],
+            warning_count=validation_report["warning_count"],
+        )
+
+    def _load_seed_context(
+        self,
+        *,
+        seed_input_path: Path,
+        language: str,
+        family: str,
+        snapshot_version: str,
+    ) -> dict[str, Any]:
+        """Load one local seed file and reduce it to a draft-friendly context payload."""
+        seed_document = self.storage.load_mapping_document(seed_input_path)
+        schema_version = seed_document.get("schema_version")
+
+        if schema_version in {"aegis-normalized-rule-v1", "aegis-normalized-rule-set-v1"}:
+            normalized_document = seed_document
+            document_kind = "normalized"
+        elif isinstance(seed_document.get("rules"), list):
+            normalized_document = self.normalize_semgrep_document(
+                seed_document,
+                language_filter=language,
+                family_override=family,
+                provenance_source="seed-context",
+                snapshot_version=snapshot_version,
+                source_path=seed_input_path,
+            )
+            document_kind = "semgrep"
+        else:
+            raise ValueError(
+                "Seed input must be either a normalized rule document or a Semgrep-shaped mapping with a top-level 'rules' list."
+            )
+
+        rules = [
+            rule
+            for rule in _extract_rules(normalized_document)
+            if rule.get("language") == language and rule.get("family") == family
+        ]
+        if not rules:
+            raise ValueError(
+                f"Seed input did not provide any normalized rules for language={language} family={family}."
+            )
+
+        return {
+            "seed_source_path": str(seed_input_path),
+            "seed_document_kind": document_kind,
+            "seed_rule_count": len(rules),
+            "seed_rules": [_seed_rule_summary(rule) for rule in rules],
+            "selected_patterns": {
+                "source_patterns": _collect_pattern_entries(
+                    rules,
+                    "source_patterns",
+                    limit=DRAFT_PATTERN_LIMITS["source_patterns"],
+                ),
+                "sink_patterns": _collect_pattern_entries(
+                    rules,
+                    "sink_patterns",
+                    limit=DRAFT_PATTERN_LIMITS["sink_patterns"],
+                ),
+                "sanitizers": _collect_pattern_entries(
+                    rules,
+                    "sanitizers",
+                    limit=DRAFT_PATTERN_LIMITS["sanitizers"],
+                ),
+            },
+            "taxonomy": {
+                "cwe": _merge_taxonomy_values(rules, "cwe", family),
+                "owasp": _merge_taxonomy_values(rules, "owasp", family),
+            },
+            "triage_defaults": {
+                "knowledge_refs": _merge_triage_values(rules, "knowledge_refs", family),
+                "fp_hints": _merge_triage_values(rules, "fp_hints", family),
+                "remediation_notes": _merge_triage_values(rules, "remediation_notes", family),
+            },
+            "severity": _seed_severity(rules, family),
+            "seed_rule_ids": [_safe_rule_id(rule) for rule in rules],
+        }
+
+    def _build_draft_document(
+        self,
+        *,
+        request: RuleWorkbenchDraftRequest,
+        seed_context: dict[str, Any],
+        language: str,
+        family: str,
+    ) -> dict[str, Any]:
+        """Create one normalized draft rule from seed context and user description."""
+        description_hints = _extract_description_hints(request.description)
+        selected_patterns = seed_context["selected_patterns"]
+
+        source_patterns = _merge_pattern_candidates(
+            description_hints.get("source_patterns", []),
+            selected_patterns.get("source_patterns", []),
+            limit=DRAFT_PATTERN_LIMITS["source_patterns"],
+        )
+        sink_patterns = _merge_pattern_candidates(
+            description_hints.get("sink_patterns", []),
+            selected_patterns.get("sink_patterns", []),
+            limit=DRAFT_PATTERN_LIMITS["sink_patterns"],
+        )
+        sanitizer_patterns = _merge_pattern_candidates(
+            description_hints.get("sanitizers", []),
+            selected_patterns.get("sanitizers", []),
+            limit=DRAFT_PATTERN_LIMITS["sanitizers"],
+        )
+
+        if not source_patterns or not sink_patterns:
+            raise ValueError(
+                "The seed context did not provide enough source/sink material to build a reviewable draft."
+            )
+
+        title = request.title or _derive_draft_title(request.description, family)
+        rule_id = request.rule_id or _derive_draft_rule_id(language, family, title)
+
+        notes = [
+            "Draft generated from a natural-language description plus a local reviewed seed snapshot.",
+            f"User description: {request.description.strip()}",
+            f"Seed source: {seed_context['seed_source_path']}",
+        ]
+        if description_hints["notes"]:
+            notes.extend(description_hints["notes"])
+
+        return {
+            "schema_version": "aegis-normalized-rule-v1",
+            "rule_id": rule_id,
+            "title": title,
+            "language": language,
+            "family": family,
+            "severity": seed_context["severity"],
+            "taxonomy": seed_context["taxonomy"],
+            "detection": {
+                "match_mode": "aegis-ai-draft",
+                "source_patterns": source_patterns,
+                "sink_patterns": sink_patterns,
+                "sanitizers": sanitizer_patterns,
+            },
+            "triage": seed_context["triage_defaults"],
+            "provenance": {
+                "source": request.provenance_source,
+                "source_rule_id": _summarize_seed_rule_ids(seed_context["seed_rule_ids"]),
+                "source_path": str(request.seed_input_path),
+                "importer": "aegis_sast.rule_workbench.service",
+                "snapshot_version": request.snapshot_version,
+            },
+            "notes": notes,
+        }
+
+    def _build_draft_prompt(
+        self,
+        *,
+        request: RuleWorkbenchDraftRequest,
+        draft_document: dict[str, Any],
+        seed_context: dict[str, Any],
+    ) -> str:
+        """Render a copy-pasteable AI prompt for refining the starter draft."""
+        seed_patterns = seed_context["selected_patterns"]
+        return (
+            "You are adapting a reviewed Aegis-SAST rule draft.\n\n"
+            "Task:\n"
+            f"- Language: {request.language}\n"
+            f"- Family: {request.family}\n"
+            "- Goal: refine the starter normalized rule below without inventing broad, runtime-unsafe patterns.\n"
+            "- Keep the final output as one JSON object that follows the Aegis normalized rule schema.\n\n"
+            "User description:\n"
+            f"{request.description.strip()}\n\n"
+            "Seed context:\n"
+            f"- Seed path: {seed_context['seed_source_path']}\n"
+            f"- Seed rule ids: {', '.join(seed_context['seed_rule_ids'])}\n"
+            f"- Candidate source patterns: {_format_pattern_list(seed_patterns.get('source_patterns', []))}\n"
+            f"- Candidate sink patterns: {_format_pattern_list(seed_patterns.get('sink_patterns', []))}\n"
+            f"- Candidate sanitizers: {_format_pattern_list(seed_patterns.get('sanitizers', []))}\n\n"
+            "Hard constraints:\n"
+            "- Stay inside the requested language and vulnerability family.\n"
+            "- Keep detection metadata separate from triage guidance.\n"
+            "- Prefer exact callable-head patterns for dangerous sinks.\n"
+            "- Do not widen sources or sinks beyond what the seed and description justify.\n"
+            "- Preserve provenance fields and keep source_path pointing to the local seed snapshot.\n"
+            "- Return only the final JSON object, no markdown fences.\n\n"
+            "Starter draft JSON:\n"
+            f"{json.dumps(draft_document, indent=2, ensure_ascii=False)}\n"
+        )
+
 
 def _select_language(raw_languages: Any, language_filter: str | None) -> str | None:
     """Pick one supported language for the normalized rule."""
@@ -604,15 +973,66 @@ def _normalize_pattern_entries(raw_entries: Any, *, entry_kind: str) -> tuple[li
     normalized_entries: list[dict[str, Any]] = []
     notes: list[str] = []
 
-    def visit(item: Any) -> None:
+    def append_entry(
+        pattern: str,
+        *,
+        pattern_mode: str,
+        exact: bool,
+        by_side_effect: bool,
+        focus_metavariable: str | None,
+    ) -> None:
+        normalized_entries.append(
+            {
+                "pattern": pattern,
+                "pattern_mode": pattern_mode,
+                "exact": exact,
+                "by_side_effect": by_side_effect,
+                "focus_metavariable": focus_metavariable,
+            }
+        )
+
+    def extract_focus_metavariable(item: Any) -> str | None:
+        if not isinstance(item, dict):
+            return None
+        focus_value = item.get("focus-metavariable")
+        if isinstance(focus_value, str) and focus_value.strip():
+            return focus_value.strip()
+        return None
+
+    def is_modifier_only_entry(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        keys = set(item.keys())
+        return keys.issubset(
+            {
+                "focus-metavariable",
+                "metavariable-regex",
+                "metavariable-pattern",
+                "metavariable-comparison",
+                "pattern-not",
+                "pattern-not-regex",
+                "pattern-not-inside",
+                "pattern-where-python",
+                "pattern-where-java",
+            }
+        )
+
+    def resolve_nested_focus(nested_values: list[Any], fallback: str | None) -> str | None:
+        focus_metavariable = fallback
+        for child in nested_values:
+            child_focus = extract_focus_metavariable(child)
+            if child_focus:
+                focus_metavariable = child_focus
+        return focus_metavariable
+
+    def visit(item: Any, *, inherited_focus: str | None = None) -> None:
         if isinstance(item, str):
-            normalized_entries.append(
-                {
-                    "pattern": item,
-                    "pattern_mode": "literal",
-                    "exact": False,
-                    "by_side_effect": False,
-                }
+            append_entry(
+                item,
+                pattern_mode="literal",
+                exact=False,
+                by_side_effect=False,
+                focus_metavariable=inherited_focus,
             )
             return
 
@@ -620,44 +1040,63 @@ def _normalize_pattern_entries(raw_entries: Any, *, entry_kind: str) -> tuple[li
             notes.append(f"Skipped {entry_kind} entry with unsupported type: {type(item).__name__}")
             return
 
+        focus_metavariable = extract_focus_metavariable(item) or inherited_focus
+        has_reviewable_pattern = False
+
         direct_pattern = item.get("pattern")
         if isinstance(direct_pattern, str):
-            normalized_entries.append(
-                {
-                    "pattern": direct_pattern,
-                    "pattern_mode": "pattern",
-                    "exact": _infer_default_exact_flag(direct_pattern, item),
-                    "by_side_effect": bool(item.get("by-side-effect", False)),
-                    "focus_metavariable": item.get("focus-metavariable"),
-                }
+            append_entry(
+                direct_pattern,
+                pattern_mode="pattern",
+                exact=_infer_default_exact_flag(direct_pattern, item),
+                by_side_effect=bool(item.get("by-side-effect", False)),
+                focus_metavariable=focus_metavariable,
             )
+            has_reviewable_pattern = True
+
+        direct_pattern_inside = item.get("pattern-inside")
+        if isinstance(direct_pattern_inside, str):
+            append_entry(
+                direct_pattern_inside,
+                pattern_mode="pattern",
+                exact=False,
+                by_side_effect=bool(item.get("by-side-effect", False)),
+                focus_metavariable=focus_metavariable,
+            )
+            has_reviewable_pattern = True
 
         direct_regex = item.get("pattern-regex")
         if isinstance(direct_regex, str):
-            normalized_entries.append(
-                {
-                    "pattern": direct_regex,
-                    "pattern_mode": "pattern-regex",
-                    "exact": bool(item.get("exact", False)),
-                    "by_side_effect": bool(item.get("by-side-effect", False)),
-                    "focus_metavariable": item.get("focus-metavariable"),
-                }
+            append_entry(
+                direct_regex,
+                pattern_mode="pattern-regex",
+                exact=bool(item.get("exact", False)),
+                by_side_effect=bool(item.get("by-side-effect", False)),
+                focus_metavariable=focus_metavariable,
             )
+            has_reviewable_pattern = True
 
+        has_nested_groups = False
         for nested_key in ("pattern-either", "patterns"):
             nested = item.get(nested_key)
             if nested is None:
                 continue
+            has_nested_groups = True
             if not isinstance(nested, list):
                 notes.append(f"Skipped {entry_kind} nested group '{nested_key}' because it is not a list")
                 continue
+            nested_focus = resolve_nested_focus(nested, focus_metavariable)
             for child in nested:
-                visit(child)
+                if is_modifier_only_entry(child):
+                    continue
+                visit(child, inherited_focus=nested_focus)
 
         if (
-            not isinstance(direct_pattern, str)
+            not has_reviewable_pattern
             and not isinstance(direct_regex, str)
-            and not any(key in item for key in ("pattern-either", "patterns"))
+            and not isinstance(direct_pattern_inside, str)
+            and not has_nested_groups
+            and not is_modifier_only_entry(item)
         ):
             keys = ", ".join(sorted(item.keys())) or "<none>"
             notes.append(f"Skipped {entry_kind} entry without reviewable pattern fields: {keys}")
@@ -1317,6 +1756,41 @@ def _extract_rules(document: dict[str, Any]) -> list[dict[str, Any]]:
     )
 
 
+def _source_documents_for_merge(
+    document: dict[str, Any],
+    *,
+    fallback_path: Path | None = None,
+) -> list[str]:
+    """Collect stable provenance paths for a normalized document merge."""
+    raw_source_documents = document.get("source_documents")
+    candidates: list[str] = []
+
+    if isinstance(raw_source_documents, list):
+        candidates.extend(
+            item.strip()
+            for item in raw_source_documents
+            if isinstance(item, str) and item.strip()
+        )
+    elif isinstance(document.get("source_path"), str) and str(document["source_path"]).strip():
+        candidates.append(str(document["source_path"]).strip())
+    elif fallback_path is not None:
+        candidates.append(str(fallback_path))
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def _rule_dedupe_key(rule: dict[str, Any]) -> str:
+    """Return a stable deep-identity key for one normalized rule."""
+    return json.dumps(rule, sort_keys=True, ensure_ascii=False)
+
+
 def _convert_pattern_entry(
     entry: Any,
     *,
@@ -1368,6 +1842,10 @@ def _normalize_pattern_for_legacy(pattern: str) -> str | None:
     if "$" in pattern:
         return None
 
+    constructor_match = LEGACY_CONSTRUCTOR_HEAD_RE.match(pattern)
+    if constructor_match:
+        return f"new {constructor_match.group(1)}("
+
     match = LEGACY_CALLABLE_HEAD_RE.match(pattern)
     if match:
         return f"{match.group(1)}("
@@ -1396,6 +1874,282 @@ def _infer_legacy_source_type(pattern: str) -> str:
     return "UNTRUSTED_INPUT"
 
 
+def _seed_rule_summary(rule: dict[str, Any]) -> dict[str, Any]:
+    """Return a compact, serializable summary for one normalized seed rule."""
+    detection = rule.get("detection", {})
+    taxonomy = rule.get("taxonomy", {})
+    triage = rule.get("triage", {})
+    return {
+        "rule_id": _safe_rule_id(rule),
+        "title": rule.get("title", ""),
+        "language": rule.get("language"),
+        "family": rule.get("family"),
+        "severity": rule.get("severity"),
+        "taxonomy": {
+            "cwe": _normalize_string_list(taxonomy.get("cwe")),
+            "owasp": _normalize_string_list(taxonomy.get("owasp")),
+        },
+        "detection": {
+            "match_mode": detection.get("match_mode"),
+            "source_patterns": detection.get("source_patterns", []),
+            "sink_patterns": detection.get("sink_patterns", []),
+            "sanitizers": detection.get("sanitizers", []),
+        },
+        "triage": {
+            "knowledge_refs": _normalize_string_list(triage.get("knowledge_refs")),
+            "fp_hints": _normalize_string_list(triage.get("fp_hints")),
+            "remediation_notes": _normalize_string_list(triage.get("remediation_notes")),
+        },
+    }
+
+
+def _collect_pattern_entries(
+    rules: list[dict[str, Any]],
+    field_name: str,
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Merge pattern entries from multiple normalized rules while preserving order."""
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for rule in rules:
+        detection = rule.get("detection", {})
+        raw_entries = detection.get(field_name, [])
+        if not isinstance(raw_entries, list):
+            continue
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            identity = (
+                entry.get("pattern"),
+                entry.get("pattern_mode"),
+                entry.get("exact"),
+                entry.get("by_side_effect"),
+                entry.get("focus_metavariable"),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            entries.append(dict(entry))
+            if len(entries) >= limit:
+                return entries
+    return entries
+
+
+def _merge_taxonomy_values(
+    rules: list[dict[str, Any]],
+    key: str,
+    family: str,
+) -> list[str]:
+    """Merge taxonomy values from normalized rules with family-based fallback."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for rule in rules:
+        taxonomy = rule.get("taxonomy", {})
+        values = taxonomy.get(key, []) if isinstance(taxonomy, dict) else []
+        for value in _normalize_string_list(values):
+            if value in seen:
+                continue
+            seen.add(value)
+            merged.append(value)
+
+    if not merged:
+        for value in FAMILY_DEFAULTS.get(family, {}).get(key, []):
+            if value in seen:
+                continue
+            seen.add(value)
+            merged.append(value)
+    return merged
+
+
+def _merge_triage_values(
+    rules: list[dict[str, Any]],
+    key: str,
+    family: str,
+) -> list[str]:
+    """Merge triage guidance from normalized seed rules with family defaults."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for rule in rules:
+        triage = rule.get("triage", {})
+        values = triage.get(key, []) if isinstance(triage, dict) else []
+        for value in _normalize_string_list(values):
+            if value in seen:
+                continue
+            seen.add(value)
+            merged.append(value)
+
+    if not merged:
+        for value in FAMILY_DEFAULTS.get(family, {}).get(key, []):
+            if value in seen:
+                continue
+            seen.add(value)
+            merged.append(value)
+    return merged
+
+
+def _seed_severity(rules: list[dict[str, Any]], family: str) -> str:
+    """Pick the strongest severity present in seed rules or a family fallback."""
+    ranking = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
+    best = FAMILY_DEFAULTS.get(family, {}).get("severity", "HIGH")
+    best_score = ranking.get(best, 0)
+    for rule in rules:
+        severity = str(rule.get("severity", "")).upper()
+        score = ranking.get(severity, -1)
+        if score > best_score:
+            best = severity
+            best_score = score
+    return best
+
+
+def _extract_description_hints(description: str) -> dict[str, Any]:
+    """Parse lightweight source/sink/sanitizer hints from a natural-language description."""
+    hints = {
+        "source_patterns": [],
+        "sink_patterns": [],
+        "sanitizers": [],
+        "notes": [],
+    }
+
+    label_map = {
+        "source": "source_patterns",
+        "sources": "source_patterns",
+        "sink": "sink_patterns",
+        "sinks": "sink_patterns",
+        "sanitizer": "sanitizers",
+        "sanitizers": "sanitizers",
+    }
+
+    for raw_line in description.splitlines():
+        line = raw_line.strip()
+        if ":" not in line:
+            continue
+        label, raw_values = line.split(":", 1)
+        normalized_label = label.strip().lower()
+        if normalized_label not in label_map:
+            continue
+        bucket = label_map[normalized_label]
+        for token in re.split(r"[,\n;]+", raw_values):
+            pattern_entry = _pattern_entry_from_hint(token.strip())
+            if pattern_entry is not None:
+                hints[bucket].append(pattern_entry)
+        if hints[bucket]:
+            hints["notes"].append(
+                f"Used explicit {normalized_label} hints from the natural-language description."
+            )
+
+    return hints
+
+
+def _pattern_entry_from_hint(raw_value: str) -> dict[str, Any] | None:
+    """Convert one human-written API hint into a normalized pattern entry."""
+    value = raw_value.strip()
+    if not value:
+        return None
+
+    value = value.rstrip(".")
+    if value.endswith("()"):
+        callable_head = value[:-2].strip()
+        if callable_head:
+            return {
+                "pattern": f"{callable_head}(...)",
+                "pattern_mode": "pattern",
+                "exact": True,
+                "by_side_effect": False,
+            }
+
+    if value.endswith("("):
+        callable_head = value[:-1].strip()
+        if callable_head:
+            return {
+                "pattern": f"{callable_head}(...)",
+                "pattern_mode": "pattern",
+                "exact": True,
+                "by_side_effect": False,
+            }
+
+    if CALLABLE_HEAD_RE.match(f"{value}("):
+        return {
+            "pattern": f"{value}(...)",
+            "pattern_mode": "pattern",
+            "exact": True,
+            "by_side_effect": False,
+        }
+
+    return {
+        "pattern": value,
+        "pattern_mode": "literal",
+        "exact": False,
+        "by_side_effect": False,
+    }
+
+
+def _merge_pattern_candidates(
+    preferred: list[dict[str, Any]],
+    fallback: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Merge explicit hint patterns ahead of seed-derived fallback patterns."""
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for entry in [*preferred, *fallback]:
+        if not isinstance(entry, dict):
+            continue
+        identity = (
+            entry.get("pattern"),
+            entry.get("pattern_mode"),
+            entry.get("exact"),
+            entry.get("by_side_effect"),
+            entry.get("focus_metavariable"),
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        merged.append(dict(entry))
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _derive_draft_title(description: str, family: str) -> str:
+    """Build a human-readable title for one AI draft rule."""
+    first_line = next((line.strip() for line in description.splitlines() if line.strip()), "")
+    first_line = re.sub(r"\s+", " ", first_line)
+    first_line = re.split(r"\b(?:Sources?|Sinks?|Sanitizers?)\s*:", first_line, maxsplit=1)[0].strip()
+    if not first_line:
+        return f"Draft {family.replace('_', ' ').title()} rule"
+    if len(first_line) > 72:
+        first_line = first_line[:69].rstrip() + "..."
+    return first_line
+
+
+def _derive_draft_rule_id(language: str, family: str, title: str) -> str:
+    """Build a stable draft rule id from language, family, and title."""
+    language_prefix = LANGUAGE_PREFIXES.get(language, language.upper())
+    family_slug = family.replace("_", "-")
+    title_slug = re.sub(r"[^A-Za-z0-9]+", "-", title.upper()).strip("-")
+    title_slug = re.sub(r"-{2,}", "-", title_slug)
+    compact = title_slug[:32].strip("-") or "DRAFT"
+    return f"{language_prefix}-{family_slug}-{compact}-DRAFT"
+
+
+def _summarize_seed_rule_ids(seed_rule_ids: list[str]) -> str:
+    """Collapse multiple seed rule ids into one provenance-friendly string."""
+    cleaned = [item for item in seed_rule_ids if item]
+    if not cleaned:
+        return "seed:<missing>"
+    if len(cleaned) == 1:
+        return cleaned[0]
+    return f"{cleaned[0]} (+{len(cleaned) - 1} more)"
+
+
+def _format_pattern_list(entries: list[dict[str, Any]]) -> str:
+    """Render normalized pattern entries for prompt text."""
+    patterns = [entry.get("pattern", "<missing-pattern>") for entry in entries if isinstance(entry, dict)]
+    return ", ".join(patterns) if patterns else "none"
+
+
 _DEFAULT_SERVICE = RuleWorkbenchService()
 
 
@@ -1407,6 +2161,18 @@ def load_semgrep_document(path: Path) -> dict[str, Any]:
 def load_normalized_document(path: Path) -> dict[str, Any]:
     """Load a normalized rule document through the default service."""
     return _DEFAULT_SERVICE.load_normalized_document(path)
+
+
+def merge_normalized_documents(
+    documents: Iterable[dict[str, Any]],
+    *,
+    source_paths: Iterable[Path | None] | None = None,
+) -> dict[str, Any]:
+    """Merge normalized documents through the default service."""
+    return _DEFAULT_SERVICE.merge_normalized_documents(
+        documents,
+        source_paths=source_paths,
+    )
 
 
 def load_rule_document(path: Path) -> dict[str, Any]:
@@ -1534,3 +2300,38 @@ def build_review_bundle(
         legacy_format=legacy_format,
     )
     return _DEFAULT_SERVICE.build_review_bundle(request).to_mapping()
+
+
+def build_draft_bundle(
+    *,
+    description: str,
+    seed_input_path: Path,
+    output_dir: Path,
+    language: str,
+    family: str,
+    profile: str = "generic",
+    normalized_format: str = "json",
+    validation_format: str = "json",
+    provenance_source: str = "ai-adapted",
+    snapshot_version: str = "draft-v1",
+    legacy_format: str | None = None,
+    rule_id: str | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Build one natural-language draft bundle through the default service."""
+    request = RuleWorkbenchDraftRequest(
+        description=description,
+        seed_input_path=seed_input_path,
+        output_dir=output_dir,
+        language=language,
+        family=family,
+        profile=profile,
+        normalized_format=normalized_format,
+        validation_format=validation_format,
+        provenance_source=provenance_source,
+        snapshot_version=snapshot_version,
+        legacy_format=legacy_format,
+        rule_id=rule_id,
+        title=title,
+    )
+    return _DEFAULT_SERVICE.build_draft_bundle(request).to_mapping()

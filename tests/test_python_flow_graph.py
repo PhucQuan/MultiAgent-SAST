@@ -111,6 +111,92 @@ def test_python_dataflow_clears_taint_on_safe_reassignment(tmp_path):
     assert paths == []
 
 
+def test_python_dataflow_preserves_container_taint_across_other_key_writes(tmp_path):
+    """Writing a safe sibling key should not erase taint already stored in a dict."""
+    target = Path(tmp_path) / "service.py"
+    target.write_text(
+        "\n".join(
+            [
+                "def handler():",
+                "    param = request.args.get('cmd')",
+                "    payload = {}",
+                "    payload['safe'] = 'ok'",
+                "    payload['cmd'] = param",
+                "    payload['other'] = 'still safe'",
+                "    cmd = payload['cmd']",
+                "    os.system(cmd)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    graph = PythonFlowGraphBuilder(
+        target,
+        target.read_text(encoding="utf-8"),
+    ).build()
+    analyzer = PythonDataflowAnalyzer(graph)
+
+    source = TaintSource(
+        CodeLocation(str(target), 2, 4, "param = request.args.get('cmd')"),
+        "HTTP_PARAM",
+        "param",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 8, 4, "os.system(cmd)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+        arguments=["cmd"],
+    )
+
+    paths = analyzer.trace_paths(source, [sink], [])
+    assert len(paths) == 1
+
+
+def test_python_dataflow_taints_accessor_call_from_tainted_receiver(tmp_path):
+    """Accessor-style call assignments should inherit taint from a tainted receiver."""
+    target = Path(tmp_path) / "service.py"
+    target.write_text(
+        "\n".join(
+            [
+                "import configparser",
+                "def handler():",
+                "    param = request.args.get('cmd')",
+                "    conf = configparser.ConfigParser()",
+                "    conf.add_section('demo')",
+                "    conf.set('demo', 'cmd', param)",
+                "    cmd = conf.get('demo', 'cmd')",
+                "    os.system(cmd)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    graph = PythonFlowGraphBuilder(
+        target,
+        target.read_text(encoding="utf-8"),
+    ).build()
+    analyzer = PythonDataflowAnalyzer(graph)
+
+    source = TaintSource(
+        CodeLocation(str(target), 3, 4, "param = request.args.get('cmd')"),
+        "HTTP_PARAM",
+        "param",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 8, 4, "os.system(cmd)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+        arguments=["cmd"],
+    )
+
+    paths = analyzer.trace_paths(source, [sink], [])
+    assert len(paths) == 1
+
+
 def test_python_dataflow_ignores_subprocess_env_keyword_for_command_injection(tmp_path):
     """Taint flowing only into env= should not count as command injection."""
     target = Path(tmp_path) / "service.py"
@@ -530,6 +616,53 @@ def test_python_plugin_cfg_stops_unreachable_sink_after_return(tmp_path):
 
     paths = plugin.track_dataflow(tree, target, source, [sink], [])
     assert paths == []
+
+
+def test_python_dataflow_propagates_taint_across_match_case_assignment(tmp_path):
+    """Python match/case branches should preserve taint into later sinks."""
+    target = Path(tmp_path) / "service.py"
+    target.write_text(
+        "\n".join(
+            [
+                "def handler():",
+                "    param = request.headers.get('file')",
+                "    guess = 'A'",
+                "    match guess:",
+                "        case 'A':",
+                "            bar = param",
+                "        case 'B':",
+                "            bar = 'safe.txt'",
+                "        case _:",
+                "            bar = 'fallback.txt'",
+                "    open(bar, 'rb')",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    graph = PythonFlowGraphBuilder(
+        target,
+        target.read_text(encoding="utf-8"),
+    ).build()
+    analyzer = PythonDataflowAnalyzer(graph)
+
+    source = TaintSource(
+        CodeLocation(str(target), 2, 4, "param = request.headers.get('file')"),
+        "HTTP_HEADER",
+        "param",
+        "request.headers.get",
+    )
+    sink = TaintSink(
+        CodeLocation(str(target), 11, 4, "open(bar, 'rb')"),
+        VulnerabilityType.PATH_TRAVERSAL,
+        "open",
+        "open(",
+        arguments=["bar", "'rb'"],
+    )
+
+    paths = analyzer.trace_paths(source, [sink], [])
+
+    assert len(paths) == 1
 
 
 def test_python_plugin_attaches_graph_metadata_to_dataflow(tmp_path):

@@ -70,6 +70,47 @@ def test_build_bundle_from_payload_returns_relative_artifacts(tmp_path):
     assert preview["truncated"] is False
 
 
+def test_build_draft_from_payload_returns_relative_artifacts(tmp_path):
+    workspace_root = tmp_path
+    seed_path = (
+        workspace_root
+        / "datasets"
+        / "synthetic"
+        / "rule_review_v1"
+        / "seed_inputs"
+        / "command_seed.json"
+    )
+    _write_seed_document(seed_path)
+
+    app = RuleWorkbenchWebApp(workspace_root=workspace_root)
+    result = app.build_draft_from_payload(
+        {
+            "description": "\n".join(
+                [
+                    "Python command injection for subprocess helpers.",
+                    "Sources: input(), request.args.get()",
+                    "Sinks: os.system(), subprocess.run()",
+                ]
+            ),
+            "seed_input_path": "datasets/synthetic/rule_review_v1/seed_inputs/command_seed.json",
+            "output_dir": "reports/rule_review/command_seed_draft",
+            "language": "python",
+            "family": "COMMAND_INJECTION",
+            "profile": "python-rule-workbench-v1",
+        }
+    )
+
+    assert result["seed_input_path"] == "datasets/synthetic/rule_review_v1/seed_inputs/command_seed.json"
+    assert result["output_dir"] == "reports/rule_review/command_seed_draft"
+    assert result["draft"]["valid"] is True
+    assert result["draft"]["artifacts"]["draft"].endswith(".normalized.json")
+    assert result["draft"]["artifacts"]["prompt"].endswith(".prompt.txt")
+
+    preview = app.read_artifact(result["draft"]["artifacts"]["draft"])
+    assert "\"match_mode\": \"aegis-ai-draft\"" in preview["content"]
+    assert preview["truncated"] is False
+
+
 def test_list_seed_inputs_reads_supported_fixture_files(tmp_path):
     workspace_root = tmp_path
     json_seed = (

@@ -154,3 +154,86 @@ def test_nodes_promote_strong_unmitigated_sqli_to_likely():
         assert final_record.decision.confidence >= 0.72
         assert judge_review.metadata["promotion_applied"] is True
         assert "dynamic-sql-construction" in judge_review.metadata["risk_signals"]
+
+
+def test_nodes_keep_dynamic_prepared_statement_sqli_visible():
+    """PreparedStatement should not suppress SQLi when the SQL string is still built dynamically."""
+    with TemporaryDirectory() as tmp_dir:
+        target = Path(tmp_dir) / "BenchmarkTest00024.java"
+        target.write_text(
+            "\n".join(
+                [
+                    "import java.sql.*;",
+                    "class BenchmarkTest00024 {",
+                    "  void run(HttpServletRequest request, Connection connection) throws Exception {",
+                    '    String param = request.getParameter("id");',
+                    '    String sql = "SELECT * from USERS where USERNAME=? and PASSWORD=\'" + param + "\'";',
+                    "    PreparedStatement statement = connection.prepareStatement(",
+                    "        sql,",
+                    "        java.sql.ResultSet.TYPE_FORWARD_ONLY,",
+                    "        java.sql.ResultSet.CONCUR_READ_ONLY,",
+                    "        java.sql.ResultSet.CLOSE_CURSORS_AT_COMMIT);",
+                    '    statement.setString(1, "foo");',
+                    "    statement.execute();",
+                    "  }",
+                    "}",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        vuln = Vulnerability(
+            id="VULN-402",
+            vuln_type=VulnerabilityType.SQL_INJECTION,
+            severity=Severity.CRITICAL,
+            dataflow=DataFlowPath(
+                source=TaintSource(
+                    CodeLocation(str(target), 4, 1, 'String param = request.getParameter("id");'),
+                    "HTTP_PARAM",
+                    "param",
+                    "getParameter(",
+                ),
+                sink=TaintSink(
+                    CodeLocation(str(target), 6, 1, "PreparedStatement statement = connection.prepareStatement("),
+                    VulnerabilityType.SQL_INJECTION,
+                    "prepareStatement",
+                    "prepareStatement(",
+                    arguments=[
+                        "sql",
+                        "java.sql.ResultSet.TYPE_FORWARD_ONLY",
+                        "java.sql.ResultSet.CONCUR_READ_ONLY",
+                        "java.sql.ResultSet.CLOSE_CURSORS_AT_COMMIT",
+                    ],
+                ),
+                intermediate_steps=[
+                    CodeLocation(
+                        str(target),
+                        5,
+                        1,
+                        'String sql = "SELECT * from USERS where USERNAME=? and PASSWORD=\'" + param + "\'";',
+                    )
+                ],
+            ),
+        )
+
+        engine = TriageEngine()
+        record = engine.triage_vulnerability(vuln)
+        cards = KnowledgeLoader().filter_cards(
+            engine.cards,
+            language="java",
+            finding_type="SQL_INJECTION",
+        )
+        repo_profile = RepoIntake().analyze_target(target)
+
+        auditor_review = AuditorNode().review(record, cards, repo_profile)
+        skeptic_review = SkepticValidatorNode().review(record, cards, auditor_review)
+        final_record, judge_review = JudgeNode().finalize(
+            record,
+            auditor_review,
+            skeptic_review,
+        )
+
+        assert skeptic_review.executed is True
+        assert not skeptic_review.mitigation_signals
+        assert final_record.decision.status.value == "likely"
+        assert judge_review.final_status.value == "likely"

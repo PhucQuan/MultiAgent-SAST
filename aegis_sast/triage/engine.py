@@ -16,6 +16,8 @@ from aegis_sast.triage.schema import TriageDecision, TriageRecord
 class TriageEngine:
     """Applies deterministic and knowledge-assisted triage to findings."""
 
+    LOCAL_OPERATOR_SOURCE_TYPES = {"COMMAND_LINE_ARGS", "ENVIRONMENT_VAR"}
+
     def __init__(
         self,
         knowledge_loader: Optional[KnowledgeLoader] = None,
@@ -143,6 +145,27 @@ class TriageEngine:
                 )
                 reason_codes.append("sanitized-path-suppressed")
 
+        elif self._is_local_operator_source(finding):
+            notes.append("local_operator_input=true")
+            reason_codes.append("local-operator-input-source")
+            if self._should_suppress_local_operator_finding(finding):
+                status = TriageStatus.SUPPRESSED
+                confidence = min(confidence, 0.35)
+                explanation = (
+                    "The path starts from local operator-controlled input such as "
+                    "argv or environment variables, so it is lower priority than a "
+                    "remote attacker-controlled flow."
+                )
+                reason_codes.append("operator-controlled-source-suppressed")
+            elif status == TriageStatus.NEEDS_REVIEW:
+                confidence = min(max(confidence, 0.45), 0.55)
+                explanation = (
+                    "The sink is reached from local operator-controlled input rather "
+                    "than a remote request source, so manual review is still needed "
+                    "before treating it as exploitable."
+                )
+                reason_codes.append("operator-controlled-source-needs-review")
+
         elif status == TriageStatus.NEEDS_REVIEW:
             if evidence_summary.get("intermediate_step_count", 0) > 0:
                 status = TriageStatus.LIKELY
@@ -202,6 +225,28 @@ class TriageEngine:
             if card.remediation_notes:
                 return card.remediation_notes[0]
         return None
+
+    @classmethod
+    def _is_local_operator_source(cls, finding: NormalizedFinding) -> bool:
+        """Return True when the source is local operator input rather than a request."""
+        return finding.detection_metadata.get("source_type") in cls.LOCAL_OPERATOR_SOURCE_TYPES
+
+    @staticmethod
+    def _should_suppress_local_operator_finding(finding: NormalizedFinding) -> bool:
+        """Suppress noisy local-input findings that are common in tooling code."""
+        if finding.vulnerability_type in {"PATH_TRAVERSAL", "MASS_ASSIGNMENT"}:
+            return True
+
+        if finding.vulnerability_type != "COMMAND_INJECTION":
+            return False
+
+        sink_function = str(finding.detection_metadata.get("sink_function") or "")
+        sink_arguments = finding.detection_metadata.get("sink_arguments", [])
+        normalized_arguments = {
+            str(argument).replace(" ", "").lower() for argument in sink_arguments
+        }
+
+        return sink_function.startswith("subprocess.") and "shell=true" not in normalized_arguments
 
     @staticmethod
     def _dedupe_reason_codes(reason_codes: List[str]) -> List[str]:

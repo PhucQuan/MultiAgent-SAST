@@ -9,10 +9,26 @@ from pathlib import Path
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_semgrep_baseline.py"
+OWASP_PYTHON_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "run_semgrep_owasp_python.py"
+)
 
 
 def _load_module():
     spec = importlib.util.spec_from_file_location("run_semgrep_baseline", SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_owasp_python_module():
+    spec = importlib.util.spec_from_file_location(
+        "run_semgrep_owasp_python",
+        OWASP_PYTHON_SCRIPT_PATH,
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -259,3 +275,184 @@ def test_render_markdown_contains_aggregate_and_case_rows(tmp_path):
     assert "`python-path-traversal`" in content
     assert "Keep path-based sink coverage visible." in content
     assert "Top checks" in content
+
+
+def test_owasp_python_runner_resolves_curated_rule_configs():
+    module = _load_owasp_python_module()
+    profile = module.resolve_profile("benchmark-python")
+
+    resolved = module.resolve_rule_configs(
+        ["COMMAND_INJECTION", "PATH_TRAVERSAL", "INSECURE_DESERIALIZATION", "SQL_INJECTION"],
+        ruleset_map=profile["rulesets"],
+    )
+
+    assert set(resolved) == {
+        "COMMAND_INJECTION",
+        "PATH_TRAVERSAL",
+        "INSECURE_DESERIALIZATION",
+        "SQL_INJECTION",
+    }
+    assert len(resolved["COMMAND_INJECTION"]) >= 4
+    assert len(resolved["PATH_TRAVERSAL"]) >= 3
+    assert len(resolved["INSECURE_DESERIALIZATION"]) >= 3
+    assert len(resolved["SQL_INJECTION"]) >= 4
+    assert all(path.exists() for paths in resolved.values() for path in paths)
+
+
+def test_owasp_python_runner_supports_code_injection_and_open_redirect():
+    module = _load_owasp_python_module()
+    profile = module.resolve_profile("benchmark-python")
+
+    resolved = module.resolve_rule_configs(
+        ["CODE_INJECTION", "OPEN_REDIRECT"],
+        ruleset_map=profile["rulesets"],
+    )
+
+    assert set(resolved) == {"CODE_INJECTION", "OPEN_REDIRECT"}
+    assert len(resolved["CODE_INJECTION"]) >= 6
+    assert len(resolved["OPEN_REDIRECT"]) >= 2
+    assert all(path.exists() for paths in resolved.values() for path in paths)
+
+
+def test_owasp_java_runner_resolves_curated_rule_configs():
+    module = _load_owasp_python_module()
+    profile = module.resolve_profile("benchmark-java")
+
+    resolved = module.resolve_rule_configs(
+        ["COMMAND_INJECTION", "PATH_TRAVERSAL", "INSECURE_DESERIALIZATION", "SQL_INJECTION"],
+        ruleset_map=profile["rulesets"],
+    )
+
+    assert set(resolved) == {
+        "COMMAND_INJECTION",
+        "PATH_TRAVERSAL",
+        "INSECURE_DESERIALIZATION",
+        "SQL_INJECTION",
+    }
+    assert len(resolved["COMMAND_INJECTION"]) >= 2
+    assert len(resolved["PATH_TRAVERSAL"]) >= 2
+    assert len(resolved["INSECURE_DESERIALIZATION"]) >= 4
+    assert len(resolved["SQL_INJECTION"]) >= 6
+    assert all(path.exists() for paths in resolved.values() for path in paths)
+
+
+def test_owasp_runner_converts_semgrep_result_to_aegis_finding():
+    module = _load_owasp_python_module()
+    result = {
+        "check_id": "python.flask.security.injection.subprocess-injection",
+        "path": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+        "start": {"line": 20, "col": 5},
+        "extra": {
+            "message": "Potential command injection",
+            "severity": "ERROR",
+            "fingerprint": "abc123",
+            "lines": "subprocess.run(cmd, shell=True)",
+            "metadata": {
+                "cwe": ["CWE-78"],
+                "owasp": ["A03:2021"],
+                "references": ["https://semgrep.dev/r/example"],
+                "fix": "Use an allowlist of safe commands.",
+                "confidence": "HIGH",
+            },
+            "dataflow_trace": {
+                "taint_source": [
+                    "CliLoc",
+                    [
+                        {
+                            "path": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+                            "start": {"line": 10, "col": 12},
+                        },
+                        "request.args.get('cmd')",
+                    ],
+                ],
+                "intermediate_vars": [
+                    {
+                        "location": {
+                            "path": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+                            "start": {"line": 15, "col": 5},
+                        },
+                        "content": "cmd",
+                    }
+                ],
+                "taint_sink": [
+                    "CliLoc",
+                    [
+                        {
+                            "path": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+                            "start": {"line": 20, "col": 5},
+                        },
+                        "subprocess.run(cmd, shell=True)",
+                    ],
+                ],
+            },
+        },
+    }
+
+    finding = module.semgrep_result_to_finding(
+        result,
+        language="python",
+        family="COMMAND_INJECTION",
+        finding_id="SEMGREP-00001",
+        detected_at="2026-08-05T15:30:00",
+    )
+
+    assert finding["id"] == "SEMGREP-00001"
+    assert finding["tool"] == "semgrep-community"
+    assert finding["language"] == "python"
+    assert finding["type"] == "COMMAND_INJECTION"
+    assert finding["severity"] == "HIGH"
+    assert finding["triage_status"] == "likely"
+    assert finding["confidence"] == 0.85
+    assert finding["file"].endswith("BenchmarkTest00165.py")
+    assert finding["line"] == 20
+    assert finding["message"] == "Potential command injection"
+    assert finding["evidence"]["source"]["line"] == 10
+    assert finding["evidence"]["sink"]["line"] == 20
+    assert finding["evidence"]["intermediate_steps"][0]["line"] == 15
+    assert finding["recommendation"] == "Use an allowlist of safe commands."
+    assert finding["metadata"]["check_id"] == result["check_id"]
+
+
+def test_owasp_runner_transient_family_artifact_root_is_hidden(tmp_path):
+    module = _load_owasp_python_module()
+
+    root = module.transient_family_artifact_root(tmp_path)
+
+    assert root == tmp_path / ".family_artifacts"
+
+
+def test_owasp_runner_markdown_notes_when_family_artifacts_are_not_kept():
+    module = _load_owasp_python_module()
+    report = {
+        "scan_metadata": {
+            "target": "D:/BenchmarkPython/testcode",
+            "files_scanned": 101,
+            "duration_seconds": 12.5,
+        },
+        "findings": [{"id": "SEMGREP-00001"}],
+    }
+    family_runs = [
+        {
+            "family": "COMMAND_INJECTION",
+            "result_count": 10,
+            "error_count": 0,
+            "files_scanned": 101,
+            "configs": ["rules/command.yaml"],
+            "artifacts_kept": False,
+            "raw_report_path": None,
+            "stdout_path": None,
+            "stderr_path": None,
+        }
+    ]
+
+    content = module.render_markdown(
+        "Semgrep BenchmarkPython (python)",
+        report,
+        ["COMMAND_INJECTION"],
+        ["semgrep"],
+        family_runs,
+        score_summary=None,
+    )
+
+    assert "## Family Artifacts" in content
+    assert "Per-family raw Semgrep artifacts were not kept in this run." in content

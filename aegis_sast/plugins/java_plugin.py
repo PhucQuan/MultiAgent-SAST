@@ -92,13 +92,15 @@ class JavaPlugin(ILanguagePlugin):
             if category in rules.get("sinks", {}):
                 sink_rules.extend(rules["sinks"][category])
 
+        call_like_nodes = {"method_invocation", "object_creation_expression"}
+
         def visit_node(node: Node):
             node_text = node.text.decode('utf-8', errors='replace')
             for rule in sink_rules:
                 pattern = rule.get("pattern", "")
-                if node.type == "method_invocation" and pattern in node_text:
+                if node.type in call_like_nodes and pattern in node_text:
                     child_call_matches = any(
-                        c.type == "method_invocation" and pattern in c.text.decode('utf-8', errors='replace')
+                        c.type in call_like_nodes and pattern in c.text.decode('utf-8', errors='replace')
                         for c in node.children
                     )
                     if not child_call_matches:
@@ -163,6 +165,14 @@ class JavaPlugin(ILanguagePlugin):
         tainted_vars = set()
         if source.variable_name and source.variable_name != "unknown":
             tainted_vars.add(source.variable_name)
+        call_like_nodes = {"method_invocation", "object_creation_expression"}
+        flow_depth_nodes = {
+            "local_variable_declaration",
+            "assignment_expression",
+            "method_invocation",
+            "object_creation_expression",
+            "if_statement",
+        }
         step_map: Dict[str, List[CodeLocation]] = {
             var_name: [] for var_name in tainted_vars
         }
@@ -262,15 +272,22 @@ class JavaPlugin(ILanguagePlugin):
                         register_sanitized_var(left_text, node, supporting_vars, right_text)
             elif node.type == "if_statement":
                 register_guard_clause(node)
-            elif node.type == "method_invocation":
+            elif node.type in call_like_nodes:
                 call_text = node.text.decode('utf-8', errors='replace')
                 if self._contains_tainted_reference(call_text, tainted_vars, source):
+                    supporting_vars = self._collect_supporting_vars(call_text, tainted_vars)
+                    if node.type == "method_invocation":
+                        receiver_name, method_name = self._extract_invocation_receiver(node)
+                        if self._is_taint_mutator_call(receiver_name, method_name, supporting_vars):
+                            register_tainted_var(
+                                receiver_name,
+                                node,
+                                supporting_vars,
+                            )
+                            register_sanitized_var(receiver_name, node, supporting_vars, call_text)
+
                     for sink in sinks:
                         if sink.location.line_number == node.start_point[0] + 1:
-                            supporting_vars = self._collect_supporting_vars(
-                                call_text,
-                                tainted_vars,
-                            )
                             if self._all_vars_guarded(supporting_vars, guarded_var_map):
                                 continue
 
@@ -310,8 +327,9 @@ class JavaPlugin(ILanguagePlugin):
                                     ],
                                 },
                             ))
+            next_depth = depth + 1 if node.type in flow_depth_nodes else depth
             for child in node.children:
-                analyze_assignments(child, depth + 1)
+                analyze_assignments(child, next_depth)
 
         analyze_assignments(scope_node)
         return paths
@@ -510,17 +528,61 @@ class JavaPlugin(ILanguagePlugin):
             name = node.child_by_field_name("name")
             if name:
                 return name.text.decode('utf-8', errors='replace')
+        if node.type == "object_creation_expression":
+            type_node = node.child_by_field_name("type")
+            if type_node:
+                return type_node.text.decode('utf-8', errors='replace')
+            match = re.search(r'new\s+([A-Za-z_][\w.]*)', node.text.decode('utf-8', errors='replace'))
+            if match:
+                return match.group(1)
         return "unknown"
 
     def _extract_arguments(self, node: Node) -> List[str]:
         args = []
-        if node.type == "method_invocation":
+        if node.type in {"method_invocation", "object_creation_expression"}:
             args_node = node.child_by_field_name("arguments")
             if args_node:
                 for child in args_node.children:
                     if child.type not in ["(", ")", ","]:
                         args.append(child.text.decode('utf-8', errors='replace'))
         return args
+
+    def _extract_invocation_receiver(self, node: Node) -> tuple[str | None, str | None]:
+        """Best-effort receiver + method extraction for taint-mutating calls."""
+        if node.type != "method_invocation":
+            return None, None
+
+        object_node = node.child_by_field_name("object")
+        name_node = node.child_by_field_name("name")
+        receiver_name = None
+        method_name = None
+
+        if object_node:
+            receiver_name = object_node.text.decode('utf-8', errors='replace').strip()
+        if name_node:
+            method_name = name_node.text.decode('utf-8', errors='replace').strip()
+
+        if receiver_name and method_name:
+            return receiver_name, method_name
+
+        text = node.text.decode('utf-8', errors='replace')
+        match = re.match(r"\s*([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)\s*\(", text)
+        if match:
+            return match.group(1), match.group(2)
+
+        return receiver_name, method_name
+
+    def _is_taint_mutator_call(
+        self,
+        receiver_name: str | None,
+        method_name: str | None,
+        supporting_vars: List[str],
+    ) -> bool:
+        """Return True when a method call should taint the receiver container/value."""
+        if not receiver_name or not method_name or not supporting_vars:
+            return False
+
+        return method_name in {"add", "addAll", "put", "offer", "append"}
 
     def _map_vuln_type(self, type_str: str) -> VulnerabilityType:
         mapping = {

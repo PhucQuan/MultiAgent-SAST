@@ -101,18 +101,67 @@ class ScanPipelineService:
         )
         self.ai_client_factory = ai_client_factory
 
-    def run(self, request: ScanPipelineRequest) -> ScanPipelineResult:
+    def run(
+        self,
+        request: ScanPipelineRequest,
+        *,
+        progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+        progress_every: int = 100,
+    ) -> ScanPipelineResult:
         """Execute the full scan pipeline for one target."""
+        progress_every = max(progress_every, 1)
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "stage",
+                "stage": "prepare-config",
+                "message": "Preparing scan configuration.",
+            },
+        )
         config = self._prepare_config(request)
         if request.enable_ai_verification and self.ai_client_factory is not None:
             config.enable_ai_verification = True
             set_config(config)
         registry = self.registry_factory()
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "stage",
+                "stage": "repo-intake",
+                "message": "Profiling target repository.",
+            },
+        )
         repo_profile = self._create_repo_profile(registry, request.target_path)
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "repo-profile",
+                "target_path": repo_profile.target_path,
+                "scan_profile": repo_profile.scan_profile,
+                "detected_languages": repo_profile.detected_languages,
+                "framework_hints": repo_profile.framework_hints,
+                "supported_file_count": repo_profile.metadata.get("supported_file_count"),
+            },
+        )
         detector = self._build_detector(request, config)
-        scan_result = self._run_scan(detector, request.target_path, request)
+        scan_result = self._run_scan_with_progress(
+            detector,
+            request,
+            progress_callback=progress_callback,
+            progress_every=progress_every,
+        )
         repo_profile.files_scanned = scan_result.files_scanned or repo_profile.files_scanned
         repo_profile.metadata.setdefault("actual_files_scanned", scan_result.files_scanned)
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "scan-summary",
+                "files_scanned": scan_result.files_scanned,
+                "findings": scan_result.total_vulnerabilities,
+                "errors": len(scan_result.errors),
+                "duration_seconds": scan_result.duration,
+            },
+        )
 
         ai_requested = request.enable_ai_verification
         ai_client = None
@@ -122,15 +171,48 @@ class ScanPipelineService:
         if ai_requested:
             ai_client, ai_error = self._build_ai_client(config)
             ai_enabled = ai_client is not None
+            if ai_enabled:
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "stage",
+                        "stage": "ai-ready",
+                        "message": "AI triage overlay is available for this run.",
+                    },
+                )
+            elif ai_error:
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "ai-unavailable",
+                        "message": ai_error,
+                    },
+                )
 
         workflow_state = None
         triage_records: list[TriageRecord] = []
         workflow_metadata: dict[str, Any] = {}
         if scan_result.vulnerabilities:
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "stage",
+                    "stage": "workflow",
+                    "message": "Running deterministic triage workflow.",
+                },
+            )
             workflow_state = self._run_workflow(scan_result, repo_profile)
             triage_records = list(workflow_state.triage_records)
             workflow_metadata = dict(workflow_state.metadata)
             if ai_client and triage_records:
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "stage",
+                        "stage": "ai-triage",
+                        "message": "Applying AI triage overlay.",
+                    },
+                )
                 triage_records, workflow_metadata = self._apply_ai_triage_overlay(
                     ai_client,
                     triage_records,
@@ -142,6 +224,14 @@ class ScanPipelineService:
 
         exported_reports: dict[str, Path] = {}
         if request.export_reports:
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "stage",
+                    "stage": "export",
+                    "message": "Exporting report artifacts.",
+                },
+            )
             exported_reports = self._export_reports(
                 request.output_formats,
                 request.output_dir,
@@ -149,6 +239,15 @@ class ScanPipelineService:
                 triage_records,
                 workflow_metadata=workflow_metadata or None,
             )
+            for format_name, output_path in exported_reports.items():
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "report-exported",
+                        "format": format_name,
+                        "path": str(output_path),
+                    },
+                )
 
         return ScanPipelineResult(
             request=request,
@@ -165,6 +264,85 @@ class ScanPipelineService:
             ai_enabled=ai_enabled,
             ai_error=ai_error,
         )
+
+    def _run_scan_with_progress(
+        self,
+        detector: Any,
+        request: ScanPipelineRequest,
+        *,
+        progress_callback: Optional[Callable[[dict[str, Any]], None]],
+        progress_every: int,
+    ) -> ScanResult:
+        """Run the detector and forward progress updates when requested."""
+        if progress_callback is None:
+            return self._run_scan(detector, request.target_path, request)
+
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "stage",
+                "stage": "detector",
+                "message": "Running deterministic detector.",
+            },
+        )
+
+        target = request.target_path
+        if target.is_dir():
+            return detector.analyze_directory(
+                target,
+                exclude_dir_names=request.exclude_dir_names,
+                exclude_globs=request.exclude_globs,
+                progress_callback=progress_callback,
+                progress_every=progress_every,
+            )
+
+        start_time = datetime.now()
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "scan-start",
+                "total_files": 1,
+                "files_scanned": 0,
+                "files_processed": 0,
+                "findings": 0,
+                "errors": 0,
+            },
+        )
+        vulnerabilities = detector.analyze_file(target)
+        end_time = datetime.now()
+
+        scan_result = ScanResult(
+            target_path=str(target),
+            start_time=start_time,
+            end_time=end_time,
+            vulnerabilities=vulnerabilities,
+            files_scanned=1,
+        )
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "progress",
+                "total_files": 1,
+                "files_scanned": 1,
+                "files_processed": 1,
+                "findings": len(vulnerabilities),
+                "errors": 0,
+                "current_file": str(target),
+            },
+        )
+        self._emit_progress(
+            progress_callback,
+            {
+                "event": "complete",
+                "total_files": 1,
+                "files_scanned": 1,
+                "files_processed": 1,
+                "findings": len(vulnerabilities),
+                "errors": 0,
+                "duration_seconds": scan_result.duration,
+            },
+        )
+        return scan_result
 
     @staticmethod
     def _prepare_config(request: ScanPipelineRequest) -> AegisConfig:
@@ -262,6 +440,17 @@ class ScanPipelineService:
             vulnerabilities=vulnerabilities,
             files_scanned=1,
         )
+
+    @staticmethod
+    def _emit_progress(
+        progress_callback: Optional[Callable[[dict[str, Any]], None]],
+        payload: dict[str, Any],
+    ) -> None:
+        """Forward one structured progress payload when a callback is provided."""
+        if progress_callback is None:
+            return
+
+        progress_callback(payload)
 
     @staticmethod
     def _apply_ai_triage_overlay(

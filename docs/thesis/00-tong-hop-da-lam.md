@@ -16,6 +16,7 @@ Aegis-SAST khong con la mot demo nho nua. Repo hien tai da co mot scanner AST-ba
 | Cross-file analysis | Da co cho Python qua `call_graph.py` |
 | AI layer | Da co Gemini verification |
 | Reporting | Da co JSON va Markdown exporter |
+| Findings dashboard | Da co `apps/findings-dashboard` doc report JSON va reviewer feedback local |
 | Docker | Da co Dockerfile |
 | Example vulnerable apps | Da co `examples/` va `test_projects/` |
 | Unit tests | Repo dang co 44 test cases |
@@ -91,4 +92,3 @@ Ban da co "scanner core" rat dang gia. Viec can lam tu gio khong phai la dap di 
 - mot bo skill cho agent
 - mot bo tai lieu do an
 - mot ke hoach benchmark va demo co suc thuyet phuc
-

@@ -72,6 +72,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--payload",
         help="Optional inline JSON payload when stdin is not used.",
     )
+    parser.add_argument(
+        "--stream-progress",
+        action="store_true",
+        help="Emit NDJSON progress events before the final result payload.",
+    )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=100,
+        help="Emit detector progress every N processed files.",
+    )
     return parser
 
 
@@ -247,23 +258,58 @@ def serialize_result(result) -> dict[str, Any]:
     }
 
 
+def _emit_ndjson(payload: dict[str, Any]) -> None:
+    """Write one JSON line so the dashboard bridge can stream updates."""
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint for the dashboard-to-Python bridge."""
     args = build_parser().parse_args(argv)
 
     try:
+        progress_every = max(int(args.progress_every or 100), 1)
         payload = _load_payload(args)
-        request = build_request(payload)
-        result = ScanPipelineService().run(request)
-        print(
-            json.dumps(
-                {"ok": True, "scan": serialize_result(result)},
-                ensure_ascii=False,
+        if args.stream_progress:
+            _emit_ndjson(
+                {
+                    "type": "progress",
+                    "payload": {
+                        "event": "stage",
+                        "stage": "request",
+                        "message": "Starting local scan pipeline.",
+                    },
+                }
             )
+        request = build_request(payload)
+        progress_callback = None
+        if args.stream_progress:
+            progress_callback = (
+                lambda update: _emit_ndjson(
+                    {
+                        "type": "progress",
+                        "payload": update,
+                    }
+                )
+            )
+        result = ScanPipelineService().run(
+            request,
+            progress_callback=progress_callback,
+            progress_every=progress_every,
         )
+        response_payload = {"ok": True, "scan": serialize_result(result)}
+        if args.stream_progress:
+            _emit_ndjson({"type": "result", **response_payload})
+        else:
+            print(json.dumps(response_payload, ensure_ascii=False))
         return 0
     except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        response_payload = {"ok": False, "error": str(exc)}
+        if args.stream_progress:
+            _emit_ndjson({"type": "result", **response_payload})
+        else:
+            print(json.dumps(response_payload, ensure_ascii=False))
         return 1
 
 

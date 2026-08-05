@@ -49,6 +49,7 @@ Kien truc dich nen la kien truc 6 lop:
 - tao remediation plan
 - xuat JSON, Markdown, va SARIF
 - tao final report theo severity va confidence
+- co the co `local findings dashboard`/`review console` dung report da xuat ra lam product layer, nhung khong duoc goi truc tiep detector internals
 
 ### Lop 6: Evaluation and CI
 
@@ -94,4 +95,3 @@ Kien truc dich nen la kien truc 6 lop:
 
 - remediation workflow
 - autofix o muc co kiem soat
-

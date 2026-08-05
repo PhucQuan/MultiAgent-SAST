@@ -7,37 +7,65 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="page-shell">
-      <section class="hero-card">
-        <p class="eyebrow">Aegis-SAST V1</p>
-        <h1>Rule Workbench</h1>
-        <p class="hero-copy">
-          Review a small seed snapshot, normalize it, validate it, and export a
-          detector-friendly legacy bridge without pushing anything straight into
-          runtime detection.
-        </p>
-      </section>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <p class="eyebrow">Aegis-SAST</p>
+          <h1>Rule Draft</h1>
+        </div>
+        <p id="status-text" class="status-chip">Loading...</p>
+      </header>
 
-      <section class="workspace-grid">
-        <section class="panel">
-          <div class="panel-head">
-            <h2>Bundle Builder</h2>
-            <p>Seed in, reviewed artifacts out.</p>
+      <section class="composer-card">
+        <div class="toolbar">
+          <label class="toolbar-field toolbar-seed">
+            <span>Seed</span>
+            <select id="draft-seed-suggestions">
+              <option value="">Loading...</option>
+            </select>
+          </label>
+
+          <label class="toolbar-field">
+            <span>Language</span>
+            <select id="draft-language"></select>
+          </label>
+
+          <label class="toolbar-field">
+            <span>Family</span>
+            <select id="draft-family"></select>
+          </label>
+        </div>
+
+        <div id="chat-feed" class="chat-feed"></div>
+        <div id="quick-examples" class="quick-examples"></div>
+
+        <form id="draft-form" class="composer-form">
+          <textarea
+            id="draft-description"
+            name="description"
+            rows="8"
+            placeholder="Python command injection via shell-enabled subprocess.&#10;Sources: request.args.get(), input()&#10;Sinks: subprocess.run(..., shell=True), os.system()&#10;Sanitizers: shlex.quote()"
+            required
+          ></textarea>
+
+          <div class="composer-actions">
+            <span class="composer-hint">Ctrl+Enter to build</span>
+            <div class="button-row">
+              <button id="clear-draft-button" class="ghost-button" type="button">Clear</button>
+              <button id="draft-build-button" type="submit">Build Draft</button>
+            </div>
           </div>
+        </form>
 
-          <form id="bundle-form" class="bundle-form">
-            <label>
-              <span>Suggested seed inputs</span>
-              <select id="seed-suggestions">
-                <option value="">Loading seed inputs...</option>
-              </select>
-            </label>
+        <details class="advanced-panel">
+          <summary>Advanced</summary>
 
+          <div class="advanced-grid">
             <label>
-              <span>Input path</span>
+              <span>Seed path</span>
               <input
-                id="input-path"
-                name="input_path"
+                id="draft-seed-input"
+                name="seed_input_path"
                 type="text"
                 placeholder="datasets/synthetic/rule_review_v1/seed_inputs/..."
                 required
@@ -47,90 +75,39 @@
             <label>
               <span>Output dir</span>
               <input
-                id="output-dir"
+                id="draft-output-dir"
                 name="output_dir"
                 type="text"
-                placeholder="reports/rule_review/my_bundle"
+                placeholder="reports/rule_review/my_seed_draft"
               />
             </label>
 
-            <div class="field-row">
-              <label>
-                <span>Language</span>
-                <select id="language" name="language"></select>
-              </label>
-              <label>
-                <span>Family</span>
-                <select id="family" name="family"></select>
-              </label>
-            </div>
-
-            <div class="field-row">
-              <label>
-                <span>Profile</span>
-                <select id="profile" name="profile"></select>
-              </label>
-              <label>
-                <span>Limit</span>
-                <input id="limit" name="limit" type="number" min="1" placeholder="Optional" />
-              </label>
-            </div>
-
-            <div class="field-row">
-              <label>
-                <span>Normalized format</span>
-                <select id="normalized-format" name="normalized_format">
-                  <option value="json">json</option>
-                  <option value="yaml">yaml</option>
-                </select>
-              </label>
-              <label>
-                <span>Validation format</span>
-                <select id="validation-format" name="validation_format">
-                  <option value="json">json</option>
-                  <option value="text">text</option>
-                </select>
-              </label>
-              <label>
-                <span>Legacy bridge</span>
-                <select id="legacy-format" name="legacy_format">
-                  <option value="yaml">yaml</option>
-                  <option value="json">json</option>
-                  <option value="">disabled</option>
-                </select>
-              </label>
-            </div>
-
             <label>
-              <span>Provenance source</span>
-              <input id="provenance-source" name="provenance_source" type="text" />
+              <span>Profile</span>
+              <select id="draft-profile"></select>
             </label>
 
             <label>
-              <span>Snapshot version</span>
-              <input id="snapshot-version" name="snapshot_version" type="text" />
+              <span>Title</span>
+              <input id="draft-title" name="title" type="text" placeholder="Optional" />
             </label>
 
-            <div class="action-row">
-              <button id="build-button" type="submit">Build Review Bundle</button>
-              <p id="status-text" class="status-text">Waiting for input.</p>
-            </div>
-          </form>
-        </section>
-
-        <section class="panel results-panel">
-          <div class="panel-head">
-            <h2>Artifacts</h2>
-            <p>Preview normalized output, validation, and legacy bridge files.</p>
+            <label>
+              <span>Rule id</span>
+              <input id="draft-rule-id" name="rule_id" type="text" placeholder="Optional" />
+            </label>
           </div>
+        </details>
+      </section>
 
-          <div id="summary-card" class="summary-card empty">
-            Run the bundle builder to see artifact paths and validation status.
-          </div>
+      <section class="result-card">
+        <div class="result-head">
+          <h2>Artifacts</h2>
+          <div id="summary-card" class="summary-card empty">No draft yet.</div>
+        </div>
 
-          <div id="artifact-tabs" class="artifact-tabs"></div>
-          <pre id="artifact-preview" class="artifact-preview">No artifact selected.</pre>
-        </section>
+        <div id="artifact-tabs" class="artifact-tabs"></div>
+        <pre id="artifact-preview" class="artifact-preview">No artifact selected.</pre>
       </section>
     </main>
 

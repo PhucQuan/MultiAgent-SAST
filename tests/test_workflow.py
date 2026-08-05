@@ -449,6 +449,90 @@ def test_scan_pipeline_service_forwards_directory_exclusions(tmp_path):
     assert captured["exclude_globs"] == ["*.min.js"]
 
 
+def test_scan_pipeline_service_emits_progress_updates_for_directory_scan(tmp_path):
+    """Directory scans should forward structured progress updates to callers."""
+    target_dir = Path(tmp_path) / "demo-repo"
+    target_dir.mkdir()
+    (target_dir / "app.py").write_text("print('hello')\n", encoding="utf-8")
+
+    scan_result = ScanResult(
+        target_path=str(target_dir),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[],
+        files_scanned=1,
+    )
+    repo_profile = RepoProfile(
+        target_path=str(target_dir),
+        scan_profile="python-deep",
+        detected_languages=["python"],
+        files_scanned=1,
+        metadata={"supported_file_count": 1, "analysis_plan": {"python": "deep"}},
+    )
+    updates = []
+    captured = {}
+
+    class FakeRegistry:
+        def get_supported_languages(self):
+            return ["python"]
+
+        def get_import_failures(self):
+            return {}
+
+    class StubDetector:
+        def analyze_directory(
+            self,
+            target,
+            exclude_dir_names=None,
+            exclude_globs=None,
+            progress_callback=None,
+            progress_every=100,
+        ):
+            captured["target"] = target
+            captured["progress_every"] = progress_every
+            if progress_callback:
+                progress_callback(
+                    {
+                        "event": "progress",
+                        "total_files": 1,
+                        "files_scanned": 1,
+                        "files_processed": 1,
+                        "findings": 0,
+                        "errors": 0,
+                        "current_file": str(target / "app.py"),
+                    }
+                )
+            return scan_result
+
+    class StubScanPipelineService(ScanPipelineService):
+        @staticmethod
+        def _create_repo_profile(registry, target_path: Path) -> RepoProfile:
+            return repo_profile
+
+        @staticmethod
+        def _build_detector(request, config):
+            return StubDetector()
+
+    result = StubScanPipelineService(
+        registry_factory=lambda: FakeRegistry(),
+    ).run(
+        ScanPipelineRequest(
+            target_path=target_dir,
+            enable_ai_verification=False,
+            export_reports=False,
+        ),
+        progress_callback=updates.append,
+        progress_every=25,
+    )
+
+    assert result.scan_result is scan_result
+    assert captured["target"] == target_dir
+    assert captured["progress_every"] == 25
+    assert any(update["event"] == "repo-profile" for update in updates)
+    assert any(update["event"] == "progress" for update in updates)
+    assert any(update["event"] == "scan-summary" for update in updates)
+
+
 def test_cli_progress_columns_skip_spinner_for_non_unicode_streams():
     """CLI progress should avoid Unicode spinners on cp1252-style consoles."""
     console_obj = SimpleNamespace(file=SimpleNamespace(encoding="cp1252"))

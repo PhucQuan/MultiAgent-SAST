@@ -8,6 +8,20 @@ import type { NormalizedReport, ReportSummaryCard } from "@/lib/report-types";
 
 const REPO_ROOT = path.resolve(process.cwd(), "..", "..");
 const REPORTS_ROOT = path.join(REPO_ROOT, "reports");
+const RECENT_REPORT_LIMIT = 12;
+
+export interface WorkspaceReportIndexMeta {
+  totalReports: number;
+  activeReports: number;
+  archiveReports: number;
+  includeArchive: boolean;
+  recentLimit: number;
+}
+
+export interface WorkspaceReportIndex {
+  reports: ReportSummaryCard[];
+  meta: WorkspaceReportIndexMeta;
+}
 
 function toPosixPath(filePath: string): string {
   return filePath.split(path.sep).join("/");
@@ -73,7 +87,29 @@ function sortReports<T extends { timestamp: string | null; totalFindings: number
   });
 }
 
-export async function loadWorkspaceReportIndex(): Promise<ReportSummaryCard[]> {
+function isActiveWorkspaceReport(sourcePath: string): boolean {
+  return sourcePath.toLowerCase().startsWith("dashboard_runs/");
+}
+
+function selectVisibleReports(
+  reports: ReportSummaryCard[],
+  includeArchive: boolean,
+): ReportSummaryCard[] {
+  if (includeArchive) {
+    return reports;
+  }
+
+  const activeReports = reports.filter((report) =>
+    isActiveWorkspaceReport(report.sourcePath),
+  );
+  const base = activeReports.length > 0 ? activeReports : reports;
+  return base.slice(0, RECENT_REPORT_LIMIT);
+}
+
+export async function loadWorkspaceReportIndex(options?: {
+  includeArchive?: boolean;
+}): Promise<WorkspaceReportIndex> {
+  const includeArchive = options?.includeArchive === true;
   const filePaths = await walkReportFiles(REPORTS_ROOT).catch(() => []);
   const reports: ReportSummaryCard[] = [];
 
@@ -92,7 +128,22 @@ export async function loadWorkspaceReportIndex(): Promise<ReportSummaryCard[]> {
     reports.push(summarizeReport(report));
   }
 
-  return sortReports(reports);
+  const sortedReports = sortReports(reports);
+  const activeReports = sortedReports.filter((report) =>
+    isActiveWorkspaceReport(report.sourcePath),
+  ).length;
+  const visibleReports = selectVisibleReports(sortedReports, includeArchive);
+
+  return {
+    reports: visibleReports,
+    meta: {
+      totalReports: sortedReports.length,
+      activeReports,
+      archiveReports: Math.max(sortedReports.length - activeReports, 0),
+      includeArchive,
+      recentLimit: RECENT_REPORT_LIMIT,
+    },
+  };
 }
 
 export async function loadWorkspaceReport(

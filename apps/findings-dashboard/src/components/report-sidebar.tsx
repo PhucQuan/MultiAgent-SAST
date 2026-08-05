@@ -107,6 +107,11 @@ interface ReportSidebarProps {
   feedbackStore: ReviewerFeedbackStore;
   loading: boolean;
   error: string | null;
+  showArchiveReports: boolean;
+  onToggleArchiveReports: () => void;
+  totalReports: number;
+  archiveReports: number;
+  recentLimit: number;
 }
 
 export function ReportSidebar({
@@ -120,19 +125,50 @@ export function ReportSidebar({
   feedbackStore,
   loading,
   error,
+  showArchiveReports,
+  onToggleArchiveReports,
+  totalReports,
+  archiveReports,
+  recentLimit,
 }: ReportSidebarProps) {
   const counts = countFeedback(feedbackStore);
   const feedbackCount = Object.keys(feedbackStore).length;
+  const hiddenArchiveCount = Math.max(totalReports - reports.length, 0);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-surface">
       <div className="border-b border-border px-3 py-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Reports
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Reports
+            </div>
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
+              {showArchiveReports
+                ? `${totalReports} report${totalReports === 1 ? "" : "s"} loaded`
+                : `${reports.length} recent scan${reports.length === 1 ? "" : "s"} shown`}
+            </div>
+          </div>
+
+          {archiveReports > 0 ? (
+            <button
+              type="button"
+              onClick={onToggleArchiveReports}
+              className="rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-surface-muted"
+            >
+              {showArchiveReports ? "Recent only" : "Show archive/demo"}
+            </button>
+          ) : null}
         </div>
-        <div className="mt-0.5 text-[12px] text-muted-foreground">
-          {reports.length} report{reports.length === 1 ? "" : "s"} available
-        </div>
+
+        {!showArchiveReports && archiveReports > 0 ? (
+          <div className="mt-2 text-[11.5px] leading-5 text-muted-foreground">
+            Archive/demo reports are hidden by default. Showing up to {recentLimit} recent runs.
+            {hiddenArchiveCount > 0
+              ? ` ${hiddenArchiveCount} older report${hiddenArchiveCount === 1 ? "" : "s"} are hidden.`
+              : ""}
+          </div>
+        ) : null}
       </div>
 
       {loading && reports.length === 0 ? (

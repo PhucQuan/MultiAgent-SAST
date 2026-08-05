@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .models import RuleWorkbenchBundleRequest
+from .models import RuleWorkbenchBundleRequest, RuleWorkbenchDraftRequest
 from .service import (
     SUPPORTED_PROFILES,
     WORKBENCH_V1_FAMILIES,
@@ -115,6 +115,10 @@ class RuleWorkbenchWebApp:
         """Return the default review output directory for one seed input."""
         return self.workspace_root / "reports" / "rule_review" / input_path.stem
 
+    def default_draft_output_dir_for(self, input_path: Path) -> Path:
+        """Return the default draft output directory for one seed input."""
+        return self.workspace_root / "reports" / "rule_review" / f"{input_path.stem}_draft"
+
     def build_bundle_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Build one review bundle from a JSON payload sent by the UI."""
         input_path = self.resolve_workspace_path(str(payload.get("input_path", "")), must_exist=True)
@@ -155,6 +159,67 @@ class RuleWorkbenchWebApp:
                     "legacy_report": (
                         self.to_workspace_relative(result.paths.legacy_report_path)
                         if result.paths.legacy_report_path
+                        else None
+                    ),
+                },
+            },
+        }
+
+    def build_draft_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Build one natural-language draft bundle from a JSON payload sent by the UI."""
+        description = str(payload.get("description", "")).strip()
+        if not description:
+            raise ValueError("A natural-language description is required.")
+
+        seed_input_path = self.resolve_workspace_path(
+            str(payload.get("seed_input_path", "")),
+            must_exist=True,
+        )
+        output_dir_value = str(payload.get("output_dir", "")).strip()
+        output_dir = (
+            self.resolve_workspace_path(output_dir_value, must_exist=False)
+            if output_dir_value
+            else self.default_draft_output_dir_for(seed_input_path)
+        )
+
+        request = RuleWorkbenchDraftRequest(
+            description=description,
+            seed_input_path=seed_input_path,
+            output_dir=output_dir,
+            language=str(payload.get("language") or "python"),
+            family=str(payload.get("family") or "COMMAND_INJECTION"),
+            profile=str(payload.get("profile") or "generic"),
+            normalized_format=str(payload.get("normalized_format") or "json"),
+            validation_format=str(payload.get("validation_format") or "json"),
+            provenance_source=str(payload.get("provenance_source") or "ai-adapted"),
+            snapshot_version=str(payload.get("snapshot_version") or "draft-v1"),
+            legacy_format=_none_if_blank(payload.get("legacy_format")),
+            rule_id=_none_if_blank(payload.get("rule_id")),
+            title=_none_if_blank(payload.get("title")),
+        )
+        result = self.service.build_draft_bundle(request).to_mapping()
+
+        return {
+            "seed_input_path": self.to_workspace_relative(seed_input_path),
+            "output_dir": self.to_workspace_relative(output_dir),
+            "draft": {
+                "valid": result["valid"],
+                "rules_checked": result["rules_checked"],
+                "error_count": result["error_count"],
+                "warning_count": result["warning_count"],
+                "artifacts": {
+                    "draft": self.to_workspace_relative(result["draft_path"]),
+                    "validation": self.to_workspace_relative(result["validation_path"]),
+                    "prompt": self.to_workspace_relative(result["prompt_path"]),
+                    "seed_context": self.to_workspace_relative(result["seed_context_path"]),
+                    "legacy": (
+                        self.to_workspace_relative(result["legacy_path"])
+                        if result["legacy_path"]
+                        else None
+                    ),
+                    "legacy_report": (
+                        self.to_workspace_relative(result["legacy_report_path"])
+                        if result["legacy_report_path"]
                         else None
                     ),
                 },
@@ -206,13 +271,15 @@ class RuleWorkbenchWebApp:
 
             def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
                 parsed = urlparse(self.path)
-                if parsed.path != "/api/build-review-bundle":
-                    self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API route.")
-                    return
-
                 try:
                     payload = self._read_json_body()
-                    self._send_json(app.build_bundle_from_payload(payload))
+                    if parsed.path == "/api/build-review-bundle":
+                        self._send_json(app.build_bundle_from_payload(payload))
+                        return
+                    if parsed.path == "/api/build-draft-bundle":
+                        self._send_json(app.build_draft_from_payload(payload))
+                        return
+                    self._send_error_json(HTTPStatus.NOT_FOUND, "Unknown API route.")
                 except FileNotFoundError as exc:
                     self._send_error_json(HTTPStatus.NOT_FOUND, str(exc))
                 except ValueError as exc:

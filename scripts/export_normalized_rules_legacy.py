@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 from aegis_sast.rule_workbench.service import (
     export_legacy_rules,
     load_normalized_document,
+    merge_normalized_documents,
     write_legacy_document,
     write_report,
 )
@@ -23,7 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Export reviewed normalized rules into the legacy custom-rules format.",
     )
-    parser.add_argument("input_path", type=Path, help="Normalized rule JSON/YAML file")
+    parser.add_argument(
+        "input_path",
+        type=Path,
+        nargs="+",
+        help="One or more normalized rule JSON/YAML files",
+    )
     parser.add_argument("--output", type=Path, required=True, help="Legacy rule output path")
     parser.add_argument(
         "--format",
@@ -50,7 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI bridge."""
     args = build_parser().parse_args(argv)
-    document = load_normalized_document(args.input_path)
+    normalized_documents = [load_normalized_document(path) for path in args.input_path]
+    document = (
+        merge_normalized_documents(normalized_documents, source_paths=args.input_path)
+        if len(normalized_documents) > 1
+        else normalized_documents[0]
+    )
     legacy_document, report = export_legacy_rules(
         document,
         language_filter=args.language,
@@ -64,7 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         "Exported legacy rules "
         f"(sources={report['exported_sources']}, "
         f"sinks={report['exported_sinks']}, "
-        f"sanitizers={report['exported_sanitizers']}) -> {args.output}"
+        f"sanitizers={report['exported_sanitizers']}, "
+        f"inputs={len(args.input_path)}) -> {args.output}"
     )
     return 0
 

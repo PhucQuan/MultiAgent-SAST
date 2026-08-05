@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import RuleWorkbenchBundlePaths
+from .models import RuleWorkbenchDraftPaths
 
 try:
     import yaml
@@ -19,7 +20,7 @@ class RuleWorkbenchStorage:
 
     def load_mapping_document(self, path: Path) -> dict[str, Any]:
         """Load a JSON or YAML mapping document from disk."""
-        raw_text = path.read_text(encoding="utf-8")
+        raw_text = path.read_text(encoding="utf-8-sig")
         suffix = path.suffix.lower()
 
         if suffix == ".json":
@@ -83,6 +84,37 @@ class RuleWorkbenchStorage:
         return RuleWorkbenchBundlePaths(
             normalized_path=normalized_path,
             validation_path=validation_path,
+            legacy_path=legacy_path,
+            legacy_report_path=legacy_report_path,
+        )
+
+    def build_draft_paths(
+        self,
+        *,
+        seed_input_path: Path,
+        output_dir: Path,
+        normalized_format: str,
+        validation_format: str,
+        legacy_format: str | None = None,
+    ) -> RuleWorkbenchDraftPaths:
+        """Return stable output paths for one natural-language draft bundle."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"{seed_input_path.stem}.ai_draft"
+        draft_path = output_dir / f"{stem}.normalized.{normalized_format}"
+        validation_path = output_dir / f"{stem}.validation.{validation_format}"
+        prompt_path = output_dir / f"{stem}.prompt.txt"
+        seed_context_path = output_dir / f"{stem}.seed_context.json"
+        legacy_path = None
+        legacy_report_path = None
+        if legacy_format:
+            legacy_path = output_dir / f"{stem}.legacy.{legacy_format}"
+            legacy_report_path = output_dir / f"{stem}.legacy.report.json"
+
+        return RuleWorkbenchDraftPaths(
+            draft_path=draft_path,
+            validation_path=validation_path,
+            prompt_path=prompt_path,
+            seed_context_path=seed_context_path,
             legacy_path=legacy_path,
             legacy_report_path=legacy_report_path,
         )

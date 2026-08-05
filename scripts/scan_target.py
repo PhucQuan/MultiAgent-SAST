@@ -17,7 +17,6 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import re
 import shutil
 import sys
@@ -27,10 +26,67 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except ModuleNotFoundError:  # pragma: no cover - runtime environment dependent
+    Console = None
+    Panel = None
+    Table = None
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+if Console is None:  # pragma: no cover - fallback only used in thin environments
+    class _PlainConsole:
+        def print(self, value: object = "") -> None:
+            rendered = str(value)
+            rendered = re.sub(r"\[/?[^\]]+\]", "", rendered)
+            print(rendered)
+
+    class _PlainPanel:
+        def __init__(self, content: str):
+            self.content = content
+
+        def __str__(self) -> str:
+            return self.content
+
+        @classmethod
+        def fit(cls, content: str, border_style: str | None = None):
+            return cls(content)
+
+    class _PlainTable:
+        def __init__(self, title: str | None = None, **_: object):
+            self.title = title
+            self.columns: list[str] = []
+            self.rows: list[tuple[str, ...]] = []
+
+        def add_column(self, label: str, **_: object) -> None:
+            self.columns.append(label)
+
+        def add_row(self, *values: object) -> None:
+            self.rows.append(tuple(str(value) for value in values))
+
+        def __str__(self) -> str:
+            lines: list[str] = []
+            if self.title:
+                lines.append(self.title)
+            if self.columns:
+                lines.append(" | ".join(self.columns))
+                lines.append("-+-".join("-" * len(column) for column in self.columns))
+            for row in self.rows:
+                lines.append(" | ".join(row))
+            return "\n".join(lines)
+
+    console = _PlainConsole()
+    Panel = _PlainPanel
+    Table = _PlainTable
+else:
+    console = Console()
 
 
 EXCLUDE_PROFILES = {
@@ -74,7 +130,7 @@ EXCLUDE_PROFILES = {
         ],
     },
     "focus": {
-        "description": "Further suppress tests, benchmarks, fixtures, and generated/codegen trees.",
+        "description": "Further suppress tests, benchmarks, generated code, and dev-automation trees.",
         "dirs": [
             "test",
             "tests",
@@ -87,6 +143,10 @@ EXCLUDE_PROFILES = {
             "codegen",
             "examples",
             "samples",
+            ".ci",
+            ".claude",
+            ".agents",
+            ".github",
         ],
         "globs": [
             "*/test_*.py",
@@ -219,6 +279,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-save",
         action="store_true",
         help="Do not keep report artifacts on disk. Useful for terminal-only demo scans.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show the full preflight details instead of the compact console view.",
     )
     return parser
 
@@ -393,6 +458,45 @@ def print_artifact_controls(
     print(f"  - terminal viewer: {'enabled' if view_report else 'disabled'}")
 
 
+def print_compact_scan_header(
+    *,
+    target: Path,
+    repo_profile,
+    active_profiles: list[str],
+    output_formats: list[str],
+    with_ai: bool,
+    persist_reports: bool,
+) -> None:
+    """Render a compact scan header for day-to-day manual runs."""
+    console.print(
+        Panel.fit(
+            (
+                "[bold cyan]Aegis Manual Scan[/bold cyan]\n"
+                f"[dim]{target}[/dim]"
+            ),
+            border_style="cyan",
+        )
+    )
+
+    details = Table(show_header=False, box=None)
+    details.add_column("Field", style="green")
+    details.add_column("Value")
+    details.add_row("Profile", repo_profile.scan_profile)
+    details.add_row(
+        "Languages",
+        ", ".join(repo_profile.detected_languages) or "none",
+    )
+    details.add_row(
+        "Frameworks",
+        ", ".join(repo_profile.framework_hints) or "none",
+    )
+    details.add_row("Excludes", ", ".join(active_profiles) or "none")
+    details.add_row("AI triage", "requested" if with_ai else "off")
+    details.add_row("Reports", ", ".join(output_formats) or "none")
+    details.add_row("Saved", "yes" if persist_reports else "no (--no-save)")
+    console.print(details)
+
+
 def print_scan_summary(scan_result, workflow_metadata: dict | None) -> None:
     """Display a concise end-of-run summary."""
     print("Scan summary:")
@@ -425,22 +529,64 @@ def print_scan_summary(scan_result, workflow_metadata: dict | None) -> None:
             )
 
 
-async def verify_with_ai(ai_client, scan_result) -> None:
-    """Run Gemini verification for all findings."""
-    tasks = []
-    for vulnerability in scan_result.vulnerabilities:
-        tasks.append(
-            ai_client.async_verify_vulnerability(
-                vuln_type=vulnerability.vuln_type,
-                source_code=vulnerability.dataflow.source.location.code_snippet,
-                dataflow_path=vulnerability.dataflow.get_path_summary(),
-                sink_code=vulnerability.dataflow.sink.location.code_snippet,
-            )
-        )
+def print_compact_scan_result(
+    *,
+    scan_result,
+    workflow_metadata: dict | None,
+    written_reports: list[Path],
+    cleaned_run_dirs: list[Path],
+    persist_reports: bool,
+) -> None:
+    """Render a compact end-of-run summary for manual scans."""
+    summary_table = Table(
+        title="Scan Summary",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    summary_table.add_column("Metric", style="magenta")
+    summary_table.add_column("Value", justify="right")
+    summary_table.add_row("Files", str(scan_result.files_scanned))
+    summary_table.add_row("Findings", str(scan_result.total_vulnerabilities))
+    summary_table.add_row("Critical", str(scan_result.critical_count))
+    summary_table.add_row("High", str(scan_result.high_count))
+    summary_table.add_row("Medium", str(scan_result.medium_count))
+    summary_table.add_row("Low", str(scan_result.low_count))
+    summary_table.add_row("Duration", f"{scan_result.duration:.2f}s")
+    console.print(summary_table)
 
-    results = await asyncio.gather(*tasks)
-    for index, result in enumerate(results):
-        scan_result.vulnerabilities[index].ai_verification = result
+    if workflow_metadata:
+        triage_summary = workflow_metadata.get("triage_summary", {})
+        route_summary = workflow_metadata.get("route_summary", {})
+        triage_table = Table(
+            title="Workflow Triage",
+            show_header=True,
+            header_style="bold yellow",
+        )
+        triage_table.add_column("Status", style="yellow")
+        triage_table.add_column("Count", justify="right")
+        for status in ["confirmed", "likely", "needs-review", "suppressed"]:
+            triage_table.add_row(status, str(triage_summary.get(status, 0)))
+        console.print(triage_table)
+
+        if route_summary:
+            route_table = Table(show_header=True, header_style="bold cyan")
+            route_table.add_column("Route", style="cyan")
+            route_table.add_column("Count", justify="right")
+            for route_id, count in sorted(route_summary.items()):
+                route_table.add_row(route_id, str(count))
+            console.print(route_table)
+
+    artifact_table = Table(show_header=False, box=None)
+    artifact_table.add_column("Artifact", style="green")
+    artifact_table.add_column("Path")
+    if persist_reports:
+        for path in written_reports:
+            artifact_table.add_row(path.suffix.lstrip(".").upper(), str(path))
+    else:
+        artifact_table.add_row("Reports", "not saved (--no-save)")
+    if cleaned_run_dirs:
+        artifact_table.add_row("Cleaned", ", ".join(str(path) for path in cleaned_run_dirs))
+    console.print(artifact_table)
 
 
 def export_reports(output_dir: Path, formats, scan_result, triage_records, workflow_metadata) -> list[Path]:
@@ -526,7 +672,7 @@ def select_manual_run_directories_to_cleanup(
         candidate_dirs.append(child)
 
     candidate_dirs.sort(
-        key=lambda path: (path.stat().st_mtime, path.name),
+        key=lambda path: path.name,
         reverse=True,
     )
     return candidate_dirs[keep_last:]
@@ -595,6 +741,7 @@ def run_manual_scan(
     persist_reports: bool = True,
     progress_callback=None,
     emit_console: bool = False,
+    verbose_console: bool = False,
 ) -> dict[str, Any]:
     """Run one manual scan and return reusable artifacts for other scripts."""
     target = target.resolve()
@@ -653,22 +800,32 @@ def run_manual_scan(
     )
 
     if emit_console:
-        print_analyzer_status(registry)
-        print_repo_profile(repo_profile)
-        print_scan_controls(
-            target,
-            active_profiles,
-            resolved_exclude_dirs,
-            resolved_exclude_globs,
-            progress_every,
-        )
-        print_rule_controls(custom_rules_path, resolved_append_rules)
-        print_artifact_controls(
-            config.output_formats,
-            keep_last,
-            view_report,
-            persist_reports,
-        )
+        if verbose_console:
+            print_analyzer_status(registry)
+            print_repo_profile(repo_profile)
+            print_scan_controls(
+                target,
+                active_profiles,
+                resolved_exclude_dirs,
+                resolved_exclude_globs,
+                progress_every,
+            )
+            print_rule_controls(custom_rules_path, resolved_append_rules)
+            print_artifact_controls(
+                config.output_formats,
+                keep_last,
+                view_report,
+                persist_reports,
+            )
+        else:
+            print_compact_scan_header(
+                target=target,
+                repo_profile=repo_profile,
+                active_profiles=active_profiles,
+                output_formats=config.output_formats,
+                with_ai=with_ai,
+                persist_reports=persist_reports,
+            )
 
     detector = VulnerabilityDetector(
         RuleEngine(
@@ -699,16 +856,6 @@ def run_manual_scan(
             files_scanned=1,
         )
 
-    if with_ai and scan_result.vulnerabilities:
-        try:
-            from aegis_sast.llm import GeminiClient
-
-            asyncio.run(verify_with_ai(GeminiClient(), scan_result))
-        except Exception as exc:  # pragma: no cover - runtime environment dependent
-            if emit_console:
-                print(f"[warn] AI verification unavailable: {exc}")
-                print("[warn] continuing with deterministic findings only")
-
     triage_records = []
     workflow_metadata = None
     if scan_result.vulnerabilities:
@@ -716,8 +863,24 @@ def run_manual_scan(
             scan_result,
             repo_profile=repo_profile,
         )
-        triage_records = workflow_state.triage_records
-        workflow_metadata = workflow_state.metadata
+        triage_records = list(workflow_state.triage_records)
+        workflow_metadata = dict(workflow_state.metadata)
+
+        if with_ai and triage_records:
+            try:
+                from aegis_sast.llm import GeminiClient
+                from aegis_sast.orchestration.service import ScanPipelineService
+
+                ai_client = GeminiClient()
+                triage_records, workflow_metadata = ScanPipelineService._apply_ai_triage_overlay(
+                    ai_client,
+                    triage_records,
+                    workflow_metadata,
+                )
+            except Exception as exc:  # pragma: no cover - runtime environment dependent
+                if emit_console:
+                    print(f"[warn] AI triage unavailable: {exc}")
+                    print("[warn] continuing with deterministic triage only")
 
     try:
         written_reports = export_reports(
@@ -737,18 +900,27 @@ def run_manual_scan(
             )
 
         if emit_console:
-            print_scan_summary(scan_result, workflow_metadata)
-            if persist_reports:
-                print("Reports:")
-                for path in written_reports:
-                    print(f"  - {path}")
+            if verbose_console:
+                print_scan_summary(scan_result, workflow_metadata)
+                if persist_reports:
+                    print("Reports:")
+                    for path in written_reports:
+                        print(f"  - {path}")
+                else:
+                    print("Reports:")
+                    print("  - not saved (--no-save)")
+                if cleaned_run_dirs:
+                    print("Cleaned old runs:")
+                    for path in cleaned_run_dirs:
+                        print(f"  - {path}")
             else:
-                print("Reports:")
-                print("  - not saved (--no-save)")
-            if cleaned_run_dirs:
-                print("Cleaned old runs:")
-                for path in cleaned_run_dirs:
-                    print(f"  - {path}")
+                print_compact_scan_result(
+                    scan_result=scan_result,
+                    workflow_metadata=workflow_metadata,
+                    written_reports=written_reports,
+                    cleaned_run_dirs=cleaned_run_dirs,
+                    persist_reports=persist_reports,
+                )
             if scan_result.errors:
                 print("Errors:")
                 for error in scan_result.errors:
@@ -811,6 +983,7 @@ def main() -> int:
             view_limit=args.view_limit,
             persist_reports=not args.no_save,
             emit_console=True,
+            verbose_console=args.verbose,
         )
     except FileNotFoundError as exc:
         parser.error(str(exc))

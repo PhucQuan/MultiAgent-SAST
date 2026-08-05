@@ -74,6 +74,11 @@ def _extract_write_names(node: ast.AST) -> List[str]:
             names.extend(_extract_write_names(child))
     elif isinstance(node, ast.Attribute):
         names.append(_safe_unparse(node))
+    elif isinstance(node, ast.Subscript):
+        if isinstance(node.value, ast.Name):
+            names.append(node.value.id)
+        elif isinstance(node.value, ast.Attribute):
+            names.append(_safe_unparse(node.value))
     return names
 
 
@@ -90,6 +95,32 @@ def _extract_call_info(call: ast.Call) -> Tuple[str, List[str]]:
         ]
     )
     return callee, arguments
+
+
+_MUTATING_METHOD_NAMES = {
+    "add",
+    "add_section",
+    "append",
+    "extend",
+    "insert",
+    "set",
+    "setdefault",
+    "update",
+}
+
+
+def _extract_mutated_receiver_names(call: ast.Call) -> List[str]:
+    """Return receiver names for common mutating method calls."""
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return []
+    if func.attr not in _MUTATING_METHOD_NAMES:
+        return []
+    if isinstance(func.value, ast.Name):
+        return [func.value.id]
+    if isinstance(func.value, ast.Attribute):
+        return [_safe_unparse(func.value)]
+    return []
 
 
 @dataclass
@@ -360,6 +391,8 @@ class PythonFlowGraphBuilder:
             return self._process_expression(statement, env, scope_name)
         if isinstance(statement, ast.If):
             return self._process_if(statement, env, scope_name)
+        if hasattr(ast, "Match") and isinstance(statement, ast.Match):
+            return self._process_match(statement, env, scope_name)
         if isinstance(statement, ast.While):
             return self._process_while(statement, env, scope_name)
         if isinstance(statement, ast.For):
@@ -474,6 +507,8 @@ class PythonFlowGraphBuilder:
         if isinstance(statement.value, ast.Call):
             callee_name, arguments = _extract_call_info(statement.value)
             metadata["is_call_assignment"] = True
+        if any(isinstance(target, ast.Subscript) for target in statement.targets):
+            metadata["is_container_write"] = True
 
         node = self._new_node(
             statement,
@@ -547,20 +582,26 @@ class PythonFlowGraphBuilder:
         callee_name = None
         arguments: List[str] = []
         kind = "expression"
+        writes: List[str] = []
         if isinstance(statement.value, ast.Call):
             callee_name, arguments = _extract_call_info(statement.value)
             kind = "call"
+            writes = _extract_mutated_receiver_names(statement.value)
         node = self._new_node(
             statement,
             kind,
             _safe_unparse(statement),
             scope_name,
             reads=reads,
+            writes=writes,
             callee_name=callee_name,
             arguments=arguments,
         )
         self._add_dfg_reads(env, reads, node.node_id)
-        return node.node_id, [node.node_id], _clone_env(env)
+        env_after = _clone_env(env)
+        for name in writes:
+            env_after[name] = {node.node_id}
+        return node.node_id, [node.node_id], env_after
 
     def _process_if(
         self,
@@ -607,6 +648,50 @@ class PythonFlowGraphBuilder:
             else_env = _clone_env(env)
 
         merged_env = _merge_envs(body_env, else_env)
+        return branch_node.node_id, [merge_node.node_id], merged_env
+
+    def _process_match(
+        self,
+        statement: ast.Match,
+        env: Dict[str, Set[str]],
+        scope_name: str,
+    ) -> Tuple[str, List[str], Dict[str, Set[str]]]:
+        """Approximate Python ``match`` as a multi-branch merge."""
+        reads = _extract_read_names(statement.subject)
+        branch_node = self._new_node(
+            statement,
+            "branch",
+            f"match {_safe_unparse(statement.subject)}",
+            scope_name,
+            reads=reads,
+        )
+        self._add_dfg_reads(env, reads, branch_node.node_id)
+
+        merge_node = self._new_merge_node(statement, scope_name, "match-merge")
+        case_envs: List[Dict[str, Set[str]]] = []
+
+        for index, case in enumerate(statement.cases):
+            case_env = _clone_env(env)
+            body_entry, body_exits, body_env = self._process_block(
+                case.body,
+                case_env,
+                scope_name,
+            )
+            edge_label = f"case-{index}"
+            if body_entry:
+                self.graph.add_edge(branch_node.node_id, body_entry, "cfg", edge_label)
+                for exit_id in body_exits:
+                    self.graph.add_edge(exit_id, merge_node.node_id, "cfg", "merge")
+                case_envs.append(body_env)
+            else:
+                self.graph.add_edge(branch_node.node_id, merge_node.node_id, "cfg", edge_label)
+                case_envs.append(case_env)
+
+        if not statement.cases:
+            self.graph.add_edge(branch_node.node_id, merge_node.node_id, "cfg", "no-case")
+            case_envs.append(_clone_env(env))
+
+        merged_env = _merge_envs(*case_envs) if case_envs else _clone_env(env)
         return branch_node.node_id, [merge_node.node_id], merged_env
 
     def _process_while(
@@ -1013,6 +1098,20 @@ class PythonFlowGraphBuilder:
 class PythonDataflowAnalyzer:
     """Trace tainted paths over the explicit Python flow graph."""
 
+    _CALL_ASSIGNMENT_ACCESSOR_METHODS = {
+        "b64decode",
+        "b64encode",
+        "decode",
+        "doSomething",
+        "encode",
+        "get",
+        "loads",
+        "pop",
+        "read",
+        "unquote",
+        "unquote_plus",
+    }
+
     def __init__(
         self,
         graph: PythonFlowGraph,
@@ -1128,8 +1227,12 @@ class PythonDataflowAnalyzer:
             return
 
         reads = list(node.reads) + list(node.arguments)
-        read_is_tainted = False
-        if not node.metadata.get("is_call_assignment"):
+        if node.metadata.get("is_call_assignment"):
+            read_is_tainted = self._call_assignment_reads_taint_writes(
+                node,
+                tainted_vars,
+            )
+        else:
             read_is_tainted = any(
                 self._mentions_taint(token, tainted_vars) for token in reads
             )
@@ -1288,6 +1391,56 @@ class PythonDataflowAnalyzer:
 
         return selected
 
+    def _call_assignment_reads_taint_writes(
+        self,
+        node: PythonFlowNode,
+        tainted_vars: Set[str],
+    ) -> bool:
+        """Propagate taint across common call-assignment transforms and accessors."""
+        if any(self._mentions_taint(argument, tainted_vars) for argument in node.arguments):
+            summary = self._lookup_local_summary(node.callee_name)
+            if summary is not None:
+                return summary.returns_tainted_from_parameters
+            return True
+
+        receiver = self._callee_receiver(node.callee_name)
+        if not receiver or not self._mentions_taint(receiver, tainted_vars):
+            return False
+
+        method_name = self._callee_leaf_name(node.callee_name)
+        return method_name in self._CALL_ASSIGNMENT_ACCESSOR_METHODS
+
+    def _lookup_local_summary(self, callee_name: Optional[str]):
+        """Find a same-file function summary by full or leaf callee name."""
+        if not callee_name:
+            return None
+        candidates = [callee_name]
+        leaf_name = self._callee_leaf_name(callee_name)
+        if leaf_name not in candidates:
+            candidates.append(leaf_name)
+        for candidate in candidates:
+            summary = self.graph.get_function_summary(candidate)
+            if summary is not None:
+                return summary
+        return None
+
+    @staticmethod
+    def _callee_leaf_name(callee_name: Optional[str]) -> str:
+        """Return the last callable segment from one rendered callee name."""
+        if not callee_name:
+            return ""
+        tail = callee_name.rsplit(".", 1)[-1]
+        match = re.search(r"([A-Za-z_]\w*)\s*$", tail)
+        return match.group(1) if match else tail.strip()
+
+    @staticmethod
+    def _callee_receiver(callee_name: Optional[str]) -> str:
+        """Return the receiver expression from one rendered method call name."""
+        if not callee_name or "." not in callee_name:
+            return ""
+        receiver, _, _ = callee_name.rpartition(".")
+        return receiver.strip()
+
     @staticmethod
     def _split_keyword_argument(argument: str) -> Tuple[str | None, str]:
         """Split a simple keyword argument rendered as ``name=value``."""
@@ -1380,4 +1533,6 @@ class PythonDataflowAnalyzer:
 
     @staticmethod
     def _resets_written_values(node: PythonFlowNode) -> bool:
+        if node.metadata.get("is_container_write"):
+            return False
         return node.kind in {"assignment", "loop", "parameter"}

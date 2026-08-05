@@ -28,8 +28,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" className={htmlClassName}>
-      <body className="min-h-full bg-background text-foreground">{children}</body>
+    <html lang="vi" className={htmlClassName} suppressHydrationWarning>
+      <body
+        className="min-h-full bg-background text-foreground"
+        suppressHydrationWarning
+      >
+        {children}
+      </body>
     </html>
   );
 }

@@ -100,6 +100,51 @@ class TestExtractSources:
         sources = plugin.extract_sources(ast, path, rules)
         assert len(sources) >= 1, "request.form.get() should remain a taint source"
 
+    def test_request_form_getlist_counts_as_source(self, plugin, rules):
+        code = "values = request.form.getlist('payload')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert any(source.variable_name == "values" for source in sources), (
+            "request.form.getlist() should be treated as a taint source"
+        )
+
+    def test_request_cookie_get_counts_as_source(self, plugin, rules):
+        code = "token = request.cookies.get('session')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert any(source.variable_name == "token" for source in sources), (
+            "request.cookies.get() should be treated as a taint source"
+        )
+
+    def test_request_header_get_counts_as_source(self, plugin, rules):
+        code = "auth = request.headers.get('Authorization')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert any(source.variable_name == "auth" for source in sources), (
+            "request.headers.get() should be treated as a taint source"
+        )
+
+    def test_request_headers_keys_counts_as_source(self, plugin, rules):
+        code = "for header_name in request.headers.keys():\n    print(header_name)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert any(source.pattern == "request.headers.keys" for source in sources), (
+            "request.headers.keys() should be treated as a taint source for header-name flows"
+        )
+
+    def test_wrapper_get_form_parameter_counts_as_source(self, plugin, rules):
+        code = "value = wrapped.get_form_parameter('id')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert any(source.variable_name == "value" for source in sources), (
+            "wrapper get_form_parameter() helpers should be treated as taint sources"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Tests: extract_sinks
@@ -144,8 +189,17 @@ class TestExtractSinks:
         sinks = plugin.extract_sinks(ast, path, rules)
         assert any(
             sink.function_name == "user.update" and sink.sink_type.value == "MASS_ASSIGNMENT"
-            for sink in sinks
+        for sink in sinks
         ), "user.update(**payload) should match the legacy .update(** sink"
+
+    def test_mass_assignment_plain_update_does_not_match_kwargs_pattern(self, plugin, rules):
+        code = "user.update(payload)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert all(sink.sink_type.value != "MASS_ASSIGNMENT" for sink in sinks), (
+            "user.update(payload) should not match the narrower .update(** sink"
+        )
 
     def test_no_sinks_in_clean_code(self, plugin, rules):
         code = "result = 1 + 2\nprint(result)\n"
@@ -173,12 +227,72 @@ class TestExtractSinks:
             for sink in sinks
         ), "urllib.request.urlopen() should be detected as an SSRF sink"
 
+    def test_finds_render_template_string_as_xss_sink(self, plugin, rules):
+        code = "from flask import render_template_string\nrender_template_string(payload)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "render_template_string" and sink.sink_type.value == "XSS"
+            for sink in sinks
+        ), "render_template_string() should be detected as an XSS sink"
+
+    def test_finds_markup_constructor_as_xss_sink(self, plugin, rules):
+        code = "from markupsafe import Markup\nMarkup(payload)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "Markup" and sink.sink_type.value == "XSS"
+            for sink in sinks
+        ), "Markup() should be detected as an XSS sink"
+
     def test_code_template_does_not_match_template_sink(self, plugin, rules):
         code = "CodeTemplate('hello ${name}')\n"
         path = write_temp(code)
         ast = plugin.parse_file(path)
         sinks = plugin.extract_sinks(ast, path, rules)
         assert sinks == [], "CodeTemplate() should not be treated as a Jinja Template sink"
+
+    def test_os_path_join_is_no_longer_a_default_path_traversal_sink(self, plugin, rules):
+        code = "import os\nfile_path = os.path.join(base_dir, filename)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert all(sink.function_name != "os.path.join" for sink in sinks), (
+            "os.path.join() alone should not be treated as a default path traversal sink"
+        )
+
+    def test_path_exists_counts_as_path_traversal_sink(self, plugin, rules):
+        code = "if candidate.exists():\n    pass\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "candidate.exists"
+            and sink.sink_type.value == "PATH_TRAVERSAL"
+            for sink in sinks
+        ), "Path.exists() should be treated as a path-traversal-relevant sink"
+
+    def test_path_read_text_counts_as_path_traversal_sink(self, plugin, rules):
+        code = "contents = candidate.read_text()\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert any(
+            sink.function_name == "candidate.read_text"
+            and sink.sink_type.value == "PATH_TRAVERSAL"
+            for sink in sinks
+        ), "Path.read_text() should be treated as a path-traversal-relevant sink"
+
+    def test_parameterized_execute_is_not_reported_as_sqli_sink(self, plugin, rules):
+        code = "cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sinks = plugin.extract_sinks(ast, path, rules)
+        assert all(sink.sink_type.value != "SQL_INJECTION" for sink in sinks), (
+            "parameterized execute() calls should not be treated as SQL injection sinks"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -191,8 +305,30 @@ class TestExtractSanitizers:
         path = write_temp(code)
         ast = plugin.parse_file(path)
         sanitizers = plugin.extract_sanitizers(ast, path, rules)
-        # A parameterized call should be recognized
+        # Parameterized execute() is handled directly at sink matching time.
         assert isinstance(sanitizers, list)
+
+    def test_html_escape_counts_as_xss_sanitizer(self, plugin, rules):
+        code = "import html\nsafe = html.escape(payload)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sanitizers = plugin.extract_sanitizers(ast, path, rules)
+        assert any(
+            sanitizer.function_name == "html.escape"
+            and any(vuln.value == "XSS" for vuln in sanitizer.mitigates)
+            for sanitizer in sanitizers
+        ), "html.escape() should mitigate XSS"
+
+    def test_markupsafe_escape_counts_as_xss_sanitizer(self, plugin, rules):
+        code = "import markupsafe\nsafe = markupsafe.escape(payload)\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sanitizers = plugin.extract_sanitizers(ast, path, rules)
+        assert any(
+            sanitizer.function_name == "markupsafe.escape"
+            and any(vuln.value == "XSS" for vuln in sanitizer.mitigates)
+            for sanitizer in sanitizers
+        ), "markupsafe.escape() should mitigate XSS"
 
 
 # ---------------------------------------------------------------------------

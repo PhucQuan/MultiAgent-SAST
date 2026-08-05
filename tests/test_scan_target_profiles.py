@@ -36,6 +36,10 @@ def test_focus_profile_adds_review_noise_exclusions(tmp_path):
     assert active_profiles == ["baseline", "focus"]
     assert "tests" in exclude_dirs
     assert "benchmarks" in exclude_dirs
+    assert ".ci" in exclude_dirs
+    assert ".claude" in exclude_dirs
+    assert ".agents" in exclude_dirs
+    assert ".github" in exclude_dirs
     assert "custom_dir" in exclude_dirs
     assert "*.spec.js" in exclude_globs
     assert "custom/*.snap" in exclude_globs
@@ -137,3 +141,10 @@ def test_parser_accepts_no_save_option():
 
     assert args.view is True
     assert args.no_save is True
+
+
+def test_parser_accepts_verbose_option():
+    parser = build_parser()
+    args = parser.parse_args(["sample.py", "--verbose"])
+
+    assert args.verbose is True

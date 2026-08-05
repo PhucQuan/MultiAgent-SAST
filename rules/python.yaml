@@ -5,17 +5,53 @@ sources:
   - pattern: "request.args.get"
     type: "HTTP_PARAM"
     severity: "HIGH"
+  - pattern: "request.args.getlist"
+    type: "HTTP_PARAM"
+    severity: "HIGH"
   - pattern: "request.form.get"
     type: "HTTP_FORM"
     severity: "HIGH"
+  - pattern: "request.form.getlist"
+    type: "HTTP_FORM"
+    severity: "HIGH"
+  - pattern: "request.cookies.get"
+    type: "HTTP_COOKIE"
+    severity: "HIGH"
+  - pattern: "request.headers.get"
+    type: "HTTP_HEADER"
+    severity: "HIGH"
+  - pattern: "request.headers.getlist"
+    type: "HTTP_HEADER"
+    severity: "HIGH"
+  - pattern: "request.headers.get_all"
+    type: "HTTP_HEADER"
+    severity: "HIGH"
   - pattern: "request.values.get"
     type: "HTTP_REQUEST"
+    severity: "HIGH"
+  - pattern: "request.args.keys"
+    type: "HTTP_PARAM"
+    severity: "HIGH"
+  - pattern: "request.form.keys"
+    type: "HTTP_FORM"
+    severity: "HIGH"
+  - pattern: "request.headers.keys"
+    type: "HTTP_HEADER"
     severity: "HIGH"
   - pattern: "request.json"
     type: "HTTP_JSON"
     severity: "HIGH"
   - pattern: "request.data"
     type: "HTTP_DATA"
+    severity: "HIGH"
+  - pattern: ".get_form_parameter("
+    type: "HTTP_FORM"
+    severity: "HIGH"
+  - pattern: ".get_query_parameter("
+    type: "HTTP_PARAM"
+    severity: "HIGH"
+  - pattern: ".get_cookie("
+    type: "HTTP_COOKIE"
     severity: "HIGH"
   
   # User Input
@@ -92,15 +128,35 @@ sinks:
       severity: "HIGH"
       description: "File access with potentially malicious path"
     
-    - pattern: "os.path.join("
-      type: "PATH_TRAVERSAL"
-      severity: "MEDIUM"
-      description: "Path construction - check for directory traversal"
-    
     - pattern: "pathlib.Path("
       type: "PATH_TRAVERSAL"
       severity: "MEDIUM"
       description: "Path construction - check for directory traversal"
+
+    - pattern: ".exists("
+      type: "PATH_TRAVERSAL"
+      severity: "MEDIUM"
+      description: "Path existence check with potentially malicious path"
+
+    - pattern: ".read_text("
+      type: "PATH_TRAVERSAL"
+      severity: "HIGH"
+      description: "Path read using potentially malicious file path"
+
+    - pattern: ".write_text("
+      type: "PATH_TRAVERSAL"
+      severity: "HIGH"
+      description: "Path write using potentially malicious file path"
+
+    - pattern: ".read_bytes("
+      type: "PATH_TRAVERSAL"
+      severity: "HIGH"
+      description: "Binary path read using potentially malicious file path"
+
+    - pattern: ".write_bytes("
+      type: "PATH_TRAVERSAL"
+      severity: "HIGH"
+      description: "Binary path write using potentially malicious file path"
 
   xss:
     - pattern: "render_template_string("
@@ -235,8 +291,16 @@ sanitizers:
   
   # General Sanitization
   - pattern: "html.escape("
-    mitigates: []
-    description: "HTML entity escaping"
+    mitigates: ["XSS"]
+    description: "HTML entity escaping for untrusted output"
+
+  - pattern: "markupsafe.escape("
+    mitigates: ["XSS"]
+    description: "MarkupSafe HTML escaping"
+
+  - pattern: "flask.escape("
+    mitigates: ["XSS"]
+    description: "Flask HTML escaping helper"
   
   - pattern: "re.escape("
     mitigates: []

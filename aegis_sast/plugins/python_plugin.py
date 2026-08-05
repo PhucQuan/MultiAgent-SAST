@@ -5,6 +5,7 @@ Implements security analysis for Python code using Tree-sitter.
 Detects SQL Injection, Command Injection, and Path Traversal vulnerabilities.
 """
 
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Set, Tuple
 import tree_sitter_python as tspython
@@ -157,6 +158,9 @@ class PythonPlugin(ILanguagePlugin):
                         # Extract function name and arguments
                         func_name = self._extract_function_name(node)
                         arguments = self._extract_arguments(node)
+                        vuln_type = self._map_vuln_type(rule.get("type", "UNKNOWN"))
+                        if self._should_skip_sink_match(vuln_type, func_name, arguments):
+                            continue
                         
                         location = CodeLocation(
                             file_path=str(file_path),
@@ -164,9 +168,6 @@ class PythonPlugin(ILanguagePlugin):
                             column_number=node.start_point[1],
                             code_snippet=source_lines[node.start_point[0]].strip() if node.start_point[0] < len(source_lines) else node_text
                         )
-                        
-                        # Map rule type to VulnerabilityType
-                        vuln_type = self._map_vuln_type(rule.get("type", "UNKNOWN"))
                         
                         sink = TaintSink(
                             location=location,
@@ -324,18 +325,35 @@ class PythonPlugin(ILanguagePlugin):
 
         if visited_funcs is None:
             visited_funcs = set()
-        if callee_name in visited_funcs or call_graph is None:
+        if call_graph is None:
             return False
 
-        entry = call_graph.get(callee_name)
-        if entry is None:
+        callee_candidates = self._callee_name_candidates(callee_name)
+        if any(candidate in visited_funcs for candidate in callee_candidates):
+            return False
+
+        resolved_callee_name = None
+        entry = None
+        for candidate in callee_candidates:
+            entry = call_graph.get(candidate)
+            if entry is not None:
+                resolved_callee_name = candidate
+                break
+        if entry is None or resolved_callee_name is None:
             return False
 
         callee_file = None
-        if import_map and callee_name in import_map:
-            callee_file = import_map[callee_name]
-        elif Path(entry.file_path) == file_path:
+        if import_map:
+            for candidate in callee_candidates:
+                if candidate in import_map:
+                    callee_file = import_map[candidate]
+                    break
+        if callee_file is None and Path(entry.file_path) == file_path:
             callee_file = Path(entry.file_path)
+        elif callee_file is None:
+            candidate_file = Path(entry.file_path)
+            if candidate_file.exists():
+                callee_file = candidate_file
 
         if callee_file is None or not callee_file.exists():
             return False
@@ -347,14 +365,25 @@ class PythonPlugin(ILanguagePlugin):
         callee_summary = None
         try:
             callee_graph = self._get_flow_graph(callee_file)
-            callee_summary = callee_graph.get_function_summary(callee_name)
+            for candidate in callee_candidates:
+                callee_summary = callee_graph.get_function_summary(candidate)
+                if callee_summary is not None:
+                    resolved_callee_name = candidate
+                    break
         except Exception:
             callee_graph = None
             callee_summary = None
 
         param_names = list(entry.params)
-        if not param_names and callee_summary is not None:
+        if callee_summary is not None and len(callee_summary.parameter_names) > len(param_names):
             param_names = list(callee_summary.parameter_names)
+        if (
+            "." in callee_name
+            and param_names
+            and param_names[0] in {"self", "cls"}
+            and len(param_names) == len(arguments) + 1
+        ):
+            param_names = param_names[1:]
 
         tainted_params: Set[str] = set()
         for index, argument in enumerate(arguments):
@@ -374,7 +403,7 @@ class PythonPlugin(ILanguagePlugin):
                 return True
             return False
 
-        visited_funcs.add(callee_name)
+        visited_funcs.add(resolved_callee_name)
         try:
             callee_bytes = callee_file.read_bytes()
         except OSError:
@@ -395,7 +424,7 @@ class PythonPlugin(ILanguagePlugin):
                         break
                 if (
                     name_node
-                    and name_node.text.decode("utf-8", errors="replace") != callee_name
+                    and name_node.text.decode("utf-8", errors="replace") != resolved_callee_name
                 ):
                     return False
 
@@ -424,7 +453,7 @@ class PythonPlugin(ILanguagePlugin):
         try:
             return _scan_callee(callee_ast.root_node)
         finally:
-            visited_funcs.discard(callee_name)
+            visited_funcs.discard(resolved_callee_name)
 
     
     # Helper methods
@@ -448,6 +477,36 @@ class PythonPlugin(ILanguagePlugin):
         
         return "unknown"
 
+    @staticmethod
+    def _callee_name_candidates(callee_name: str) -> List[str]:
+        """Return full and leaf callee names for method-call resolution."""
+        candidates = [callee_name]
+        leaf_name = callee_name.rsplit(".", 1)[-1].strip()
+        if leaf_name and leaf_name not in candidates:
+            candidates.append(leaf_name)
+        return candidates
+
+    def _should_skip_sink_match(
+        self,
+        vuln_type: VulnerabilityType,
+        function_name: str,
+        arguments: List[str],
+    ) -> bool:
+        """Skip sink matches that already look like well-parameterized safe calls."""
+        return (
+            vuln_type == VulnerabilityType.SQL_INJECTION
+            and self._is_parameterized_sql_call(function_name, arguments)
+        )
+
+    @staticmethod
+    def _is_parameterized_sql_call(function_name: str, arguments: List[str]) -> bool:
+        """Return True for DB-API execute-style calls with bound parameters."""
+        if not function_name.endswith(".execute") and not function_name.endswith(".executemany"):
+            return False
+        if len(arguments) >= 2:
+            return True
+        return any(argument.startswith("params=") or argument.startswith("parameters=") for argument in arguments)
+
     def _node_matches_pattern(self, node: Node, pattern: str) -> bool:
         """Return True when a node matches one reviewable source/sink pattern."""
         normalized_pattern = pattern.strip()
@@ -455,33 +514,81 @@ class PythonPlugin(ILanguagePlugin):
             return False
 
         if node.type == "call":
-            callable_pattern = self._normalize_call_pattern(normalized_pattern)
-            if callable_pattern:
-                return self._call_matches_pattern(node, callable_pattern)
-            return False
+            return self._call_matches_pattern(node, normalized_pattern)
 
         node_text = node.text.decode('utf-8', errors='replace').strip()
 
         return node_text == normalized_pattern
 
-    def _call_matches_pattern(self, node: Node, pattern_name: str) -> bool:
-        """Match exact callable names without substring bleed into unrelated APIs."""
+    def _call_matches_pattern(self, node: Node, pattern: str) -> bool:
+        """Match exact callable names and optional argument-shape hints."""
         if node.type != "call":
             return False
-        return self._call_name_matches(
-            self._extract_function_name(node),
-            pattern_name.strip(),
-        )
+
+        pattern_name, call_constraints = self._parse_call_pattern(pattern)
+        if not self._call_name_matches(self._extract_function_name(node), pattern_name):
+            return False
+        return self._call_satisfies_constraints(node, call_constraints)
 
     @staticmethod
-    def _normalize_call_pattern(pattern: str) -> str:
-        """Collapse legacy call hints such as `.execute(` or `.update(**` to names."""
+    def _parse_call_pattern(pattern: str) -> Tuple[str, Dict[str, Any]]:
+        """Split one legacy rule pattern into a callable name and argument hints."""
         normalized = pattern.strip()
         if not normalized:
-            return ""
-        if "(" in normalized:
-            normalized = normalized.split("(", 1)[0].rstrip()
-        return normalized
+            return "", {}
+
+        if "(" not in normalized:
+            return normalized, {}
+
+        call_name, remainder = normalized.split("(", 1)
+        call_name = call_name.rstrip()
+        args_hint = remainder.rsplit(")", 1)[0]
+        constraints: Dict[str, Any] = {}
+
+        if "**" in args_hint:
+            constraints["requires_kwargs_splat"] = True
+
+        keyword_equals = {
+            match.group(1): match.group(2)
+            for match in re.finditer(
+                r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)",
+                args_hint,
+            )
+        }
+        if keyword_equals:
+            constraints["keyword_equals"] = keyword_equals
+
+        return call_name, constraints
+
+    def _call_satisfies_constraints(
+        self,
+        node: Node,
+        constraints: Dict[str, Any],
+    ) -> bool:
+        """Validate optional argument-shape constraints from one rule pattern."""
+        if not constraints:
+            return True
+
+        arguments = self._extract_arguments(node)
+        normalized_arguments = [self._normalize_argument_text(arg) for arg in arguments]
+
+        if constraints.get("requires_kwargs_splat"):
+            if not any(arg.startswith("**") for arg in normalized_arguments):
+                return False
+
+        keyword_equals = constraints.get("keyword_equals", {})
+        for key, value in keyword_equals.items():
+            expected = f"{key}={value}"
+            if expected not in normalized_arguments:
+                return False
+
+        return True
+
+    @staticmethod
+    def _normalize_argument_text(argument: str) -> str:
+        """Collapse argument whitespace so keyword hints compare reliably."""
+        compact = re.sub(r"\s+", "", argument or "")
+        return compact.strip()
 
     @staticmethod
     def _call_name_matches(function_name: str, pattern_name: str) -> bool:
