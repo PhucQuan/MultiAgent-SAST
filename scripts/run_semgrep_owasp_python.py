@@ -41,6 +41,11 @@ REPO_ROOT = SCRIPT_DIR.parents[0]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from aegis_sast.integrations import import_semgrep_report
+from aegis_sast.orchestration import ScanWorkflow
+from aegis_sast.reporting.json_exporter import JSONExporter
+from aegis_sast.reporting.markdown_exporter import MarkdownExporter
+
 
 if Console is None:  # pragma: no cover - fallback only used in thin environments
     class _PlainConsole:
@@ -766,6 +771,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the OWASP scoring step even when --expected-results exists.",
     )
     parser.add_argument(
+        "--apply-aegis-triage",
+        action="store_true",
+        help=(
+            "Run the converted Semgrep report through the Aegis triage workflow "
+            "and export a second hybrid report."
+        ),
+    )
+    parser.add_argument(
+        "--native-report",
+        type=Path,
+        help=(
+            "Optional precomputed Aegis native JSON report to score with the same "
+            "OWASP harness and include in the terminal matrix."
+        ),
+    )
+    parser.add_argument(
         "--keep-family-artifacts",
         action="store_true",
         help=(
@@ -1397,6 +1418,103 @@ def score_report_if_requested(
     return summary, json_path, markdown_path
 
 
+def apply_aegis_triage_to_report(
+    *,
+    report: dict[str, Any],
+    output_dir: Path,
+) -> tuple[dict[str, Any], Path, Path, dict[str, Any]]:
+    """Run the imported Semgrep report through the Aegis triage workflow."""
+    scan_result, repo_profile = import_semgrep_report(report)
+    workflow_state = ScanWorkflow().run(scan_result, repo_profile=repo_profile)
+    workflow_metadata = dict(workflow_state.metadata)
+    workflow_metadata["detector_source"] = report.get("scan_metadata", {}).get(
+        "tool",
+        "semgrep-community",
+    )
+    workflow_metadata["detector_lane"] = "semgrep+aegis-triage"
+    workflow_metadata["upstream_profile"] = report.get("semgrep_run_summary", {}).get(
+        "profile"
+    )
+
+    json_path = JSONExporter(output_dir).export(
+        scan_result,
+        filename="semgrep_aegis_triaged_report.json",
+        triage_records=workflow_state.triage_records,
+        workflow_metadata=workflow_metadata,
+    )
+    markdown_path = MarkdownExporter(output_dir).export(
+        scan_result,
+        filename="semgrep_aegis_triaged_report.md",
+        triage_records=workflow_state.triage_records,
+        workflow_metadata=workflow_metadata,
+    )
+    triaged_report = json.loads(json_path.read_text(encoding="utf-8"))
+    triaged_report.setdefault("scan_metadata", {})["tool"] = "semgrep-community+aegis-triage"
+    json_path.write_text(
+        json.dumps(triaged_report, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return triaged_report, json_path, markdown_path, workflow_metadata
+
+
+def score_existing_report(
+    *,
+    report_path: Path,
+    expected_results: Path,
+    families: list[str],
+    output_dir: Path,
+    max_case_list: int,
+) -> tuple[dict[str, Any], Path, Path]:
+    """Score one already-generated JSON report with the shared harness."""
+    score_module = _load_owasp_score_module()
+    report = score_module.load_report(report_path.resolve())
+    summary = score_module.score_report(
+        report,
+        score_module.load_expected_cases(expected_results.resolve()),
+        families=families,
+        max_case_list=max_case_list,
+    )
+    json_path, markdown_path = score_module.write_outputs(summary, output_dir)
+    return summary, json_path, markdown_path
+
+
+def print_score_matrix(
+    lanes: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Render a compact detector/triage comparison matrix."""
+    if len(lanes) < 2:
+        return
+
+    table = Table(
+        title="Benchmark Matrix",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Lane", style="cyan")
+    table.add_column("All F1", justify="right")
+    table.add_column("Visible F1", justify="right")
+    table.add_column("High-Conf F1", justify="right")
+    table.add_column("Visible TP", justify="right")
+    table.add_column("Visible FP", justify="right")
+    table.add_column("Visible FN", justify="right")
+
+    for label, summary in lanes:
+        all_metrics = summary["modes"]["all"]["aggregate"]
+        visible_metrics = summary["modes"]["visible"]["aggregate"]
+        high_conf_metrics = summary["modes"]["high-confidence"]["aggregate"]
+        table.add_row(
+            label,
+            f"{all_metrics['f1']:.4f}",
+            f"{visible_metrics['f1']:.4f}",
+            f"{high_conf_metrics['f1']:.4f}",
+            str(visible_metrics["tp"]),
+            str(visible_metrics["fp"]),
+            str(visible_metrics["fn"]),
+        )
+
+    console.print(table)
+
+
 def print_run_overview(
     *,
     title: str,
@@ -1409,6 +1527,15 @@ def print_run_overview(
     score_summary: dict[str, Any] | None,
     score_json_path: Path | None,
     score_markdown_path: Path | None,
+    triaged_report_path: Path | None,
+    triaged_markdown_path: Path | None,
+    triaged_score_summary: dict[str, Any] | None,
+    triaged_score_json_path: Path | None,
+    triaged_score_markdown_path: Path | None,
+    native_report_path: Path | None,
+    native_score_summary: dict[str, Any] | None,
+    native_score_json_path: Path | None,
+    native_score_markdown_path: Path | None,
     keep_family_artifacts: bool,
 ) -> None:
     """Render a compact terminal overview for one Semgrep benchmark run."""
@@ -1478,6 +1605,15 @@ def print_run_overview(
         )
         console.print(score_table)
 
+    score_lanes: list[tuple[str, dict[str, Any]]] = []
+    if score_summary:
+        score_lanes.append(("Semgrep raw", score_summary))
+    if triaged_score_summary:
+        score_lanes.append(("Semgrep + triage", triaged_score_summary))
+    if native_score_summary:
+        score_lanes.append(("Aegis native", native_score_summary))
+    print_score_matrix(score_lanes)
+
     artifact_table = Table(show_header=False, box=None)
     artifact_table.add_column("Artifact", style="green")
     artifact_table.add_column("Path")
@@ -1487,6 +1623,20 @@ def print_run_overview(
         artifact_table.add_row("Score JSON", str(score_json_path))
     if score_markdown_path is not None:
         artifact_table.add_row("Score Markdown", str(score_markdown_path))
+    if triaged_report_path is not None:
+        artifact_table.add_row("Triaged report", str(triaged_report_path))
+    if triaged_markdown_path is not None:
+        artifact_table.add_row("Triaged markdown", str(triaged_markdown_path))
+    if triaged_score_json_path is not None:
+        artifact_table.add_row("Triaged score JSON", str(triaged_score_json_path))
+    if triaged_score_markdown_path is not None:
+        artifact_table.add_row("Triaged score Markdown", str(triaged_score_markdown_path))
+    if native_report_path is not None:
+        artifact_table.add_row("Native report", str(native_report_path))
+    if native_score_json_path is not None:
+        artifact_table.add_row("Native score JSON", str(native_score_json_path))
+    if native_score_markdown_path is not None:
+        artifact_table.add_row("Native score Markdown", str(native_score_markdown_path))
     console.print(artifact_table)
 
 
@@ -1495,6 +1645,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     transient_artifacts_dir: Path | None = None
+    triaged_report = None
+    triaged_report_path = None
+    triaged_markdown_path = None
+    triaged_score_summary = None
+    triaged_score_json_path = None
+    triaged_score_markdown_path = None
+    native_report_path = None
+    native_score_summary = None
+    native_score_json_path = None
+    native_score_markdown_path = None
 
     try:
         profile = resolve_profile(args.profile)
@@ -1542,33 +1702,30 @@ def main(argv: list[str] | None = None) -> int:
             ended_at=ended_at,
         )
 
-        score_summary = None
-        score_json_path = None
-        score_markdown_path = None
         if not args.skip_score and args.expected_results:
             expected_results = args.expected_results.resolve()
             if not expected_results.exists():
                 raise FileNotFoundError(
                     f"Expected-results CSV does not exist: {expected_results}"
                 )
-            score_summary, score_json_path, score_markdown_path = score_report_if_requested(
-                report=report,
-                expected_results=expected_results,
-                families=families,
-                output_dir=output_dir,
-                max_case_list=args.max_case_list,
-            )
         elif not args.skip_score:
             expected_results = profile["expected_results"].resolve()
             if not expected_results.exists():
                 raise FileNotFoundError(
                     f"Expected-results CSV does not exist: {expected_results}"
                 )
+        else:
+            expected_results = None
+
+        score_summary = None
+        score_json_path = None
+        score_markdown_path = None
+        if expected_results is not None:
             score_summary, score_json_path, score_markdown_path = score_report_if_requested(
                 report=report,
                 expected_results=expected_results,
                 families=families,
-                output_dir=output_dir,
+                output_dir=output_dir / "score_raw",
                 max_case_list=args.max_case_list,
             )
 
@@ -1581,6 +1738,48 @@ def main(argv: list[str] | None = None) -> int:
             family_runs=family_runs,
             score_summary=score_summary,
         )
+
+        if args.apply_aegis_triage:
+            (
+                triaged_report,
+                triaged_report_path,
+                triaged_markdown_path,
+                _triaged_workflow_metadata,
+            ) = apply_aegis_triage_to_report(
+                report=report,
+                output_dir=output_dir,
+            )
+            if expected_results is not None:
+                (
+                    triaged_score_summary,
+                    triaged_score_json_path,
+                    triaged_score_markdown_path,
+                ) = score_report_if_requested(
+                    report=triaged_report,
+                    expected_results=expected_results,
+                    families=families,
+                    output_dir=output_dir / "score_triaged",
+                    max_case_list=args.max_case_list,
+                )
+
+        if args.native_report is not None:
+            native_report_path = args.native_report.resolve()
+            if not native_report_path.exists():
+                raise FileNotFoundError(
+                    f"Native Aegis report does not exist: {native_report_path}"
+                )
+            if expected_results is not None:
+                (
+                    native_score_summary,
+                    native_score_json_path,
+                    native_score_markdown_path,
+                ) = score_existing_report(
+                    report_path=native_report_path,
+                    expected_results=expected_results,
+                    families=families,
+                    output_dir=output_dir / "score_native",
+                    max_case_list=args.max_case_list,
+                )
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except ValueError as exc:
@@ -1610,6 +1809,15 @@ def main(argv: list[str] | None = None) -> int:
         score_summary=score_summary,
         score_json_path=score_json_path,
         score_markdown_path=score_markdown_path,
+        triaged_report_path=triaged_report_path,
+        triaged_markdown_path=triaged_markdown_path,
+        triaged_score_summary=triaged_score_summary,
+        triaged_score_json_path=triaged_score_json_path,
+        triaged_score_markdown_path=triaged_score_markdown_path,
+        native_report_path=native_report_path,
+        native_score_summary=native_score_summary,
+        native_score_json_path=native_score_json_path,
+        native_score_markdown_path=native_score_markdown_path,
         keep_family_artifacts=args.keep_family_artifacts,
     )
     return 0

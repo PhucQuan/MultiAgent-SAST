@@ -6,6 +6,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { MetaTag } from "@/components/status-badge";
 import {
   formatDateTime,
   formatLabel,
@@ -22,11 +23,7 @@ function countFeedback(feedbackStore: ReviewerFeedbackStore) {
   const entries = Object.values(feedbackStore);
 
   return {
-    confirmed: entries.filter((entry) => entry.disposition === "confirmed").length,
-    falsePositive: entries.filter((entry) => entry.disposition === "false-positive")
-      .length,
-    needsReview: entries.filter((entry) => entry.disposition === "needs-review").length,
-    suppressed: entries.filter((entry) => entry.disposition === "suppressed").length,
+    total: entries.length,
     muted: entries.filter((entry) => entry.muted).length,
     notes: entries.filter((entry) => entry.note && entry.note.length > 0).length,
   };
@@ -42,30 +39,43 @@ function ReportItem({
   onSelect: () => void;
 }) {
   const actionable = report.triageSummary.confirmed + report.triageSummary.likely;
+  const needsReview = report.triageSummary["needs-review"];
 
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
-        "w-full border-l-2 border-transparent px-3 py-2.5 text-left transition-colors hover:bg-surface-muted",
-        selected && "border-l-primary bg-accent/60",
+        "w-full rounded-xl border border-transparent bg-background px-3 py-3 text-left transition-colors hover:border-border hover:bg-surface-muted",
+        selected && "border-primary/25 bg-primary/6 shadow-sm",
       )}
     >
-      <div className="truncate font-mono text-[12.5px] font-medium text-foreground">
-        {report.shortName}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate font-mono text-[12px] font-medium text-foreground">
+            {report.shortName}
+          </div>
+          <div className="mt-1 truncate text-[11.5px] text-muted-foreground">
+            {shortenPath(report.target, 4)}
+          </div>
+        </div>
+        <MetaTag className="shrink-0">
+          {report.origin === "imported" ? "Imported" : "Workspace"}
+        </MetaTag>
       </div>
-      <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground">
-        {shortenPath(report.target, 4)}
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <MetaTag>{formatLabel(report.scanProfile)}</MetaTag>
+        <MetaTag>{report.totalFindings} findings</MetaTag>
+        <MetaTag className="border-primary/25 bg-primary/8 text-primary">
+          {actionable} actionable
+        </MetaTag>
+        <MetaTag className="border-sev-medium/25 bg-sev-medium/8 text-sev-medium">
+          {needsReview} review
+        </MetaTag>
       </div>
-      <div className="num mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span>{formatLabel(report.reportKind)}</span>
-        <span className="text-border">|</span>
-        <span>{report.totalFindings} findings</span>
-        <span className="text-border">|</span>
-        <span className="text-sev-high">{actionable} actionable</span>
-      </div>
-      <div className="num mt-0.5 text-[11px] text-muted-foreground">
+
+      <div className="mt-2 text-[11px] text-muted-foreground">
         {formatDateTime(report.timestamp)}
       </div>
     </button>
@@ -88,10 +98,10 @@ function QuickAction({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12.5px] text-foreground transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left text-[12px] text-foreground transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      {label}
+      <span>{label}</span>
     </button>
   );
 }
@@ -132,123 +142,110 @@ export function ReportSidebar({
   recentLimit,
 }: ReportSidebarProps) {
   const counts = countFeedback(feedbackStore);
-  const feedbackCount = Object.keys(feedbackStore).length;
   const hiddenArchiveCount = Math.max(totalReports - reports.length, 0);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-surface">
-      <div className="border-b border-border px-3 py-2.5">
+    <div className="bg-surface">
+      <div className="border-b border-border px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Reports
             </div>
-            <div className="mt-0.5 text-[12px] text-muted-foreground">
+            <h2 className="mt-1 text-[15px] font-semibold tracking-tight text-foreground">
+              Scan history
+            </h2>
+            <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
               {showArchiveReports
-                ? `${totalReports} report${totalReports === 1 ? "" : "s"} loaded`
-                : `${reports.length} recent scan${reports.length === 1 ? "" : "s"} shown`}
-            </div>
+                ? `${totalReports} reports available`
+                : `${reports.length} recent runs shown`}
+            </p>
           </div>
 
           {archiveReports > 0 ? (
             <button
               type="button"
               onClick={onToggleArchiveReports}
-              className="rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-surface-muted"
+              className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-surface-muted"
             >
-              {showArchiveReports ? "Recent only" : "Show archive/demo"}
+              {showArchiveReports ? "Recent only" : "Show archive"}
             </button>
           ) : null}
         </div>
 
         {!showArchiveReports && archiveReports > 0 ? (
-          <div className="mt-2 text-[11.5px] leading-5 text-muted-foreground">
-            Archive/demo reports are hidden by default. Showing up to {recentLimit} recent runs.
+          <p className="mt-3 rounded-lg border border-border bg-background px-3 py-2 text-[11.5px] leading-5 text-muted-foreground">
+            Archive and demo reports stay hidden by default. Showing up to{" "}
+            {recentLimit} recent runs
             {hiddenArchiveCount > 0
-              ? ` ${hiddenArchiveCount} older report${hiddenArchiveCount === 1 ? "" : "s"} are hidden.`
-              : ""}
+              ? `, with ${hiddenArchiveCount} older report${hiddenArchiveCount === 1 ? "" : "s"} hidden.`
+              : "."}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="px-3 py-3">
+        {loading && reports.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-background px-3 py-4 text-[12.5px] text-muted-foreground">
+            Loading workspace reports...
+          </div>
+        ) : null}
+
+        {!loading && reports.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-background px-3 py-4 text-[12.5px] leading-6 text-muted-foreground">
+            No normalized Aegis report found yet. Run a local scan or import a
+            JSON bundle.
+          </div>
+        ) : null}
+
+        {reports.length ? (
+          <div className="space-y-2">
+            {reports.map((report) => (
+              <ReportItem
+                key={report.id}
+                report={report}
+                selected={report.id === selectedReportId}
+                onSelect={() => onSelectReport(report.id)}
+              />
+            ))}
           </div>
         ) : null}
       </div>
 
-      {loading && reports.length === 0 ? (
-        <div className="border-b border-border px-3 py-3">
-          <div className="rounded-sm border border-dashed border-border bg-background px-3 py-4 text-[12.5px] text-muted-foreground">
-            Loading workspace reports...
-          </div>
-        </div>
-      ) : null}
-
-      {!loading && reports.length === 0 ? (
-        <div className="border-b border-border px-3 py-3">
-          <div className="rounded-sm border border-dashed border-border bg-background px-3 py-4 text-[12.5px] leading-6 text-muted-foreground">
-            No normalized Aegis report found yet. Run a local scan or import a JSON bundle.
-          </div>
-        </div>
-      ) : null}
-
-      {reports.length ? (
-        <div className="border-b border-border py-1">
-          {reports.map((report) => (
-            <ReportItem
-              key={report.id}
-              report={report}
-              selected={report.id === selectedReportId}
-              onSelect={() => onSelectReport(report.id)}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      <div className="border-b border-border px-2 py-2">
-        <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="border-t border-border px-4 py-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Quick actions
         </div>
-        <QuickAction icon={FileJson} label="Import JSON report" onClick={onImportRequest} />
-        <QuickAction icon={RefreshCw} label="Refresh reports" onClick={onRefresh} />
-        <QuickAction
-          icon={Download}
-          label="Export feedback"
-          onClick={onExportFeedback}
-          disabled={feedbackCount === 0}
-        />
-        <QuickAction
-          icon={Trash2}
-          label="Clear local review state"
-          onClick={onClearMemory}
-          disabled={feedbackCount === 0}
-        />
-      </div>
-
-      <div className="px-3 py-2.5">
-        <div className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Reviewer memory
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+          <QuickAction icon={FileJson} label="Import report" onClick={onImportRequest} />
+          <QuickAction icon={RefreshCw} label="Refresh" onClick={onRefresh} />
+          <QuickAction
+            icon={Download}
+            label="Export memory"
+            onClick={onExportFeedback}
+            disabled={counts.total === 0}
+          />
+          <QuickAction
+            icon={Trash2}
+            label="Clear memory"
+            onClick={onClearMemory}
+            disabled={counts.total === 0}
+          />
         </div>
-        <dl className="num space-y-1 text-[12px]">
-          {[
-            ["Confirmed", counts.confirmed],
-            ["Needs review", counts.needsReview],
-            ["False positive", counts.falsePositive],
-            ["Suppressed", counts.suppressed],
-            ["Muted", counts.muted],
-            ["Notes saved", counts.notes],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="flex justify-between gap-3">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-medium text-foreground">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
 
-      {error ? (
-        <div className="border-t border-border px-3 py-3">
-          <div className="flex items-start gap-2 rounded-sm border border-destructive/25 bg-destructive/8 px-3 py-2.5 text-[12px] text-destructive">
+        <div className="mt-3 flex flex-wrap gap-2">
+          <MetaTag>{counts.total} reviewed</MetaTag>
+          <MetaTag>{counts.muted} muted</MetaTag>
+          <MetaTag>{counts.notes} notes</MetaTag>
+        </div>
+
+        {error ? (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/25 bg-destructive/8 px-3 py-2.5 text-[12px] text-destructive">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

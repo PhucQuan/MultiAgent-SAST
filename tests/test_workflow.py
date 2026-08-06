@@ -4,10 +4,12 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from rich.progress import SpinnerColumn, TextColumn
 
 import aegis_sast.cli as cli_module
-from aegis_sast.core.config import reload_config
+import aegis_sast.llm as llm_module
+from aegis_sast.core.config import AegisConfig, reload_config
 from aegis_sast.core.models import (
     AIVerification,
     CodeLocation,
@@ -125,6 +127,119 @@ def test_scan_workflow_builds_state_with_route_and_triage_summaries():
     assert state.traces[0].node_name == "repo_intake"
     assert state.traces[5].node_name == "skeptic_validator"
     assert len(state.traces) == 8
+
+
+def test_langgraph_bridge_runs_current_scan_workflow():
+    """LangGraph bridge should execute the current deterministic workflow."""
+    pytest.importorskip("langgraph")
+
+    source = TaintSource(
+        CodeLocation("demo.py", 4, 1, "cmd = request.args.get('cmd')"),
+        "HTTP_PARAM",
+        "cmd",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation("demo.py", 6, 1, "os.system(cmd)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+    )
+    vulnerability = Vulnerability(
+        id="VULN-LG-1",
+        vuln_type=VulnerabilityType.COMMAND_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(
+            source=source,
+            sink=sink,
+        ),
+        ai_verification=AIVerification(
+            is_vulnerable=True,
+            confidence=0.91,
+            explanation="User-controlled command reaches shell execution.",
+            recommendation="Avoid shell execution with untrusted input.",
+            model_used="test-model",
+        ),
+    )
+    scan_result = ScanResult(
+        target_path="demo-langgraph",
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[vulnerability],
+        files_scanned=1,
+    )
+
+    from aegis_sast.orchestration import run_scan_workflow_graph
+
+    state = run_scan_workflow_graph(scan_result)
+
+    assert state.repo_profile is not None
+    assert state.triage_records
+    assert state.metadata["judge_summary"]["finalized_findings"] == 1
+    assert state.traces[-1].node_name == "reporter"
+
+
+def test_langgraph_bridge_can_apply_ai_overlay_with_local_client():
+    """LangGraph bridge should accept a local AI client for post-workflow triage."""
+    pytest.importorskip("langgraph")
+
+    source = TaintSource(
+        CodeLocation("demo.py", 4, 1, "cmd = request.args.get('cmd')"),
+        "HTTP_PARAM",
+        "cmd",
+        "request.args.get",
+    )
+    sink = TaintSink(
+        CodeLocation("demo.py", 6, 1, "os.system(cmd)"),
+        VulnerabilityType.COMMAND_INJECTION,
+        "os.system",
+        "os.system(",
+    )
+    vulnerability = Vulnerability(
+        id="VULN-LG-AI-1",
+        vuln_type=VulnerabilityType.COMMAND_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(source=source, sink=sink),
+    )
+    scan_result = ScanResult(
+        target_path="demo-langgraph-local-ai",
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[vulnerability],
+        files_scanned=1,
+    )
+
+    class StubLocalAIClient:
+        def __init__(self):
+            self.client = object()
+            self.provider_name = "ollama"
+            self.model_name = "qwen3:8b"
+            self.config = SimpleNamespace(
+                llm_provider="ollama",
+                active_llm_model="qwen3:8b",
+            )
+
+        def _call_api(self, prompt):
+            return {
+                "status": "confirmed",
+                "confidence": 0.91,
+                "explanation": "Local triage confirms user-controlled input reaches shell execution.",
+                "recommendation": "Replace shell execution with a fixed argv list.",
+            }
+
+    from aegis_sast.orchestration import run_scan_workflow_graph
+
+    state = run_scan_workflow_graph(
+        scan_result,
+        ai_client=StubLocalAIClient(),
+    )
+
+    assert state.metadata["ai_triage_applied"] is True
+    assert state.metadata["ai_provider"] == "ollama"
+    assert state.metadata["ai_model"] == "qwen3:8b"
+    assert state.metadata["ai_triage_summary"]["provider"] == "ollama"
+    assert state.triage_records[0].decision.status.value == "confirmed"
+    assert state.traces[-1].node_name == "ai_triage_overlay"
 
 
 def test_scan_workflow_promotes_strong_sqli_to_likely(tmp_path):
@@ -343,7 +458,12 @@ def test_scan_pipeline_service_applies_ai_overlay_after_workflow(tmp_path):
     class StubAIClient:
         def __init__(self):
             self.client = object()
-            self.config = SimpleNamespace(gemini_model="stub-triage-model")
+            self.provider_name = "ollama"
+            self.model_name = "qwen3:8b"
+            self.config = SimpleNamespace(
+                llm_provider="ollama",
+                active_llm_model="qwen3:8b",
+            )
 
         def _call_api(self, prompt):
             return {
@@ -382,10 +502,45 @@ def test_scan_pipeline_service_applies_ai_overlay_after_workflow(tmp_path):
     assert result.triage_records[0].decision.status.value == "confirmed"
     assert result.triage_records[0].decision.reviewer == "ai-triage-runner-v1"
     assert result.triage_records[0].finding.metadata["triage"]["ai_triage_applied"] is True
+    assert result.workflow_state is not None
+    assert result.workflow_state.traces[-1].node_name == "ai_triage_overlay"
     assert result.workflow_metadata["deterministic_triage_summary"]["likely"] == 1
     assert result.workflow_metadata["triage_summary"]["confirmed"] == 1
+    assert result.workflow_metadata["workflow_backend"] == "langgraph-bridge"
     assert result.workflow_metadata["ai_triage_summary"]["changed_status_count"] == 1
-    assert result.workflow_metadata["ai_model"] == "stub-triage-model"
+    assert result.workflow_metadata["ai_provider"] == "ollama"
+    assert result.workflow_metadata["ai_model"] == "qwen3:8b"
+    assert result.workflow_metadata["ai_triage_summary"]["provider"] == "ollama"
+
+
+def test_scan_pipeline_service_builds_local_client_from_provider_config(monkeypatch):
+    """Service should delegate default AI client creation to the configured provider."""
+    calls = {}
+
+    class StubLocalClient:
+        def __init__(self):
+            self.client = object()
+            self.provider_name = "ollama"
+            self.model_name = "qwen3:8b"
+
+    def fake_create_llm_client(config):
+        calls["provider"] = config.llm_provider
+        return StubLocalClient()
+
+    monkeypatch.setattr(llm_module, "create_llm_client", fake_create_llm_client)
+
+    config = AegisConfig(
+        llm_provider="ollama",
+        openai_compatible_base_url="http://127.0.0.1:11434/v1",
+        openai_compatible_model="qwen3:8b",
+        enable_ai_verification=True,
+    )
+
+    client, error = ScanPipelineService()._build_ai_client(config)
+
+    assert error is None
+    assert isinstance(client, StubLocalClient)
+    assert calls["provider"] == "ollama"
 
 
 def test_scan_pipeline_service_forwards_directory_exclusions(tmp_path):
@@ -580,3 +735,41 @@ def test_config_accepts_google_api_key_alias_and_new_default_model(
     assert config.gemini_api_key == "test-google-ai-studio-key"
     assert config.gemini_model == "gemini-3.6-flash"
     assert config.enable_ai_verification is True
+
+
+def test_config_supports_local_openai_compatible_provider(tmp_path, monkeypatch):
+    """Config should support Ollama or LM Studio via OpenAI-compatible settings."""
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "LLM_PROVIDER=ollama",
+                "OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1",
+                "OPENAI_COMPATIBLE_MODEL=qwen3:8b",
+                "OPENAI_COMPATIBLE_API_KEY=",
+                "ENABLE_AI_VERIFICATION=true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("AI_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+
+    config = reload_config()
+    config.validate_ai_config()
+
+    assert config.llm_provider == "ollama"
+    assert config.active_llm_model == "qwen3:8b"
+    assert config.active_llm_base_url == "http://127.0.0.1:11434/v1"
+    assert config.enable_ai_verification is True
+    assert config.openai_compatible_api_key == "ollama"

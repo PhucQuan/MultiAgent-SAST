@@ -15,13 +15,21 @@ import { toast } from "sonner";
 import { FindingDetail } from "@/components/finding-detail";
 import { FindingQueue, type QueueFilters } from "@/components/finding-queue";
 import { ReportSidebar, type ReportEntry } from "@/components/report-sidebar";
+import { MetaTag } from "@/components/status-badge";
 import { TopBar } from "@/components/top-bar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
-import { severityRank, triageRank } from "@/lib/dashboard-ui";
+import {
+  describeReportSource,
+  formatDateTime,
+  formatLabel,
+  severityRank,
+  shortenPath,
+  triageRank,
+} from "@/lib/dashboard-ui";
 import { normalizeReport, summarizeReport } from "@/lib/report-adapter";
 import {
   clearReviewEntry,
@@ -237,6 +245,105 @@ function useHydrated() {
   );
 }
 
+function SummaryStatCard({
+  label,
+  value,
+  accent = "default",
+}: {
+  label: string;
+  value: string | number;
+  accent?: "default" | "primary" | "warning";
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-background px-3 py-3">
+      <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </div>
+      <div
+        className={[
+          "mt-1 num text-[20px] font-semibold tracking-tight",
+          accent === "primary"
+            ? "text-primary"
+            : accent === "warning"
+              ? "text-sev-high"
+              : "text-foreground",
+        ].join(" ")}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SelectedReportPanel({
+  report,
+  totalFindings,
+  selectedFindings,
+  reviewedLocally,
+}: {
+  report: ReportEntry | null;
+  totalFindings: number;
+  selectedFindings: number;
+  reviewedLocally: number;
+}) {
+  if (!report) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-surface px-4 py-5">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Current workspace
+        </div>
+        <h2 className="mt-1 text-[18px] font-semibold tracking-tight text-foreground">
+          No report selected
+        </h2>
+        <p className="mt-2 max-w-2xl text-[12.5px] leading-6 text-muted-foreground">
+          Import a JSON report or run a local scan to populate the review queue.
+        </p>
+      </div>
+    );
+  }
+
+  const sourceDescriptor = describeReportSource(report.sourcePath);
+  const actionable = report.triageSummary.confirmed + report.triageSummary.likely;
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <MetaTag className="border-primary/25 bg-primary/8 text-primary">
+              {sourceDescriptor.label}
+            </MetaTag>
+            <MetaTag>{formatLabel(report.reportKind)}</MetaTag>
+            <MetaTag>{formatLabel(report.scanProfile)}</MetaTag>
+          </div>
+          <h2 className="mt-3 text-[18px] font-semibold tracking-tight text-foreground">
+            {report.shortName}
+          </h2>
+          <p className="mt-1 text-[12.5px] leading-6 text-muted-foreground">
+            {sourceDescriptor.detail}
+          </p>
+          <div className="mt-3 space-y-1 text-[12px] text-muted-foreground">
+            <div className="font-mono">{shortenPath(report.target, 6)}</div>
+            <div>
+              Last updated {formatDateTime(report.timestamp)}
+              {report.frameworkHints.length
+                ? ` | ${report.frameworkHints.map((item) => formatLabel(item)).join(", ")}`
+                : ""}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[420px]">
+          <SummaryStatCard label="Total findings" value={totalFindings} />
+          <SummaryStatCard label="Visible now" value={selectedFindings} accent="primary" />
+          <SummaryStatCard label="Actionable" value={actionable} accent="warning" />
+          <SummaryStatCard label="Local memory" value={reviewedLocally} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [workspaceReports, setWorkspaceReports] = useState<ReportSummaryCard[]>([]);
   const [importedReports, setImportedReports] = useState<NormalizedReport[]>([]);
@@ -272,7 +379,6 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const handledScanJobRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
   const hasSidebar = useMediaQuery("(min-width: 1024px)");
-  const isWide = useMediaQuery("(min-width: 1280px)");
   const scanRunning = scanJobStatus === "queued" || scanJobStatus === "running";
 
   useEffect(() => {
@@ -712,10 +818,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     startTransition(() => {
       setSelectedFindingKey(findingKey);
     });
-
-    if (!isWide) {
-      setDetailOpen(true);
-    }
+    setDetailOpen(true);
   }
 
   function handleImportRequest() {
@@ -966,12 +1069,11 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         }
         handleClearFeedback(selectedFinding.key);
       }}
-      onClose={isWide ? undefined : () => setDetailOpen(false)}
     />
   );
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="flex min-h-[100dvh] flex-col bg-background">
       <input
         ref={fileInputRef}
         type="file"
@@ -1026,28 +1128,73 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[264px_minmax(0,1fr)] xl:grid-cols-[264px_minmax(0,1fr)_400px]">
-        {hasSidebar ? <div className="border-r border-border">{explorer}</div> : null}
+      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[292px_minmax(0,1fr)]">
+        {hasSidebar ? (
+          <div className="border-r border-border bg-surface">{explorer}</div>
+        ) : null}
 
-        <div className="min-h-0 min-w-0 border-r border-border">
-          <FindingQueue
-            findings={filteredFindings}
-            total={allFindings.length}
-            feedbackStore={reviewStore}
-            filters={filters}
-            onFiltersChange={setFilters}
-            selectedFindingKey={effectiveSelectedFindingKey}
-            onSelectFinding={handleSelectFinding}
-            languages={languageOptions}
-            families={familyOptions}
-            statuses={statusOptions}
-            severities={severityOptions}
-            loading={loadingSelectedReport}
-            error={reportError}
-          />
+        <div className="min-w-0 bg-background">
+          <div className="border-b border-border px-4 py-4">
+            <SelectedReportPanel
+              report={selectedReportSummary}
+              totalFindings={allFindings.length}
+              selectedFindings={filteredFindings.length}
+              reviewedLocally={Object.keys(reviewStore).length}
+            />
+
+            {scanJobStatus ? (
+              <div className="mt-3 rounded-2xl border border-border bg-surface px-4 py-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Scan activity
+                    </div>
+                    <div className="mt-1 text-[14px] font-semibold text-foreground">
+                      {scanStatusLabel}
+                    </div>
+                    <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                      {scanJobProgress.message ??
+                        (scanJobResult?.selectedReportPath
+                          ? `Latest report: ${scanJobResult.selectedReportPath}`
+                          : "Open the scan panel to watch the full live log.")}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {scanProgressPercent !== null ? (
+                      <MetaTag>{scanProgressPercent}% complete</MetaTag>
+                    ) : null}
+                    <MetaTag>{scanJobProgress.filesScanned ?? 0} files scanned</MetaTag>
+                    <MetaTag>{scanJobProgress.findings ?? 0} findings</MetaTag>
+                    {scanJobError ? (
+                      <MetaTag className="border-destructive/25 bg-destructive/8 text-destructive">
+                        Error
+                      </MetaTag>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div>
+            <FindingQueue
+              findings={filteredFindings}
+              total={allFindings.length}
+              feedbackStore={reviewStore}
+              filters={filters}
+              onFiltersChange={setFilters}
+              selectedFindingKey={effectiveSelectedFindingKey}
+              onSelectFinding={handleSelectFinding}
+              languages={languageOptions}
+              families={familyOptions}
+              statuses={statusOptions}
+              severities={severityOptions}
+              loading={loadingSelectedReport}
+              error={reportError}
+            />
+          </div>
         </div>
-
-        {isWide ? <div className="min-h-0">{detail}</div> : null}
       </div>
 
       <Sheet open={explorerOpen} onOpenChange={setExplorerOpen}>
@@ -1288,8 +1435,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         </div>
       ) : null}
 
-      <Sheet open={!isWide && detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent side="right" className="w-full p-0 sm:max-w-[540px]">
           <SheetTitle className="sr-only">Finding detail</SheetTitle>
           {detail}
         </SheetContent>

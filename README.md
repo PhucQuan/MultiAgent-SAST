@@ -49,7 +49,7 @@ graph TD
 | SARIF export | Implemented | JSON, Markdown, SARIF |
 | Python graph benchmark | Implemented | Synthetic ablation dataset and benchmark runner |
 | Semgrep adapter | Planned | Baseline and industrial comparison |
-| Local LLM / RAG | Planned | Next AI layer after evidence and workflow |
+| Local LLM / RAG | Initial local LLM support | OpenAI-compatible triage works with Ollama / LM Studio; RAG is still planned |
 | Fine-tuning / LoRA | Planned | Stretch goal after labeled triage data exists |
 
 ## Analysis depth by language
@@ -125,6 +125,28 @@ If you only need the module entrypoint, `python -m aegis_sast.cli ...` is enough
 
 ```bash
 python -m pip install -e . --no-deps
+```
+
+## AI backend configuration
+
+Gemini remains supported through `GEMINI_API_KEY` / `GOOGLE_API_KEY`.
+
+For local AI triage with Ollama or LM Studio, configure an OpenAI-compatible endpoint in `.env`:
+
+```env
+LLM_PROVIDER=ollama
+OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:11434/v1
+OPENAI_COMPATIBLE_MODEL=qwen3:8b
+OPENAI_COMPATIBLE_API_KEY=ollama
+```
+
+LM Studio uses the same adapter with a different base URL, for example:
+
+```env
+LLM_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:1234/v1
+OPENAI_COMPATIBLE_MODEL=qwen2.5-coder-14b-instruct
+OPENAI_COMPATIBLE_API_KEY=local
 ```
 
 ## Quick start
@@ -205,7 +227,7 @@ The repository is stronger than an early prototype, but it is still honest about
 - JavaScript, Java, and PHP are currently shallower than Python.
 - Cross-file reasoning is currently Python-first.
 - Full LangGraph integration is not complete yet.
-- Local LLM, RAG, Semgrep adapter, and fine-tuning are roadmap items, not finished features.
+- Local LLM currently covers OpenAI-compatible AI triage only; RAG, Semgrep adapter, and fine-tuning are still roadmap items.
 - Missing `tree-sitter` dependencies can make analyzers unavailable in a runtime environment.
 
 ## Roadmap focus for the next 4-6 months
@@ -216,7 +238,7 @@ The roadmap is deliberately heavy, but it is heavy in the right places:
 2. Push Python from graph core into evidence slicing / CPG-lite for stronger research contribution.
 3. Integrate Semgrep as the first industrial baseline.
 4. Turn the current staged workflow into a real LangGraph triage pipeline.
-5. Add Local LLM + RAG for private, evidence-aware triage and remediation planning.
+5. Expand the new local LLM adapter into richer LangGraph triage and RAG-backed remediation planning.
 6. Expand benchmarking into a thesis-grade evaluation layer.
 
 The detailed technical roadmap lives in [docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md](docs/thesis/32-roadmap-4-6-thang-hybrid-sast-agent.md).

@@ -194,7 +194,10 @@ class SkepticValidatorNode:
             else:
                 suggested_status = TriageStatus.SUPPRESSED
                 confidence_cap = 0.45
-        elif record.decision.confidence < 0.6:
+        elif (
+            record.decision.status != TriageStatus.SUPPRESSED
+            and record.decision.confidence < 0.6
+        ):
             objections.append("Confidence remains low after audit.")
             suggested_status = TriageStatus.NEEDS_REVIEW
             confidence_cap = 0.55

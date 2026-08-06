@@ -11,7 +11,7 @@ from datetime import datetime
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from aegis_sast.core.config import get_config
+from aegis_sast.core.config import AegisConfig, get_config
 from aegis_sast.core.models import AIVerification, VulnerabilityType
 from aegis_sast.ai.prompts import get_verification_prompt
 from aegis_sast.ai.cache_manager import CacheManager
@@ -27,9 +27,11 @@ except ImportError:  # pragma: no cover - depends on optional AI install
 class GeminiClient:
     """Client for Gemini API with retry logic and caching."""
     
-    def __init__(self):
+    def __init__(self, config: Optional[AegisConfig] = None):
         """Initialize Gemini client."""
-        self.config = get_config()
+        self.config = config or get_config()
+        self.provider_name = "gemini"
+        self.model_name = self.config.gemini_model
         self.cache = CacheManager()
         self.client = None
 

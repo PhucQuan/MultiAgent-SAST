@@ -98,6 +98,18 @@ class MarkdownExporter:
             lines.append(
                 f"- **Knowledge Cards Loaded**: {workflow_metadata['knowledge_card_count']}\n"
             )
+        if workflow_metadata.get("detector_source"):
+            lines.append(
+                f"- **Detector Source**: `{workflow_metadata['detector_source']}`\n"
+            )
+        if workflow_metadata.get("detector_lane"):
+            lines.append(
+                f"- **Detector Lane**: `{workflow_metadata['detector_lane']}`\n"
+            )
+        if workflow_metadata.get("upstream_profile"):
+            lines.append(
+                f"- **Upstream Profile**: `{workflow_metadata['upstream_profile']}`\n"
+            )
         for key, label in [
             ("route_summary", "Route Summary"),
             ("auditor_summary", "Auditor Summary"),

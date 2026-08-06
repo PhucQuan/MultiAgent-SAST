@@ -1,11 +1,8 @@
 import { Download, FileJson, Play, RefreshCw } from "lucide-react";
 
-import { StatCell } from "@/components/status-badge";
+import { MetaTag } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  formatDateTime,
-  shortenPath,
-} from "@/lib/dashboard-ui";
+import { formatDateTime, formatLabel, shortenPath } from "@/lib/dashboard-ui";
 import type { ReportSummaryCard } from "@/lib/report-types";
 
 interface TopBarProps {
@@ -35,36 +32,57 @@ export function TopBar({
 
   return (
     <header className="border-b border-border bg-surface">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 px-4 py-3 lg:flex lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 px-4 py-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Aegis-SAST
+            Aegis-SAST review layer
           </div>
-          <h1 className="mt-1 truncate text-[15px] font-semibold tracking-tight text-foreground">
-            Static code findings
+          <h1 className="mt-1 text-[18px] font-semibold tracking-tight text-foreground">
+            Aegis Review Console
           </h1>
-          <p className="truncate text-[12px] text-muted-foreground">
-            Local review console for exported Aegis reports and AI triage overlays
+          <p className="mt-1 max-w-3xl text-[12.5px] leading-6 text-muted-foreground">
+            Review exported findings, run local scans, and keep reviewer
+            feedback lightweight before sharing results in the thesis demo flow.
           </p>
-        </div>
 
-        <div className="hidden min-w-0 items-center gap-4 xl:flex">
-          <div className="min-w-0 text-right">
-            <div className="truncate font-mono text-[12.5px] font-medium text-foreground">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <MetaTag>{reportsLoaded} reports loaded</MetaTag>
+            <MetaTag>{reviewedLocally} local review entries</MetaTag>
+            {report ? (
+              <>
+                <MetaTag>{formatLabel(report.reportKind)}</MetaTag>
+                <MetaTag>{report.totalFindings} findings</MetaTag>
+                <MetaTag className="border-primary/25 bg-primary/8 text-primary">
+                  {actionable} actionable
+                </MetaTag>
+                <MetaTag className="border-sev-medium/25 bg-sev-medium/8 text-sev-medium">
+                  {needsReview} needs review
+                </MetaTag>
+              </>
+            ) : null}
+          </div>
+
+          <div className="mt-3 min-w-0 rounded-lg border border-border bg-background px-3 py-2.5">
+            <div className="truncate font-mono text-[12px] font-medium text-foreground">
               {report?.shortName ?? "No report selected"}
             </div>
-            <div className="num truncate text-[11.5px] text-muted-foreground">
+            <div className="mt-1 truncate text-[11.5px] text-muted-foreground">
               {report
-                ? `${report.scanProfile} · ${formatDateTime(report.timestamp)} · ${report.totalFindings} findings`
-                : "Select a report to inspect"}
+                ? `${formatLabel(report.scanProfile)} | ${formatDateTime(report.timestamp)}`
+                : "Choose a report from the sidebar to inspect findings."}
             </div>
+            {report ? (
+              <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                {shortenPath(report.target, 5)}
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 xl:justify-end">
           <Button
             size="sm"
-            className="h-8 gap-1.5"
+            className="h-9 gap-1.5 rounded-md px-3"
             onClick={onRunScan}
             disabled={scanPending}
           >
@@ -73,40 +91,35 @@ export function TopBar({
             ) : (
               <Play className="h-3.5 w-3.5" />
             )}{" "}
-            {scanPending ? "Running scan" : "Run local scan"}
+            {scanPending ? "Running scan" : "New local scan"}
           </Button>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5"
+            className="h-9 gap-1.5 rounded-md px-3"
             onClick={onImport}
           >
-            <FileJson className="h-3.5 w-3.5" /> Import JSON
+            <FileJson className="h-3.5 w-3.5" /> Import report
           </Button>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5"
+            className="h-9 gap-1.5 rounded-md px-3"
             onClick={onRefresh}
           >
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-          <Button size="sm" className="h-8 gap-1.5" onClick={onExport}>
-            <Download className="h-3.5 w-3.5" /> Export feedback
-          </Button>
+          {reviewedLocally > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 gap-1.5 rounded-md px-3"
+              onClick={onExport}
+            >
+              <Download className="h-3.5 w-3.5" /> Export memory
+            </Button>
+          ) : null}
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border bg-surface-muted px-4 py-2">
-        <StatCell label="Actionable" value={actionable} tone="warn" />
-        <StatCell label="Needs review" value={needsReview} />
-        <StatCell label="Reports loaded" value={reportsLoaded} />
-        <StatCell label="Reviewed locally" value={reviewedLocally} tone="primary" />
-        {report ? (
-          <div className="ml-auto hidden truncate font-mono text-[11.5px] text-muted-foreground xl:block">
-            {shortenPath(report.target, 5)}
-          </div>
-        ) : null}
       </div>
     </header>
   );

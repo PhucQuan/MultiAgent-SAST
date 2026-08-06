@@ -7,6 +7,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from aegis_sast.integrations import import_semgrep_report
+
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_semgrep_baseline.py"
 OWASP_PYTHON_SCRIPT_PATH = (
@@ -456,3 +458,179 @@ def test_owasp_runner_markdown_notes_when_family_artifacts_are_not_kept():
 
     assert "## Family Artifacts" in content
     assert "Per-family raw Semgrep artifacts were not kept in this run." in content
+
+
+def test_semgrep_adapter_rebuilds_scan_result_and_repo_profile():
+    report = {
+        "schema_version": "aegis-compatible-semgrep-report-v1",
+        "scan_metadata": {
+            "tool": "semgrep-community",
+            "version": "1.90.0",
+            "timestamp": "2026-08-05T18:30:00",
+            "target": "D:/BenchmarkPython/testcode",
+            "duration_seconds": 12.5,
+            "files_scanned": 1,
+        },
+        "findings": [
+            {
+                "id": "SEMGREP-00001",
+                "tool": "semgrep-community",
+                "language": "python",
+                "rule_id": "python.command.demo",
+                "type": "COMMAND_INJECTION",
+                "severity": "HIGH",
+                "triage_status": "likely",
+                "confidence": 0.85,
+                "file": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+                "line": 20,
+                "message": "Potential command injection",
+                "evidence": {
+                    "source": {
+                        "file": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+                        "line": 10,
+                        "column": 12,
+                        "snippet": "request.args.get('cmd')",
+                    },
+                    "sink": {
+                        "file": "D:/BenchmarkPython/testcode/BenchmarkTest00165.py",
+                        "line": 20,
+                        "column": 5,
+                        "snippet": "subprocess.run(cmd, shell=True)",
+                    },
+                    "intermediate_steps": [],
+                    "sanitizers": [],
+                },
+                "metadata": {
+                    "check_id": "python.command.demo",
+                    "detection": {
+                        "source_type": "HTTP_PARAM",
+                        "sink_function": "subprocess.run",
+                    },
+                },
+                "detected_at": "2026-08-05T18:30:00",
+            }
+        ],
+        "summary": {
+            "target": "D:/BenchmarkPython/testcode",
+            "duration_seconds": 12.5,
+            "files_scanned": 1,
+            "total_vulnerabilities": 1,
+            "by_severity": {"critical": 0, "high": 1, "medium": 0, "low": 0},
+            "errors": [],
+        },
+        "errors": [],
+        "semgrep_run_summary": {
+            "profile": "benchmark-python",
+            "language": "python",
+            "families": ["COMMAND_INJECTION"],
+            "semgrep_command": ["semgrep"],
+            "family_runs": [],
+        },
+    }
+
+    scan_result, repo_profile = import_semgrep_report(report)
+
+    assert scan_result.target_path == "D:/BenchmarkPython/testcode"
+    assert scan_result.files_scanned == 1
+    assert scan_result.total_vulnerabilities == 1
+    assert scan_result.high_count == 1
+    assert scan_result.vulnerabilities[0].to_normalized_finding().message == "Potential command injection"
+    assert repo_profile.scan_profile == "benchmark-python"
+    assert repo_profile.detected_languages == ["python"]
+    assert repo_profile.metadata["original_tool"] == "semgrep-community"
+
+
+def test_owasp_runner_can_apply_aegis_triage_to_imported_report(tmp_path):
+    module = _load_owasp_python_module()
+    target_file = tmp_path / "BenchmarkTest00001.py"
+    target_file.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "name = sys.argv[1]",
+                "open(name)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "schema_version": "aegis-compatible-semgrep-report-v1",
+        "scan_metadata": {
+            "tool": "semgrep-community",
+            "version": "1.90.0",
+            "timestamp": "2026-08-05T19:00:00",
+            "target": str(tmp_path),
+            "duration_seconds": 1.2,
+            "files_scanned": 1,
+        },
+        "findings": [
+            {
+                "id": "SEMGREP-PT-1",
+                "tool": "semgrep-community",
+                "language": "python",
+                "rule_id": "python.path.demo",
+                "type": "PATH_TRAVERSAL",
+                "severity": "HIGH",
+                "triage_status": "likely",
+                "confidence": 0.8,
+                "file": str(target_file),
+                "line": 3,
+                "message": "Potential path traversal",
+                "evidence": {
+                    "source": {
+                        "file": str(target_file),
+                        "line": 2,
+                        "column": 8,
+                        "snippet": "name = sys.argv[1]",
+                    },
+                    "sink": {
+                        "file": str(target_file),
+                        "line": 3,
+                        "column": 1,
+                        "snippet": "open(name)",
+                    },
+                    "intermediate_steps": [],
+                    "sanitizers": [],
+                },
+                "metadata": {
+                    "check_id": "python.path.demo",
+                    "detection": {
+                        "source_type": "COMMAND_LINE_ARGS",
+                        "sink_function": "open",
+                        "sink_arguments": ["name"],
+                    },
+                },
+                "detected_at": "2026-08-05T19:00:00",
+            }
+        ],
+        "summary": {
+            "target": str(tmp_path),
+            "duration_seconds": 1.2,
+            "files_scanned": 1,
+            "total_vulnerabilities": 1,
+            "by_severity": {"critical": 0, "high": 1, "medium": 0, "low": 0},
+            "errors": [],
+        },
+        "errors": [],
+        "semgrep_run_summary": {
+            "profile": "benchmark-python",
+            "language": "python",
+            "families": ["PATH_TRAVERSAL"],
+            "semgrep_command": ["semgrep"],
+            "family_runs": [],
+        },
+    }
+
+    triaged_report, json_path, markdown_path, workflow_metadata = module.apply_aegis_triage_to_report(
+        report=report,
+        output_dir=tmp_path,
+    )
+
+    assert json_path.exists()
+    assert markdown_path.exists()
+    assert triaged_report["scan_metadata"]["tool"] == "semgrep-community+aegis-triage"
+    assert triaged_report["findings"][0]["triage_status"] == "suppressed"
+    assert triaged_report["findings"][0]["triage_decision"]["status"] == "suppressed"
+    assert workflow_metadata["detector_source"] == "semgrep-community"
+    assert workflow_metadata["detector_lane"] == "semgrep+aegis-triage"

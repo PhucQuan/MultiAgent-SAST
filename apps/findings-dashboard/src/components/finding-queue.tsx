@@ -1,4 +1,4 @@
-import { Search, VolumeX } from "lucide-react";
+import { Search, SlidersHorizontal, VolumeX } from "lucide-react";
 
 import {
   ConfidenceBar,
@@ -16,7 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatConfidence, formatLabel } from "@/lib/dashboard-ui";
+import {
+  formatConfidence,
+  formatLabel,
+  shortenPath,
+} from "@/lib/dashboard-ui";
 import { cn } from "@/lib/utils";
 import type {
   NormalizedFinding,
@@ -39,15 +43,22 @@ function FilterSelect({
   onChange,
   options,
   placeholder,
+  widthClassName = "w-full sm:w-[150px]",
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
   placeholder: string;
+  widthClassName?: string;
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-8 w-[126px] rounded-sm border-border bg-surface text-[12.5px]">
+      <SelectTrigger
+        className={cn(
+          "h-9 rounded-lg border-border bg-background text-[12.5px]",
+          widthClassName,
+        )}
+      >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -62,7 +73,7 @@ function FilterSelect({
   );
 }
 
-function FindingRow({
+function FindingCard({
   finding,
   feedback,
   selected,
@@ -74,85 +85,70 @@ function FindingRow({
   onSelect: () => void;
 }) {
   return (
-    <tr
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
       className={cn(
-        "cursor-pointer border-b border-border align-top transition-colors hover:bg-surface-muted",
-        selected && "bg-accent/60",
-        feedback?.muted && "opacity-60",
+        "w-full rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:bg-surface-muted",
+        selected && "border-primary/30 bg-primary/6 shadow-sm",
+        feedback?.muted && "opacity-65",
       )}
     >
-      <td className="relative w-[108px] px-3 py-2.5">
-        <span
-          className={cn(
-            "absolute inset-y-0 left-0 w-[2px]",
-            selected ? "bg-primary" : "bg-transparent",
-          )}
-        />
-        <SeverityTag severity={finding.severity} />
-      </td>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SeverityTag severity={finding.severity} />
+            <StatusTag status={finding.status} />
+            <MetaTag>{formatLabel(finding.family)}</MetaTag>
+            <MetaTag>{formatLabel(finding.language)}</MetaTag>
+            {finding.manualReviewRequired ? (
+              <MetaTag className="border-sev-medium/25 bg-sev-medium/8 text-sev-medium">
+                Manual review
+              </MetaTag>
+            ) : null}
+            {feedback?.muted ? (
+              <MetaTag className="border-border text-muted-foreground">
+                <VolumeX className="mr-1 h-3 w-3" /> Muted
+              </MetaTag>
+            ) : null}
+          </div>
 
-      <td className="px-3 py-2.5">
-        <div className="flex items-start gap-2">
-          <span className="min-w-0 text-[13px] font-medium leading-5 text-foreground">
+          <h3 className="mt-2 text-[14px] font-semibold leading-6 text-foreground">
             {finding.message}
-          </span>
-          {feedback?.muted ? (
-            <VolumeX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          ) : null}
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          <MetaTag>{formatLabel(finding.family)}</MetaTag>
-          <MetaTag>{formatLabel(finding.language)}</MetaTag>
-          {finding.workflowRoute ? (
-            <MetaTag className="font-mono">
-              {formatLabel(finding.workflowRoute.routeId)}
-            </MetaTag>
-          ) : null}
-          {finding.manualReviewRequired ? (
-            <MetaTag className="border-sev-medium/30 text-sev-medium">
-              Manual review
-            </MetaTag>
-          ) : null}
-        </div>
-      </td>
+          </h3>
 
-      <td className="hidden px-3 py-2.5 lg:table-cell">
-        <div className="truncate font-mono text-[12px] text-foreground">
-          {finding.filePath}
-          <span className="text-muted-foreground">
-            {finding.line ? `:${finding.line}` : ""}
-          </span>
-        </div>
-        <div className="num mt-1 text-[11.5px] text-muted-foreground">
-          {finding.id}
-        </div>
-      </td>
-
-      <td className="w-[190px] px-3 py-2.5">
-        <StatusTag status={finding.status} />
-        <div className="mt-1.5">
-          <ConfidenceBar value={finding.confidence} />
-        </div>
-        <div className="mt-1 text-[11.5px] text-muted-foreground">
-          {feedback?.disposition ? (
-            <span className="font-medium text-primary">
-              Override: {dispositionLabels[feedback.disposition]}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+            <span className="font-mono">
+              {shortenPath(finding.filePath, 5)}
+              {finding.line ? `:${finding.line}` : ""}
             </span>
-          ) : (
-            `Confidence ${formatConfidence(finding.confidence)}`
-          )}
+            <span className="text-border">|</span>
+            <span className="font-mono">{finding.id}</span>
+            {finding.workflowRoute ? (
+              <>
+                <span className="text-border">|</span>
+                <span>{formatLabel(finding.workflowRoute.routeId)}</span>
+              </>
+            ) : null}
+          </div>
         </div>
-      </td>
-    </tr>
+
+        <div className="flex min-w-[140px] flex-col gap-1 lg:items-end">
+          <div className="w-full max-w-[150px]">
+            <ConfidenceBar value={finding.confidence} />
+          </div>
+          <div className="text-[11.5px] text-muted-foreground lg:text-right">
+            {feedback?.disposition ? (
+              <span className="font-medium text-primary">
+                Override: {dispositionLabels[feedback.disposition]}
+              </span>
+            ) : (
+              `Confidence ${formatConfidence(finding.confidence)}`
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -164,18 +160,24 @@ function QueueHeader({
   total: number;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-border px-3 py-2.5">
-      <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Findings queue
+    <div className="border-b border-border px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Findings
+          </div>
+          <h2 className="mt-1 text-[16px] font-semibold tracking-tight text-foreground">
+            Review queue
+          </h2>
+          <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+            Keep the list readable first, then drill into one finding at a time.
+          </p>
         </div>
-        <h2 className="mt-0.5 text-[16px] font-semibold tracking-tight text-foreground">
-          Review queue
-        </h2>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <MetaTag>{findings.length} visible</MetaTag>
-        <MetaTag>{total} total</MetaTag>
+
+        <div className="flex flex-wrap gap-2">
+          <MetaTag>{findings.length} visible</MetaTag>
+          <MetaTag>{total} total</MetaTag>
+        </div>
       </div>
     </div>
   );
@@ -215,99 +217,118 @@ export function FindingQueue({
   const setFilters = (patch: Partial<QueueFilters>) =>
     onFiltersChange({ ...filters, ...patch });
 
+  const activeFilterCount = [
+    filters.status !== "all",
+    filters.severity !== "all",
+    filters.language !== "all",
+    filters.family !== "all",
+    filters.includeMuted,
+    filters.search.trim().length > 0,
+  ].filter(Boolean).length;
+
   return (
-    <div className="flex h-full min-w-0 flex-col bg-surface">
+    <div className="flex min-w-0 flex-col bg-surface">
       <QueueHeader findings={findings} total={total} />
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={filters.search}
-            onChange={(event) => setFilters({ search: event.target.value })}
-            placeholder="Search by file, family, reason code, or note"
-            className="h-8 rounded-sm border-border bg-surface pl-8 text-[12.5px]"
-          />
+      <div className="border-b border-border px-4 py-4">
+        <div className="flex flex-col gap-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filters.search}
+              onChange={(event) => setFilters({ search: event.target.value })}
+              placeholder="Search by finding, file path, reason code, or reviewer note"
+              className="h-10 rounded-lg border-border bg-background pl-9 text-[12.5px]"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterSelect
+              value={filters.status}
+              onChange={(value) => setFilters({ status: value })}
+              options={statuses}
+              placeholder="Status"
+            />
+            <FilterSelect
+              value={filters.severity}
+              onChange={(value) => setFilters({ severity: value })}
+              options={severities}
+              placeholder="Severity"
+            />
+
+            <details className="group min-w-[190px] rounded-lg border border-border bg-background">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12.5px] text-foreground">
+                <span className="inline-flex items-center gap-2">
+                  <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                  More filters
+                </span>
+                <MetaTag>{activeFilterCount}</MetaTag>
+              </summary>
+
+              <div className="grid gap-2 border-t border-border px-3 py-3 sm:grid-cols-2">
+                <FilterSelect
+                  value={filters.language}
+                  onChange={(value) => setFilters({ language: value })}
+                  options={languages}
+                  placeholder="Language"
+                  widthClassName="w-full"
+                />
+                <FilterSelect
+                  value={filters.family}
+                  onChange={(value) => setFilters({ family: value })}
+                  options={families}
+                  placeholder="Family"
+                  widthClassName="w-full"
+                />
+                <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12px] text-muted-foreground sm:col-span-2">
+                  <Checkbox
+                    checked={filters.includeMuted}
+                    onCheckedChange={(checked) =>
+                      setFilters({ includeMuted: checked === true })
+                    }
+                    className="h-3.5 w-3.5 rounded-[4px]"
+                  />
+                  Include muted findings
+                </label>
+              </div>
+            </details>
+          </div>
         </div>
-        <FilterSelect
-          value={filters.status}
-          onChange={(value) => setFilters({ status: value })}
-          options={statuses}
-          placeholder="Status"
-        />
-        <FilterSelect
-          value={filters.severity}
-          onChange={(value) => setFilters({ severity: value })}
-          options={severities}
-          placeholder="Severity"
-        />
-        <FilterSelect
-          value={filters.language}
-          onChange={(value) => setFilters({ language: value })}
-          options={languages}
-          placeholder="Language"
-        />
-        <FilterSelect
-          value={filters.family}
-          onChange={(value) => setFilters({ family: value })}
-          options={families}
-          placeholder="Family"
-        />
-        <label className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap pl-1 text-[12.5px] text-muted-foreground">
-          <Checkbox
-            checked={filters.includeMuted}
-            onCheckedChange={(checked) =>
-              setFilters({ includeMuted: checked === true })
-            }
-            className="h-3.5 w-3.5 rounded-[3px]"
-          />
-          Include muted
-        </label>
       </div>
 
       {error ? (
-        <div className="border-b border-border bg-destructive/6 px-3 py-2.5 text-[12px] text-destructive">
+        <div className="border-b border-border bg-destructive/6 px-4 py-3 text-[12px] text-destructive">
           {error}
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="px-3 py-3">
         {loading ? (
-          <div className="px-4 py-10 text-center text-[12.5px] text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border bg-background px-4 py-10 text-center text-[12.5px] text-muted-foreground">
             Loading normalized Aegis findings for the selected report...
           </div>
         ) : findings.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[12.5px] text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border bg-background px-4 py-10 text-center text-[12.5px] text-muted-foreground">
             {total === 0
               ? "This report does not contain any findings."
               : "No findings match the current filters."}
           </div>
         ) : (
-          <table className="w-full border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-surface-muted">
-              <tr className="border-b border-border text-[11px] uppercase tracking-wider text-muted-foreground">
-                <th className="px-3 py-2 font-medium">Risk</th>
-                <th className="px-3 py-2 font-medium">Finding</th>
-                <th className="hidden px-3 py-2 font-medium lg:table-cell">Location</th>
-                <th className="px-3 py-2 font-medium">Review</th>
-              </tr>
-            </thead>
-            <tbody>
-              {findings.map((finding) => (
-                <FindingRow
-                  key={finding.key}
-                  finding={finding}
-                  feedback={feedbackStore[finding.key]}
-                  selected={finding.key === selectedFindingKey}
-                  onSelect={() => onSelectFinding(finding.key)}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-2">
+            {findings.map((finding) => (
+              <FindingCard
+                key={finding.key}
+                finding={finding}
+                feedback={feedbackStore[finding.key]}
+                selected={finding.key === selectedFindingKey}
+                onSelect={() => onSelectFinding(finding.key)}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      <div className="num border-t border-border bg-surface-muted px-3 py-1.5 text-[11.5px] text-muted-foreground">
+      <div className="border-t border-border bg-surface-muted px-4 py-2 text-[11.5px] text-muted-foreground">
         Showing {findings.length} of {total} findings
       </div>
     </div>

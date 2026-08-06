@@ -27,6 +27,7 @@ class AITriageRunner:
         self.model_name = model_name
         self.reviewer = reviewer
         self._default_client = None
+        self._default_provider_name = None
 
     def review_finding(self, finding: NormalizedFinding) -> TriageDecision:
         """Review one normalized finding using its stable triage_input payload."""
@@ -121,14 +122,29 @@ triage_input:
 """
 
     def _call_default_provider(self, prompt: str) -> Any:
-        """Lazily call the default Gemini-backed provider when configured."""
-        from aegis_sast.llm import GeminiClient
+        """Lazily call the configured default provider when AI is enabled."""
+        from aegis_sast.llm import create_llm_client
 
         if self._default_client is None:
-            self._default_client = GeminiClient()
+            self._default_client = create_llm_client()
+            self._default_provider_name = getattr(
+                self._default_client,
+                "provider_name",
+                "default-client",
+            )
         if self.model_name is None:
-            self.model_name = self._default_client.config.gemini_model
+            self.model_name = getattr(self._default_client, "model_name", None) or getattr(
+                getattr(self._default_client, "config", None),
+                "active_llm_model",
+                None,
+            )
         return self._default_client._call_api(prompt)
+
+    def _provider_label(self) -> str:
+        """Return the active provider label for metadata emission."""
+        if self.response_provider is None:
+            return self._default_provider_name or "default-client"
+        return "custom-response-provider"
 
     def _build_decision(
         self,
@@ -173,11 +189,7 @@ triage_input:
             metadata={
                 "triage_input_schema": triage_input.get("schema_version"),
                 "model_used": self.model_name or "custom-provider",
-                "provider": (
-                    "gemini-default"
-                    if self.response_provider is None
-                    else "custom-response-provider"
-                ),
+                "provider": self._provider_label(),
                 "fallback_used": False,
                 "raw_status": raw_status,
                 "reason_codes": reason_codes,
@@ -234,11 +246,7 @@ triage_input:
             metadata={
                 "triage_input_schema": triage_input.get("schema_version"),
                 "model_used": self.model_name or "custom-provider",
-                "provider": (
-                    "gemini-default"
-                    if self.response_provider is None
-                    else "custom-response-provider"
-                ),
+                "provider": self._provider_label(),
                 "fallback_used": True,
                 "error": error,
                 "reason_codes": reason_codes,

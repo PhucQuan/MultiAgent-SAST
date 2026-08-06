@@ -31,6 +31,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         ScanPipelineResult,
         ScanPipelineService,
     )
+    from aegis_sast.orchestration.langgraph_bridge import (
+        WorkflowGraphInput,
+        build_scan_workflow_graph,
+        run_scan_workflow_graph,
+    )
     from aegis_sast.orchestration.workflow import ScanWorkflow
 
 __all__ = [
@@ -51,6 +56,9 @@ __all__ = [
     "ScanPipelineRequest",
     "ScanPipelineResult",
     "ScanPipelineService",
+    "WorkflowGraphInput",
+    "build_scan_workflow_graph",
+    "run_scan_workflow_graph",
     "SourceContextReader",
     "SourceContextWindow",
 ]
@@ -114,4 +122,16 @@ def __getattr__(name):
         from aegis_sast.orchestration.service import ScanPipelineService
 
         return ScanPipelineService
+    if name == "WorkflowGraphInput":
+        from aegis_sast.orchestration.langgraph_bridge import WorkflowGraphInput
+
+        return WorkflowGraphInput
+    if name == "build_scan_workflow_graph":
+        from aegis_sast.orchestration.langgraph_bridge import build_scan_workflow_graph
+
+        return build_scan_workflow_graph
+    if name == "run_scan_workflow_graph":
+        from aegis_sast.orchestration.langgraph_bridge import run_scan_workflow_graph
+
+        return run_scan_workflow_graph
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

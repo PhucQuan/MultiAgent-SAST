@@ -201,10 +201,23 @@ class ScanPipelineService:
                     "message": "Running deterministic triage workflow.",
                 },
             )
-            workflow_state = self._run_workflow(scan_result, repo_profile)
+            workflow_state = self._run_workflow(
+                scan_result,
+                repo_profile,
+                ai_client=ai_client,
+            )
             triage_records = list(workflow_state.triage_records)
             workflow_metadata = dict(workflow_state.metadata)
-            if ai_client and triage_records:
+            if ai_client and workflow_metadata.get("ai_triage_applied"):
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "stage",
+                        "stage": "ai-triage",
+                        "message": "Applied AI triage overlay via LangGraph bridge.",
+                    },
+                )
+            elif ai_client and triage_records:
                 self._emit_progress(
                     progress_callback,
                     {
@@ -385,9 +398,28 @@ class ScanPipelineService:
         self,
         scan_result: ScanResult,
         repo_profile: RepoProfile,
+        ai_client: Any | None = None,
     ) -> ScanWorkflowState:
         """Execute the post-detection triage workflow."""
-        return self.workflow_factory().run(scan_result, repo_profile=repo_profile)
+        workflow = self.workflow_factory()
+        if ai_client is None:
+            return workflow.run(scan_result, repo_profile=repo_profile)
+
+        try:
+            from aegis_sast.orchestration.langgraph_bridge import run_scan_workflow_graph
+
+            state = run_scan_workflow_graph(
+                scan_result,
+                repo_profile=repo_profile,
+                workflow=workflow,
+                ai_client=ai_client,
+            )
+            state.metadata.setdefault("workflow_backend", "langgraph-bridge")
+            return state
+        except RuntimeError:
+            state = workflow.run(scan_result, repo_profile=repo_profile)
+            state.metadata.setdefault("workflow_backend", "scan-workflow")
+            return state
 
     def _build_ai_client(
         self,
@@ -401,9 +433,9 @@ class ScanPipelineService:
             if self.ai_client_factory is not None:
                 client = self.ai_client_factory()
             else:
-                from aegis_sast.llm import GeminiClient
+                from aegis_sast.llm import create_llm_client
 
-                client = GeminiClient()
+                client = create_llm_client(config)
         except Exception as exc:
             config.enable_ai_verification = False
             set_config(config)
@@ -459,7 +491,8 @@ class ScanPipelineService:
         workflow_metadata: dict[str, Any],
     ) -> tuple[list[TriageRecord], dict[str, Any]]:
         """Overlay AI review on top of deterministic triage records."""
-        model_name = getattr(getattr(ai_client, "config", None), "gemini_model", None)
+        model_name = ScanPipelineService._resolve_ai_model_name(ai_client)
+        provider_name = ScanPipelineService._resolve_ai_provider_name(ai_client)
         runner = AITriageRunner(
             response_provider=ai_client._call_api,
             model_name=model_name,
@@ -469,6 +502,7 @@ class ScanPipelineService:
             triage_records,
             reviewed_records,
             model_name=model_name or "custom-provider",
+            provider_name=provider_name,
         )
 
         updated_metadata = dict(workflow_metadata)
@@ -479,9 +513,28 @@ class ScanPipelineService:
             reviewed_records
         )
         updated_metadata["ai_triage_applied"] = True
+        updated_metadata["ai_provider"] = provider_name
         updated_metadata["ai_model"] = model_name or "custom-provider"
         updated_metadata["ai_triage_summary"] = ai_triage_summary
         return reviewed_records, updated_metadata
+
+    @staticmethod
+    def _resolve_ai_model_name(ai_client: Any) -> Optional[str]:
+        """Resolve a stable model name from AI clients with different backends."""
+        return (
+            getattr(ai_client, "model_name", None)
+            or getattr(getattr(ai_client, "config", None), "active_llm_model", None)
+            or getattr(getattr(ai_client, "config", None), "gemini_model", None)
+        )
+
+    @staticmethod
+    def _resolve_ai_provider_name(ai_client: Any) -> str:
+        """Resolve the active provider name for reporting and trace metadata."""
+        return (
+            getattr(ai_client, "provider_name", None)
+            or getattr(getattr(ai_client, "config", None), "llm_provider", None)
+            or "custom-provider"
+        )
 
     @staticmethod
     def _summarize_triage_records(triage_records: list[TriageRecord]) -> dict[str, int]:
@@ -503,6 +556,7 @@ class ScanPipelineService:
         reviewed_records: list[TriageRecord],
         *,
         model_name: str,
+        provider_name: str,
     ) -> dict[str, Any]:
         """Summarize how much the AI overlay changed deterministic triage."""
         changed_status_count = 0
@@ -519,6 +573,7 @@ class ScanPipelineService:
 
         return {
             "model": model_name,
+            "provider": provider_name,
             "findings_reviewed": len(reviewed_records),
             "changed_status_count": changed_status_count,
             "changed_confidence_count": changed_confidence_count,
