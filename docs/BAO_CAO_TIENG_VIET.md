@@ -65,7 +65,7 @@ File liên quan:
 
 ## 3. Workflow AI và LangGraph
 
-Đã xây dựng workflow nhiều node cho AI triage:
+Đã xây dựng workflow AI nhiều bước ở tầng orchestration nội bộ:
 
 1. `Planner`: đánh giá chất lượng evidence và chọn route xử lý.
 2. `KnowledgeLoader`: nạp tri thức CWE/ngôn ngữ/framework phù hợp.
@@ -74,12 +74,17 @@ File liên quan:
 5. `Judge`: đưa ra quyết định triage cuối cùng.
 6. `Reporter`: bổ sung giải thích và remediation cho báo cáo.
 
-Workflow có thể chạy bằng engine nội bộ và có adapter để compile sang LangGraph khi môi trường đã cài `langgraph`.
+Tuy nhiên, cần phân biệt rõ giữa "workflow nội bộ" và "LangGraph thật":
+
+- Workflow nội bộ hiện đã có nhiều bước logic: Planner, KnowledgeLoader, Auditor, Skeptic, Judge và Reporter.
+- LangGraph adapter hiện mới là bản tối thiểu, chỉ có 1 LangGraph node tên `ai_triage_workflow`.
+- Node `ai_triage_workflow` này bọc toàn bộ workflow nội bộ bên trong.
 
 Ý nghĩa của LangGraph trong dự án:
 
 - Nếu không có LangGraph: workflow vẫn chạy được bằng orchestration nội bộ.
-- Nếu có LangGraph: các node được đóng gói thành graph rõ ràng, dễ quan sát route, mở rộng pipeline, chạy ablation và debug luồng xử lý.
+- Nếu có LangGraph: hiện tại chứng minh được workflow có thể compile và chạy trong LangGraph.
+- Phần chưa hoàn thiện: tách từng bước Planner/Auditor/Skeptic/Judge/Reporter thành các LangGraph node riêng với edge riêng.
 
 Lệnh kiểm tra LangGraph:
 
@@ -92,7 +97,7 @@ print(type(graph).__name__)
 PY
 ```
 
-Nếu in ra `CompiledStateGraph` thì LangGraph đã compile được.
+Nếu in ra `CompiledStateGraph` thì LangGraph đã compile được. Kết quả này chứng minh tích hợp LangGraph đã chạy được, nhưng chưa phải graph nhiều node đầy đủ.
 
 ## 4. Kết nối Groq API
 
@@ -296,7 +301,7 @@ Nội dung chính đã triển khai:
 Đến thời điểm hiện tại, dự án đã hoàn thành phần nền tảng AI triage và pipeline đánh giá:
 
 - AI layer đã có schema rõ ràng, output có cấu trúc và có validate.
-- Workflow nhiều node đã chạy được và có thể compile với LangGraph.
+- Workflow nội bộ nhiều bước đã chạy được; LangGraph adapter hiện compile được nhưng mới là wrapper 1 node.
 - Groq API đã được tích hợp và smoke test thành công.
 - Hệ thống có test tự động và experiment runner.
 - Đã có script chạy benchmark thực tế trên OWASP BenchmarkJava.
