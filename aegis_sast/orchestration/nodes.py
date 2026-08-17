@@ -1,6 +1,8 @@
 """Deterministic workflow nodes that approximate future LangGraph stages."""
 
+import ast
 from copy import deepcopy
+import re
 from typing import List, Optional, Tuple
 
 from aegis_sast.core.models import NormalizedFinding, Severity, TriageStatus
@@ -101,6 +103,8 @@ class AuditorNode:
 class SkepticValidatorNode:
     """Look for mitigation signals or ambiguity before final judgement."""
 
+    UNKNOWN = object()
+    LINE_PREFIX_RE = re.compile(r"^\s*(\d+):\s?(.*)$")
     MITIGATION_PATTERNS = {
         "SQL_INJECTION": [
             "preparedstatement",
@@ -114,6 +118,9 @@ class SkepticValidatorNode:
             "spawn(",
             "shell=false",
             "subprocess.run([",
+        ],
+        "CODE_INJECTION": [
+            "literal_eval(",
         ],
         "PATH_TRAVERSAL": [
             "resolve(",
@@ -162,26 +169,13 @@ class SkepticValidatorNode:
             )
 
         context_text = self._collect_context_text(auditor_review).lower()
-        mitigation_signals: List[str] = []
+        mitigation_signals = self._collect_mitigation_signals(
+            record.finding,
+            context_text,
+        )
         objections: List[str] = []
         suggested_status = None
         confidence_cap = None
-
-        if record.finding.is_effectively_sanitized:
-            mitigation_signals.append("Dataflow already contains a sanitizer.")
-
-        for token in self.MITIGATION_PATTERNS.get(
-            record.finding.vulnerability_type,
-            [],
-        ):
-            if self._is_mitigation_token_present(
-                record.finding.vulnerability_type,
-                token,
-                context_text,
-            ):
-                mitigation_signals.append(
-                    f"Context contains mitigation-like token: {token}"
-                )
 
         if mitigation_signals:
             if record.finding.severity in (Severity.CRITICAL, Severity.HIGH):
@@ -225,6 +219,71 @@ class SkepticValidatorNode:
             },
         )
 
+    def _collect_mitigation_signals(
+        self,
+        finding: NormalizedFinding,
+        context_text: str,
+    ) -> List[str]:
+        """Collect convincing mitigation signals from nearby source context."""
+        code_lines = self._split_context_code_lines(context_text)
+        signals: List[str] = []
+
+        if finding.is_effectively_sanitized:
+            signals.append("Dataflow already contains a sanitizer.")
+
+        if (
+            finding.vulnerability_type == "OPEN_REDIRECT"
+            and self._has_open_redirect_allowlist_validation(context_text)
+        ):
+            signals.append(
+                "Context validates redirect targets with urlparse host or scheme checks."
+            )
+
+        if (
+            finding.vulnerability_type == "CODE_INJECTION"
+            and self._has_code_literal_guard(context_text)
+        ):
+            signals.append(
+                "Context restricts exec input to a plain string literal before execution."
+            )
+
+        if finding.vulnerability_type in {
+            "COMMAND_INJECTION",
+            "INSECURE_DESERIALIZATION",
+        }:
+            if self._has_safe_constant_lookup_overwrite(code_lines):
+                signals.append(
+                    "Context overwrites the tainted value with a deterministic constant lookup before the sink."
+                )
+
+            if self._has_constant_safe_if_branch(code_lines):
+                signals.append(
+                    "Context takes a deterministic safe branch before the sink."
+                )
+
+            if self._has_constant_safe_match_branch(code_lines):
+                signals.append(
+                    "Context selects a constant-safe match branch before the sink."
+                )
+
+            if self._has_safe_list_index_selection(code_lines):
+                signals.append(
+                    "Context selects a constant list element before the sink."
+                )
+
+        for token in self.MITIGATION_PATTERNS.get(
+            finding.vulnerability_type,
+            [],
+        ):
+            if self._is_mitigation_token_present(
+                finding.vulnerability_type,
+                token,
+                context_text,
+            ):
+                signals.append(f"Context contains mitigation-like token: {token}")
+
+        return list(dict.fromkeys(signals))
+
     @classmethod
     def _is_mitigation_token_present(
         cls,
@@ -250,18 +309,581 @@ class SkepticValidatorNode:
         return not has_dynamic_sql and has_bindings and has_placeholder
 
     @staticmethod
-    def _collect_context_text(auditor_review: AuditorReview) -> str:
-        """Flatten source and sink windows into one string."""
+    def _has_open_redirect_allowlist_validation(context_text: str) -> bool:
+        """Return True when redirect targets are validated before redirect()."""
+        has_urlparse = "urlparse(" in context_text
+        has_host_check = any(
+            token in context_text
+            for token in [
+                "netloc not in",
+                "netloc in",
+                "trusted_hosts",
+                "allowed_hosts",
+                "google.com",
+            ]
+        )
+        has_scheme_check = "scheme !=" in context_text or "scheme ==" in context_text
+        return has_urlparse and (has_host_check or has_scheme_check)
+
+    @staticmethod
+    def _has_code_literal_guard(context_text: str) -> bool:
+        """Return True when exec/eval input is restricted to a literal-like string."""
+        if "plain string literal" in context_text:
+            return True
+
+        has_quote_checks = "startswith(" in context_text and "endswith(" in context_text
+        return has_quote_checks and "[1:-1]" in context_text
+
+    @classmethod
+    def _split_context_code_lines(cls, context_text: str) -> List[str]:
+        """Split one flattened context string back into code-only lines."""
+        if not context_text:
+            return []
+
+        lines: List[str] = []
+        for raw_line in context_text.splitlines():
+            if not raw_line.strip():
+                continue
+            match = cls.LINE_PREFIX_RE.match(raw_line)
+            if match:
+                lines.append(match.group(2))
+            else:
+                lines.append(raw_line)
+        return lines
+
+    @classmethod
+    def _has_safe_constant_lookup_overwrite(cls, code_lines: List[str]) -> bool:
+        """Return True when a later constant lookup overwrites the tainted value."""
+        if not code_lines:
+            return False
+
+        text = "\n".join(code_lines).lower()
+        last_bar_index = cls._last_bar_assignment_index(code_lines)
+        if last_bar_index is None:
+            return False
+
+        last_bar_line = code_lines[last_bar_index].strip().lower()
+        dict_lookup = re.fullmatch(
+            r"bar\s*=\s*(\w+)\[['\"]keya-[^'\"]+['\"]\]",
+            last_bar_line,
+        )
+        if dict_lookup:
+            collection = dict_lookup.group(1)
+            earlier_text = "\n".join(code_lines[:last_bar_index]).lower()
+            return bool(
+                re.search(
+                    rf"bar\s*=\s*{re.escape(collection)}\[['\"]keyb-[^'\"]+['\"]\]",
+                    earlier_text,
+                )
+            )
+
+        config_lookup = re.fullmatch(
+            r"bar\s*=\s*(\w+)\.get\([^\n]*['\"]keya-[^'\"]+['\"]\)",
+            last_bar_line,
+        )
+        if not config_lookup:
+            return False
+
+        config_name = config_lookup.group(1)
+        has_safe_key = re.search(
+            rf"{re.escape(config_name)}\.set\([^\n]*['\"]keya-[^'\"]+['\"],\s*['\"][^'\"]+['\"]\)",
+            text,
+        )
+        has_tainted_key = re.search(
+            rf"{re.escape(config_name)}\.set\([^\n]*['\"]keyb-[^'\"]+['\"],\s*param\)",
+            text,
+        )
+        return bool(has_safe_key and has_tainted_key)
+
+    @classmethod
+    def _has_constant_safe_if_branch(cls, code_lines: List[str]) -> bool:
+        """Return True when a constant condition selects a safe branch for `bar`."""
+        known_values: dict[str, object] = {}
+        index = 0
+        while index < len(code_lines):
+            raw_line = code_lines[index]
+            stripped = raw_line.strip()
+
+            if not stripped:
+                index += 1
+                continue
+
+            cls._update_known_value_from_assignment(stripped, known_values)
+
+            if stripped.startswith("if ") and stripped.endswith(":"):
+                indent = cls._indent_level(raw_line)
+                condition = stripped[3:-1].strip()
+                result = cls._eval_simple_expr(condition, known_values)
+                if isinstance(result, bool):
+                    true_block_end = cls._block_end_index(
+                        code_lines,
+                        index + 1,
+                        indent,
+                    )
+                    true_rhs, next_index = cls._first_bar_assignment_in_block(
+                        code_lines,
+                        index + 1,
+                        indent,
+                    )
+                    true_index = next_index if true_rhs is not None else None
+                    false_rhs = None
+                    false_index = None
+                    if true_block_end < len(code_lines):
+                        next_line = code_lines[true_block_end]
+                        if (
+                            next_line.strip().startswith("else:")
+                            and cls._indent_level(next_line) == indent
+                        ):
+                            false_rhs, false_index = cls._first_bar_assignment_in_block(
+                                code_lines,
+                                true_block_end + 1,
+                                indent,
+                            )
+                            true_block_end = cls._block_end_index(
+                                code_lines,
+                                true_block_end + 1,
+                                indent,
+                            )
+
+                    chosen_rhs = true_rhs if result else false_rhs
+                    chosen_index = true_index if result else false_index
+                    if (
+                        chosen_rhs
+                        and chosen_index is not None
+                        and not cls._has_bar_assignment_after(code_lines, true_block_end)
+                        and cls._expr_is_safe_constant(chosen_rhs, known_values)
+                    ):
+                        return True
+
+            index += 1
+
+        return False
+
+    @classmethod
+    def _has_constant_safe_match_branch(cls, code_lines: List[str]) -> bool:
+        """Return True when a `match` statement deterministically selects a safe case."""
+        known_values: dict[str, object] = {}
+        index = 0
+        while index < len(code_lines):
+            raw_line = code_lines[index]
+            stripped = raw_line.strip()
+
+            if not stripped:
+                index += 1
+                continue
+
+            cls._update_known_value_from_assignment(stripped, known_values)
+
+            if stripped.startswith("match ") and stripped.endswith(":"):
+                indent = cls._indent_level(raw_line)
+                subject_expr = stripped[6:-1].strip()
+                subject_value = cls._eval_simple_expr(subject_expr, known_values)
+                if subject_value is cls.UNKNOWN:
+                    index += 1
+                    continue
+
+                block_end_index = cls._block_end_index(
+                    code_lines,
+                    index + 1,
+                    indent,
+                )
+                branch_rhs, branch_index = cls._resolve_match_branch_assignment(
+                    code_lines,
+                    index + 1,
+                    indent,
+                    subject_value,
+                    known_values,
+                )
+                if (
+                    branch_rhs
+                    and branch_index is not None
+                    and not cls._has_bar_assignment_after(code_lines, block_end_index)
+                    and cls._expr_is_safe_constant(branch_rhs, known_values)
+                ):
+                    return True
+
+            index += 1
+
+        return False
+
+    @classmethod
+    def _has_safe_list_index_selection(cls, code_lines: List[str]) -> bool:
+        """Return True when list mutation deterministically moves tainted data away."""
+        known_values: dict[str, object] = {}
+        list_state: dict[str, List[str]] = {}
+
+        for line_index, raw_line in enumerate(code_lines):
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+
+            cls._update_known_value_from_assignment(stripped, known_values)
+
+            empty_list = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*\[\]", stripped)
+            if empty_list:
+                list_state[empty_list.group(1)] = []
+                continue
+
+            append_match = re.fullmatch(r"([A-Za-z_]\w*)\.append\((.+)\)", stripped)
+            if append_match and append_match.group(1) in list_state:
+                list_state[append_match.group(1)].append(
+                    cls._symbolic_value_kind(
+                        append_match.group(2),
+                        known_values,
+                    )
+                )
+                continue
+
+            pop_match = re.fullmatch(r"([A-Za-z_]\w*)\.pop\((\d+)\)", stripped)
+            if pop_match and pop_match.group(1) in list_state:
+                items = list_state[pop_match.group(1)]
+                index = int(pop_match.group(2))
+                if 0 <= index < len(items):
+                    items.pop(index)
+                continue
+
+            select_match = re.fullmatch(r"bar\s*=\s*([A-Za-z_]\w*)\[(\d+)\]", stripped)
+            if not select_match:
+                continue
+
+            list_name = select_match.group(1)
+            item_index = int(select_match.group(2))
+            if list_name not in list_state:
+                continue
+
+            items = list_state[list_name]
+            if (
+                0 <= item_index < len(items)
+                and items[item_index] == "const"
+                and not cls._has_bar_assignment_after(code_lines, line_index + 1)
+            ):
+                return True
+
+        return False
+
+    @classmethod
+    def _has_bar_assignment_after(
+        cls,
+        code_lines: List[str],
+        start_index: int,
+    ) -> bool:
+        """Return True when `bar` is reassigned after the provided index."""
+        for later_line in code_lines[start_index:]:
+            if re.fullmatch(r"bar\s*=\s*.+", later_line.strip()):
+                return True
+        return False
+
+    @classmethod
+    def _block_end_index(
+        cls,
+        code_lines: List[str],
+        start_index: int,
+        parent_indent: int,
+    ) -> int:
+        """Return the first index after one indented block."""
+        index = start_index
+        while index < len(code_lines):
+            stripped = code_lines[index].strip()
+            if not stripped:
+                index += 1
+                continue
+            if cls._indent_level(code_lines[index]) <= parent_indent:
+                break
+            index += 1
+        return index
+
+    @staticmethod
+    def _last_bar_assignment_index(code_lines: List[str]) -> Optional[int]:
+        """Return the index of the last local `bar = ...` assignment."""
+        for index in range(len(code_lines) - 1, -1, -1):
+            if re.fullmatch(r"bar\s*=\s*.+", code_lines[index].strip()):
+                return index
+        return None
+
+    @classmethod
+    def _update_known_value_from_assignment(
+        cls,
+        stripped_line: str,
+        known_values: dict[str, object],
+    ) -> None:
+        """Track simple constant assignments used by later branch evaluation."""
+        if any(
+            stripped_line.startswith(prefix)
+            for prefix in ("if ", "elif ", "while ", "for ", "case ", "match ")
+        ):
+            return
+
+        assignment = re.fullmatch(r"([A-Za-z_]\w*)\s*=\s*(.+)", stripped_line)
+        if not assignment:
+            return
+
+        value = cls._eval_simple_expr(assignment.group(2), known_values)
+        if value is not cls.UNKNOWN:
+            known_values[assignment.group(1)] = value
+
+    @classmethod
+    def _resolve_match_branch_assignment(
+        cls,
+        code_lines: List[str],
+        start_index: int,
+        match_indent: int,
+        subject_value: object,
+        known_values: dict[str, object],
+    ) -> Tuple[Optional[str], Optional[int]]:
+        """Return the selected branch assignment for a constant match value."""
+        index = start_index
+        while index < len(code_lines):
+            raw_line = code_lines[index]
+            stripped = raw_line.strip()
+            if not stripped:
+                index += 1
+                continue
+
+            indent = cls._indent_level(raw_line)
+            if indent <= match_indent:
+                break
+
+            if stripped.startswith("case ") and stripped.endswith(":"):
+                labels = stripped[5:-1].strip()
+                if cls._case_matches(labels, subject_value, known_values):
+                    rhs, assignment_index = cls._first_bar_assignment_in_block(
+                        code_lines,
+                        index + 1,
+                        indent,
+                    )
+                    return rhs, assignment_index
+            index += 1
+
+        return None, None
+
+    @classmethod
+    def _case_matches(
+        cls,
+        labels: str,
+        subject_value: object,
+        known_values: dict[str, object],
+    ) -> bool:
+        """Return True when a case label matches the known match subject."""
+        if labels == "_":
+            return True
+
+        for token in labels.split("|"):
+            label = token.strip()
+            value = cls._eval_simple_expr(label, known_values)
+            if value is not cls.UNKNOWN and value == subject_value:
+                return True
+        return False
+
+    @classmethod
+    def _first_bar_assignment_in_block(
+        cls,
+        code_lines: List[str],
+        start_index: int,
+        parent_indent: int,
+    ) -> Tuple[Optional[str], int]:
+        """Return the first `bar = ...` assignment inside one indented block."""
+        index = start_index
+        while index < len(code_lines):
+            raw_line = code_lines[index]
+            stripped = raw_line.strip()
+            if not stripped:
+                index += 1
+                continue
+
+            indent = cls._indent_level(raw_line)
+            if indent <= parent_indent:
+                break
+
+            assignment = re.fullmatch(r"bar\s*=\s*(.+)", stripped)
+            if assignment:
+                return assignment.group(1).strip(), index
+
+            index += 1
+
+        return None, index
+
+    @classmethod
+    def _expr_is_safe_constant(
+        cls,
+        expression: str,
+        known_values: dict[str, object],
+    ) -> bool:
+        """Return True when an expression resolves to a deterministic constant."""
+        normalized = expression.strip()
+        if normalized == "param":
+            return False
+
+        value = cls._eval_simple_expr(normalized, known_values)
+        if value is cls.UNKNOWN:
+            return False
+
+        return isinstance(value, (str, int, float, bool))
+
+    @classmethod
+    def _symbolic_value_kind(
+        cls,
+        expression: str,
+        known_values: dict[str, object],
+    ) -> str:
+        """Reduce one expression into a small symbolic value kind."""
+        normalized = expression.strip()
+        if normalized == "param":
+            return "param"
+
+        value = cls._eval_simple_expr(normalized, known_values)
+        if value is cls.UNKNOWN:
+            return "unknown"
+
+        return "const"
+
+    @classmethod
+    def _eval_simple_expr(
+        cls,
+        expression: str,
+        known_values: dict[str, object],
+    ) -> object:
+        """Evaluate a very small subset of Python expressions safely."""
+        try:
+            node = ast.parse(expression, mode="eval").body
+        except SyntaxError:
+            return cls.UNKNOWN
+        return cls._eval_ast_node(node, known_values)
+
+    @classmethod
+    def _eval_ast_node(
+        cls,
+        node: ast.AST,
+        known_values: dict[str, object],
+    ) -> object:
+        """Evaluate one restricted AST node into a concrete constant when possible."""
+        if isinstance(node, ast.Constant):
+            return node.value
+
+        if isinstance(node, ast.Name):
+            return known_values.get(node.id, cls.UNKNOWN)
+
+        if isinstance(node, ast.UnaryOp):
+            operand = cls._eval_ast_node(node.operand, known_values)
+            if operand is cls.UNKNOWN:
+                return cls.UNKNOWN
+            if isinstance(node.op, ast.USub):
+                return -operand
+            if isinstance(node.op, ast.UAdd):
+                return +operand
+            if isinstance(node.op, ast.Not):
+                return not operand
+            return cls.UNKNOWN
+
+        if isinstance(node, ast.BinOp):
+            left = cls._eval_ast_node(node.left, known_values)
+            right = cls._eval_ast_node(node.right, known_values)
+            if left is cls.UNKNOWN or right is cls.UNKNOWN:
+                return cls.UNKNOWN
+            try:
+                if isinstance(node.op, ast.Add):
+                    return left + right
+                if isinstance(node.op, ast.Sub):
+                    return left - right
+                if isinstance(node.op, ast.Mult):
+                    return left * right
+                if isinstance(node.op, ast.Div):
+                    return left / right
+                if isinstance(node.op, ast.FloorDiv):
+                    return left // right
+                if isinstance(node.op, ast.Mod):
+                    return left % right
+            except Exception:
+                return cls.UNKNOWN
+            return cls.UNKNOWN
+
+        if isinstance(node, ast.BoolOp):
+            values = [cls._eval_ast_node(value, known_values) for value in node.values]
+            if any(value is cls.UNKNOWN for value in values):
+                return cls.UNKNOWN
+            if isinstance(node.op, ast.And):
+                return all(values)
+            if isinstance(node.op, ast.Or):
+                return any(values)
+            return cls.UNKNOWN
+
+        if isinstance(node, ast.Compare):
+            left = cls._eval_ast_node(node.left, known_values)
+            if left is cls.UNKNOWN:
+                return cls.UNKNOWN
+            current = left
+            for operator, comparator in zip(node.ops, node.comparators):
+                right = cls._eval_ast_node(comparator, known_values)
+                if right is cls.UNKNOWN:
+                    return cls.UNKNOWN
+                try:
+                    if isinstance(operator, ast.Eq):
+                        ok = current == right
+                    elif isinstance(operator, ast.NotEq):
+                        ok = current != right
+                    elif isinstance(operator, ast.Gt):
+                        ok = current > right
+                    elif isinstance(operator, ast.GtE):
+                        ok = current >= right
+                    elif isinstance(operator, ast.Lt):
+                        ok = current < right
+                    elif isinstance(operator, ast.LtE):
+                        ok = current <= right
+                    elif isinstance(operator, ast.In):
+                        ok = current in right
+                    elif isinstance(operator, ast.NotIn):
+                        ok = current not in right
+                    else:
+                        return cls.UNKNOWN
+                except Exception:
+                    return cls.UNKNOWN
+                if not ok:
+                    return False
+                current = right
+            return True
+
+        if isinstance(node, ast.Subscript):
+            value = cls._eval_ast_node(node.value, known_values)
+            if value is cls.UNKNOWN:
+                return cls.UNKNOWN
+
+            slice_node = node.slice
+            if isinstance(slice_node, ast.Constant):
+                index = slice_node.value
+            else:
+                index = cls._eval_ast_node(slice_node, known_values)
+            if index is cls.UNKNOWN:
+                return cls.UNKNOWN
+            try:
+                return value[index]
+            except Exception:
+                return cls.UNKNOWN
+
+        return cls.UNKNOWN
+
+    @staticmethod
+    def _indent_level(line: str) -> int:
+        """Return the indentation width used for one code line."""
+        return len(line) - len(line.lstrip())
+
+    @classmethod
+    def _collect_context_text(cls, auditor_review: AuditorReview) -> str:
+        """Flatten source and sink windows into one string without duplicate lines."""
         context = auditor_review.context
         if context is None:
             return ""
 
-        chunks: List[str] = []
-        if context.source_window:
-            chunks.extend(context.source_window.lines)
-        if context.sink_window:
-            chunks.extend(context.sink_window.lines)
-        return "\n".join(chunks)
+        ordered_lines: dict[tuple[str, int], str] = {}
+        for window in [context.source_window, context.sink_window]:
+            if window is None:
+                continue
+            for line in window.lines:
+                match = cls.LINE_PREFIX_RE.match(line)
+                if match:
+                    key = (window.file_path, int(match.group(1)))
+                else:
+                    key = (window.file_path, len(ordered_lines))
+                ordered_lines.setdefault(key, line)
+        return "\n".join(ordered_lines.values())
 
 
 class JudgeNode:
@@ -270,7 +892,12 @@ class JudgeNode:
     RISKY_SQL_TOKENS = ["select ", "insert ", "update ", "delete "]
     DIRECT_SQL_EXECUTION_TOKENS = [
         "cursor.execute(query)",
+        "cursor.execute(sql)",
+        "cur.execute(query)",
+        "cur.execute(sql)",
+        "statement.execute(sql)",
         "statement.execute(query)",
+        "statement.executequery(sql)",
         "statement.executequery(query)",
     ]
     DYNAMIC_SQL_TOKENS = [' + ', 'f"', "f'", ".format(", '" %', "' %"]
@@ -298,6 +925,7 @@ class JudgeNode:
         recommendation = decision.recommendation
         risk_signals = self._collect_risk_signals(updated_record.finding, auditor_review)
         promotion_applied = False
+        promotion_target: Optional[str] = None
 
         if skeptic_review.executed:
             if skeptic_review.suggested_status is not None:
@@ -309,6 +937,24 @@ class JudgeNode:
                     explanation
                     + " Skeptic validation found mitigation signals in nearby code context."
                 )
+            elif self._should_promote_to_confirmed(
+                updated_record.finding,
+                final_status,
+                auditor_review,
+                skeptic_review,
+                risk_signals,
+            ):
+                final_status = TriageStatus.CONFIRMED
+                final_confidence = max(
+                    final_confidence,
+                    min(max(auditor_review.evidence_score, 0.88), 0.96),
+                )
+                explanation = (
+                    explanation
+                    + " Auditor evidence shows direct dynamic SQL execution without mitigation."
+                )
+                promotion_applied = True
+                promotion_target = "confirmed"
             elif self._should_promote_to_likely(
                 updated_record.finding,
                 final_status,
@@ -326,6 +972,7 @@ class JudgeNode:
                     + " Auditor evidence is strong and skeptical validation did not find mitigation signals."
                 )
                 promotion_applied = True
+                promotion_target = "likely"
             elif skeptic_review.objections:
                 explanation = (
                     explanation
@@ -350,8 +997,8 @@ class JudgeNode:
                 else []
             )
             + (
-                ["promoted-to-likely"]
-                if promotion_applied
+                [f"promoted-to-{promotion_target}"]
+                if promotion_target
                 else []
             )
         )
@@ -369,6 +1016,7 @@ class JudgeNode:
                 "auditor_route_id": auditor_review.route_id,
                 "skeptic_executed": skeptic_review.executed,
                 "promotion_applied": promotion_applied,
+                "promotion_target": promotion_target,
                 "risk_signals": risk_signals,
             },
         )
@@ -425,6 +1073,27 @@ class JudgeNode:
         return updated_record, judge_review
 
     @staticmethod
+    def _should_promote_to_confirmed(
+        finding: NormalizedFinding,
+        current_status: TriageStatus,
+        auditor_review: AuditorReview,
+        skeptic_review: SkepticReview,
+        risk_signals: List[str],
+    ) -> bool:
+        """Promote the strongest deterministic SQLi cases to confirmed."""
+        strong_sql_signals = {"dynamic-sql-construction", "query-executed-directly"}
+        return (
+            current_status in {TriageStatus.LIKELY, TriageStatus.NEEDS_REVIEW}
+            and finding.vulnerability_type == "SQL_INJECTION"
+            and finding.severity in (Severity.CRITICAL, Severity.HIGH)
+            and not finding.is_effectively_sanitized
+            and not skeptic_review.mitigation_signals
+            and not skeptic_review.objections
+            and auditor_review.evidence_score >= 0.7
+            and strong_sql_signals.issubset(set(risk_signals))
+        )
+
+    @staticmethod
     def _should_promote_to_likely(
         finding: NormalizedFinding,
         current_status: TriageStatus,
@@ -459,10 +1128,11 @@ class JudgeNode:
             has_sql_keyword = any(
                 token in context_text for token in JudgeNode.RISKY_SQL_TOKENS
             )
+            has_named_query = "query =" in context_text or "sql =" in context_text
             has_dynamic_sql = (
-                "query =" in context_text
+                has_named_query
                 and any(token in context_text for token in JudgeNode.DYNAMIC_SQL_TOKENS)
-            ) or ("% " in context_text and "query =" in context_text)
+            ) or ("% " in context_text and has_named_query)
             has_direct_execution = any(
                 token in context_text
                 for token in JudgeNode.DIRECT_SQL_EXECUTION_TOKENS

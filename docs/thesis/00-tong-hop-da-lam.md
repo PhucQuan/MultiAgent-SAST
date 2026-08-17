@@ -115,14 +115,14 @@ Kết quả tổng hợp:
 
 | Hệ thống | TP | FP | FN | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|---:|---:|
-| Aegis core | 85 | 56 | 16 | 0.6028 | 0.8416 | 0.7025 |
+| Aegis core (đã vá PATH_TRAVERSAL 2026-08-17) | 85 | 10 | 16 | 0.8947 | 0.8416 | 0.8673 |
 | Semgrep baseline | 27 | 14 | 74 | 0.6585 | 0.2673 | 0.3803 |
 
 Ý nghĩa của kết quả này là:
 
-- Aegis đang **vượt rõ Semgrep baseline về recall và F1 tổng thể** trong phạm vi bốn family mục tiêu;
+- Aegis đang **vượt rõ Semgrep baseline về precision, recall và F1 tổng thể** trong phạm vi bốn family mục tiêu;
 - detector hiện tại của repo không chỉ chạy được, mà đã cho kết quả thực nghiệm có sức thuyết phục;
-- điểm đau chính vẫn là **false positive của PATH_TRAVERSAL**.
+- false positive của `PATH_TRAVERSAL` đã giảm mạnh sau bản vá ngày **17/08/2026**; điểm đau còn lại chuyển nhiều hơn sang việc làm rõ giá trị thực sự của các mode triage `all`, `visible`, `high-confidence`.
 
 ### 5.2. Python lane khi mở rộng lên 6 family
 
@@ -131,7 +131,7 @@ Ngoài bốn family chính, hệ thống đã được mở rộng benchmark th�
 - `CODE_INJECTION`
 - `OPEN_REDIRECT`
 
-Kết quả tổng hợp:
+Kết quả tổng hợp dưới đây là **snapshot 6-family trước bản vá PATH_TRAVERSAL ngày 17/08/2026**:
 
 | Hệ thống | TP | FP | FN | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -190,7 +190,7 @@ Các hạn chế sau đây nên được trình bày rõ ràng:
 
 1. Python là lane mạnh nhất; các lane khác chưa đồng đều về độ sâu phân tích.
 2. Cross-file reasoning hiện mạnh chủ yếu ở Python.
-3. False positive của `PATH_TRAVERSAL` vẫn còn cao.
+3. False positive của `PATH_TRAVERSAL` đã được kéo xuống đáng kể ở lane Python, nhưng sự khác biệt giữa `all`, `visible` và `high-confidence` vẫn chưa đủ rõ trên dữ liệu thật.
 4. AI đã tích hợp về mặt kiến trúc, nhưng chưa chứng minh được improvement benchmark ổn định do phụ thuộc runtime/quota.
 5. Dashboard là lớp đọc report và hỗ trợ review, không phải detector UI gắn trực tiếp với engine.
 6. Local LLM adapter đã được nối vào codebase, nhưng máy hiện tại chưa cài Ollama hoặc LM Studio runtime để dùng ngay trong demo.
@@ -219,9 +219,9 @@ Nếu cần một đoạn giới thiệu ngắn trong khoảng một phút, có 
 
 Sau khi hoàn thành buổi báo cáo, các ưu tiên ngắn hạn hợp lý nhất là:
 
-1. Giảm false positive cho `PATH_TRAVERSAL`.
-2. Làm rõ hơn sự khác biệt giữa `all findings`, `visible findings` và `high-confidence findings`.
-3. Hoàn thiện reviewer memory hoặc feedback loop trong dashboard.
+1. Làm rõ hơn sự khác biệt giữa `all findings`, `visible findings` và `high-confidence findings`.
+2. Hoàn thiện reviewer memory hoặc feedback loop trong dashboard.
+3. Chuẩn hóa contract `ReviewMemory -> TriageMemory` để triage dùng lại được phản hồi reviewer.
 4. Khi hạ tầng ổn định hơn, bật local LLM bằng Ollama hoặc LM Studio để AI triage chạy thật trong môi trường cục bộ.
 
 ## 11. Kết luận ngắn
@@ -234,3 +234,27 @@ Sau khi hoàn thành buổi báo cáo, các ưu tiên ngắn hạn hợp lý nh�
 4. Một hướng AI/multi-agent được đặt đúng vào lớp triage thay vì làm lệch trọng tâm của detector.
 
 Nói ngắn gọn, đóng góp quan trọng nhất của dự án ở giai đoạn hiện tại là: **xây dựng được một scanner core có thể benchmark được, sau đó tổ chức lớp triage và workflow theo hướng multi-agent để từng bước giảm false positive và tăng giá trị sử dụng thực tế của hệ thống**.
+
+## 12. Cap nhat 2026-08-17 sau lane Tue
+
+Sau khi hoan thanh lane Quan va tiep tuc lane Tue qua 2 dot lien tiep, report Python breadth hien tai khong con bi don het vao `likely`, va core 4-family da tach duoc `visible` khoi `all`.
+
+Trang thai report that tren `D:\BenchmarkPython\testcode` hien tai:
+
+- `confirmed = 5`
+- `likely = 83`
+- `needs-review = 30`
+- `suppressed = 26`
+
+Y nghia:
+
+- `all`, `visible`, va `high-confidence` da tach nhau ro tren report 6-family
+- `visible` da tach khoi `all` tren core 4-family
+- tap `visible` cua core 4-family hien dat `TP=85, FP=0, FN=16, Precision=1.0000, Recall=0.8416, F1=0.9140`
+- `high-confidence` cua core 4-family hien dat `TP=73, FP=0, FN=28, Precision=1.0000, Recall=0.7228, F1=0.8391`
+- lane Tue khong chi giai quyet reviewer views, ma da giam duoc false positive core bang local deterministic reasoning trong skeptic stage
+
+Tai lieu chi tiet cho dot nay nam o:
+
+- `docs/thesis/67-tue-triage-mode-separation-2026-08-17.md`
+- `docs/thesis/68-tue-core4-visible-separation-2026-08-17.md`

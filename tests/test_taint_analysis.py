@@ -184,6 +184,180 @@ class TestSingleFileTaint:
             f"Expected PATH_TRAVERSAL across match/case assignment, got: {types}"
         )
 
+    def test_suppresses_path_traversal_when_constant_ifexp_resolves_safe_branch(self):
+        code = """\
+            from flask import request
+
+            def read_file():
+                name = request.args.get('file')
+                num = 106
+                target = 'safe.txt' if 7 * 18 + num > 200 else name
+                open(target, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("PATH" not in v.vuln_type.value for v in vulns), (
+            f"Constant-safe branch should not be reported as PATH_TRAVERSAL: {vulns}"
+        )
+
+    def test_suppresses_path_traversal_after_parent_dir_guard(self):
+        code = """\
+            from flask import request
+
+            def read_file():
+                name = request.args.get('file')
+                if '../' in name:
+                    return 'blocked'
+                open(name, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("PATH" not in v.vuln_type.value for v in vulns), (
+            f"Early-return parent-dir guard should suppress PATH_TRAVERSAL: {vulns}"
+        )
+
+    def test_suppresses_path_traversal_when_config_reads_safe_option(self):
+        code = """\
+            import configparser
+            from flask import request
+
+            def read_file():
+                name = request.form.get('file')
+                conf = configparser.ConfigParser()
+                conf.add_section('demo')
+                conf.set('demo', 'safe', 'notes.txt')
+                conf.set('demo', 'user', name)
+                target = conf.get('demo', 'safe')
+                open(target, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("PATH" not in v.vuln_type.value for v in vulns), (
+            f"Reading a safe ConfigParser option should not be reported: {vulns}"
+        )
+
+    def test_suppresses_path_traversal_when_list_slot_stays_safe(self):
+        code = """\
+            from flask import request
+
+            def read_file():
+                name = request.form.get('file')
+                target = 'fallback.txt'
+                if name:
+                    bucket = []
+                    bucket.append('safe.txt')
+                    bucket.append(name)
+                    bucket.append('later.txt')
+                    bucket.pop(0)
+                    target = bucket[1]
+                open(target, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("PATH" not in v.vuln_type.value for v in vulns), (
+            f"Reading a safe list slot should not be reported: {vulns}"
+        )
+
+    def test_suppresses_path_traversal_when_constant_match_selects_safe_case(self):
+        code = """\
+            from flask import request
+
+            def read_file():
+                name = request.headers.get('file')
+                options = 'ABC'
+                guess = options[1]
+                match guess:
+                    case 'A':
+                        target = name
+                    case 'B':
+                        target = 'safe.txt'
+                    case _:
+                        target = 'fallback.txt'
+                open(target, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("PATH" not in v.vuln_type.value for v in vulns), (
+            f"Constant match safe branch should not be reported: {vulns}"
+        )
+
+    def test_keeps_path_traversal_when_config_reads_tainted_option(self):
+        code = """\
+            import configparser
+            from flask import request
+
+            def read_file():
+                name = request.form.get('file')
+                conf = configparser.ConfigParser()
+                conf.add_section('demo')
+                conf.set('demo', 'user', name)
+                target = conf.get('demo', 'user')
+                open(target, 'rb')
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Tainted ConfigParser option should still be reported, got: {types}"
+        )
+
+    def test_suppresses_path_traversal_when_try_body_reads_safe_config_option(self):
+        code = """\
+            import configparser
+            import os
+            from flask import request
+
+            def read_file():
+                name = request.form.get('file')
+                conf = configparser.ConfigParser()
+                conf.add_section('demo')
+                conf.set('demo', 'safe', 'notes.txt')
+                conf.set('demo', 'user', name)
+                try:
+                    target = conf.get('demo', 'safe')
+                    os.path.exists(target)
+                except OSError:
+                    return False
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        assert all("PATH" not in v.vuln_type.value for v in vulns), (
+            f"Safe ConfigParser option inside try-body should not be reported: {vulns}"
+        )
+
+    def test_keeps_path_traversal_when_try_body_reads_tainted_config_option_for_exists(self):
+        code = """\
+            import configparser
+            import os
+            from flask import request
+
+            def read_file():
+                name = request.form.get('file')
+                conf = configparser.ConfigParser()
+                conf.add_section('demo')
+                conf.set('demo', 'safe', 'notes.txt')
+                conf.set('demo', 'user', name)
+                try:
+                    target = conf.get('demo', 'user')
+                    os.path.exists(target)
+                except OSError:
+                    return False
+        """
+        path = write_temp_file(code)
+        detector = make_detector()
+        vulns = detector.analyze_file(path)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Tainted ConfigParser option inside try-body should still be reported, got: {types}"
+        )
+
     def test_xss_with_html_escape_is_detected_but_marked_lower_severity(self):
         code = """\
             from flask import request, render_template_string

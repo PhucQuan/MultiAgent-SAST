@@ -48,7 +48,7 @@ class EvidenceContext:
 class SourceContextReader:
     """Load small, line-oriented context windows around finding evidence."""
 
-    def __init__(self, radius: int = 2):
+    def __init__(self, radius: int = 15):
         self.radius = radius
 
     def read_for_finding(

@@ -152,3 +152,30 @@ def test_triage_engine_suppresses_local_operator_path_traversal_noise():
     assert "local-operator-input-source" in record.decision.reason_codes
     assert "operator-controlled-source-suppressed" in record.decision.reason_codes
     assert record.decision.manual_review_required is True
+
+
+def test_triage_engine_keeps_open_redirect_visible_but_review_only():
+    """Open redirects should stay in manual review until validation context is checked."""
+    source_loc = CodeLocation("app.py", 10, 1, "target = request.args.get('next')")
+    step_loc = CodeLocation("app.py", 12, 1, "bar = target")
+    sink_loc = CodeLocation("app.py", 18, 1, "return flask.redirect(bar)")
+    source = TaintSource(source_loc, "HTTP_PARAM", "target", "request.args.get")
+    sink = TaintSink(
+        sink_loc,
+        VulnerabilityType.OPEN_REDIRECT,
+        "flask.redirect",
+        "redirect(",
+    )
+    vuln = Vulnerability(
+        id="VULN-104",
+        vuln_type=VulnerabilityType.OPEN_REDIRECT,
+        severity=Severity.MEDIUM,
+        dataflow=DataFlowPath(source=source, sink=sink, intermediate_steps=[step_loc]),
+    )
+
+    record = TriageEngine().triage_vulnerability(vuln)
+
+    assert record.decision.status.value == "needs-review"
+    assert 0.55 <= record.decision.confidence <= 0.62
+    assert "manual-review-open-redirect" in record.decision.reason_codes
+    assert record.decision.manual_review_required is True

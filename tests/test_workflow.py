@@ -242,8 +242,8 @@ def test_langgraph_bridge_can_apply_ai_overlay_with_local_client():
     assert state.traces[-1].node_name == "ai_triage_overlay"
 
 
-def test_scan_workflow_promotes_strong_sqli_to_likely(tmp_path):
-    """Workflow should promote strong unmitigated SQLi findings to likely."""
+def test_scan_workflow_confirms_strong_sqli_when_context_is_unambiguous(tmp_path):
+    """Workflow should confirm strong dynamic SQLi with direct execution evidence."""
     target = Path(tmp_path) / "app.py"
     target.write_text(
         "\n".join(
@@ -285,10 +285,112 @@ def test_scan_workflow_promotes_strong_sqli_to_likely(tmp_path):
 
     state = ScanWorkflow().run(result)
 
-    assert state.metadata["triage_summary"]["likely"] == 1
+    assert state.metadata["triage_summary"]["confirmed"] == 1
     assert state.metadata["skeptic_summary"]["executed"] == 1
-    assert state.triage_records[0].decision.status.value == "likely"
-    assert state.triage_records[0].decision.confidence >= 0.72
+    assert state.triage_records[0].decision.status.value == "confirmed"
+    assert state.triage_records[0].decision.confidence >= 0.88
+
+
+def test_scan_workflow_tracks_mixed_triage_statuses_for_realistic_findings(tmp_path):
+    """Workflow summaries should separate confirmed, review-only, and suppressed findings."""
+    target = Path(tmp_path) / "app.py"
+    target.write_text(
+        "\n".join(
+            [
+                "import flask",
+                "import urllib.parse",
+                "user_id = request.args.get('id')",
+                "query = \"SELECT * FROM users WHERE id = '\" + user_id + \"'\"",
+                "cursor.execute(query)",
+                "next_url = request.args.get('next')",
+                "redirect_target = next_url",
+                "return flask.redirect(redirect_target)",
+                "expr = request.args.get('expr')",
+                "code = expr",
+                "if not code.startswith(\"'\") or not code.endswith(\"'\") or \"'\" in code[1:-1]:",
+                "    return 'literal only'",
+                "exec(code)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    sql_vuln = Vulnerability(
+        id="VULN-MIXED-1",
+        vuln_type=VulnerabilityType.SQL_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(
+            source=TaintSource(
+                CodeLocation(str(target), 3, 1, "user_id = request.args.get('id')"),
+                "HTTP_PARAM",
+                "user_id",
+                "request.args.get",
+            ),
+            sink=TaintSink(
+                CodeLocation(str(target), 5, 1, "cursor.execute(query)"),
+                VulnerabilityType.SQL_INJECTION,
+                "cursor.execute",
+                ".execute(",
+            ),
+        ),
+    )
+    redirect_vuln = Vulnerability(
+        id="VULN-MIXED-2",
+        vuln_type=VulnerabilityType.OPEN_REDIRECT,
+        severity=Severity.MEDIUM,
+        dataflow=DataFlowPath(
+            source=TaintSource(
+                CodeLocation(str(target), 6, 1, "next_url = request.args.get('next')"),
+                "HTTP_PARAM",
+                "next_url",
+                "request.args.get",
+            ),
+            sink=TaintSink(
+                CodeLocation(str(target), 8, 1, "return flask.redirect(redirect_target)"),
+                VulnerabilityType.OPEN_REDIRECT,
+                "flask.redirect",
+                "redirect(",
+            ),
+            intermediate_steps=[
+                CodeLocation(str(target), 7, 1, "redirect_target = next_url"),
+            ],
+        ),
+    )
+    code_vuln = Vulnerability(
+        id="VULN-MIXED-3",
+        vuln_type=VulnerabilityType.CODE_INJECTION,
+        severity=Severity.CRITICAL,
+        dataflow=DataFlowPath(
+            source=TaintSource(
+                CodeLocation(str(target), 9, 1, "expr = request.args.get('expr')"),
+                "HTTP_PARAM",
+                "expr",
+                "request.args.get",
+            ),
+            sink=TaintSink(
+                CodeLocation(str(target), 13, 1, "exec(code)"),
+                VulnerabilityType.CODE_INJECTION,
+                "exec",
+                "exec(",
+            ),
+            intermediate_steps=[
+                CodeLocation(str(target), 10, 1, "code = expr"),
+            ],
+        ),
+    )
+    result = ScanResult(
+        target_path=str(target),
+        start_time=datetime.now(),
+        end_time=datetime.now(),
+        vulnerabilities=[sql_vuln, redirect_vuln, code_vuln],
+        files_scanned=1,
+    )
+
+    state = ScanWorkflow().run(result)
+
+    assert state.metadata["triage_summary"]["confirmed"] == 1
+    assert state.metadata["triage_summary"]["needs-review"] == 1
+    assert state.metadata["triage_summary"]["suppressed"] == 1
 
 
 def test_scan_pipeline_service_returns_reusable_result_without_cli_logic(tmp_path):

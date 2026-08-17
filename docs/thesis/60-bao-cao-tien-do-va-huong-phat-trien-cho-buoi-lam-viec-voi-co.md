@@ -72,6 +72,14 @@ Quan trọng hơn, hệ thống hiện đã có cách tổ chức phù hợp v�
 
 > Hệ thống đã có workflow multi-agent ở mức kiến trúc và code structure, nhưng chưa nên claim là đã hoàn thiện một LangGraph orchestration end-to-end cho toàn bộ pipeline.
 
+Nếu cần giải thích theo cách dễ hiểu hơn với giảng viên, có thể diễn đạt như sau:
+
+- `Auditor` đóng vai trò gần với một bên **buộc tội**, tức là đọc evidence và cố chứng minh finding là lỗi thật;
+- `Skeptic` đóng vai trò gần với một bên **phản biện**, tức là đi tìm sanitizer, guard clause, dữ liệu nội bộ hoặc các dấu hiệu cho thấy finding có thể là false positive;
+- `Judge` là tầng **chốt quyết định**, tổng hợp hai phía và đưa ra `status`, `confidence`, `reason_codes`, explanation.
+
+Điểm quan trọng của cách tổ chức này là nó đưa Aegis-SAST từ chỗ “scan xong rồi in ra” sang chỗ có một **cơ chế phản biện có phân vai**. Điều này giúp đề tài có màu sắc multi-agent rõ hơn, nhưng vẫn giữ được ranh giới an toàn: multi-agent được dùng ở lớp triage, không thay thế detector deterministic.
+
 ### 3.4. Tích hợp AI ở lớp triage
 
 Nhóm đã tích hợp AI runner và client cho Gemini, đồng thời bổ sung OpenAI-compatible adapter để mở đường cho việc dùng local model hoặc runtime tương thích về sau.
@@ -288,6 +296,13 @@ Trong ngắn hạn, đề tài nên tập trung vào bốn hướng ưu tiên sa
 2. Làm cho triage thực sự phân tách được `all findings`, `visible findings` và `high-confidence findings`.
 3. Tăng giá trị thực tế của dashboard bằng reviewer memory, note, mute/suppress có kiểm soát.
 4. Ổn định demo và benchmark pipeline để việc trình bày không phụ thuộc vào may rủi môi trường.
+
+Nếu diễn đạt theo ngôn ngữ multi-agent, thì mục tiêu ngắn hạn chính là hoàn thiện **feedback-loop collaborative agent architecture**, cụ thể:
+
+- làm cho `Auditor` sinh ra lập luận tốt hơn từ evidence bundle;
+- làm cho `Skeptic` bác bỏ false positive tốt hơn, nhất là ở các family traversal/path-related;
+- làm cho `Judge` thực sự tạo ra khác biệt giữa `all findings`, `visible findings` và `high-confidence findings`;
+- đưa reviewer note, suppression pattern và reviewed findings từ dashboard quay trở lại thành **triage memory** cho những lần scan sau.
 
 ### 8.2. Ưu tiên trung hạn
 

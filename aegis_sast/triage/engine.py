@@ -17,6 +17,8 @@ class TriageEngine:
     """Applies deterministic and knowledge-assisted triage to findings."""
 
     LOCAL_OPERATOR_SOURCE_TYPES = {"COMMAND_LINE_ARGS", "ENVIRONMENT_VAR"}
+    DEFAULT_NEEDS_REVIEW_CONFIDENCE = 0.55
+    DEFAULT_LIKELY_CONFIDENCE = 0.7
 
     def __init__(
         self,
@@ -167,21 +169,31 @@ class TriageEngine:
                 reason_codes.append("operator-controlled-source-needs-review")
 
         elif status == TriageStatus.NEEDS_REVIEW:
-            if evidence_summary.get("intermediate_step_count", 0) > 0:
-                status = TriageStatus.LIKELY
-                confidence = max(confidence, 0.7)
-                explanation = (
-                    "The finding contains a multi-step dataflow trace and no effective "
-                    "sanitizer was observed."
+            if self._should_keep_needs_review(finding):
+                confidence = min(
+                    max(confidence, self.DEFAULT_NEEDS_REVIEW_CONFIDENCE),
+                    0.62,
                 )
-                reason_codes.append("multi-step-dataflow")
+                explanation = self._needs_review_explanation(finding)
+                reason_codes.append(self._needs_review_reason_code(finding))
+            elif self._supports_likely_promotion(
+                finding,
+                evidence_summary,
+            ):
+                status = TriageStatus.LIKELY
+                confidence = max(confidence, self._likely_confidence_floor(finding))
+                explanation = (
+                    "The finding contains a clear deterministic dataflow into a "
+                    "security-sensitive sink and no effective sanitizer was observed."
+                )
+                reason_codes.append("clear-deterministic-dataflow")
             elif finding.severity in (Severity.CRITICAL, Severity.HIGH):
                 confidence = max(confidence, 0.6)
                 explanation = (
                     "High-severity sink reached from user-controlled input, but the "
                     "current evidence is still too shallow for confirmation."
                 )
-                reason_codes.append("high-severity-shallow-evidence")
+                reason_codes.append("high-severity-ambiguous-exploitability")
 
         if status == TriageStatus.SUPPRESSED and finding.severity in (
             Severity.CRITICAL,
@@ -252,3 +264,88 @@ class TriageEngine:
     def _dedupe_reason_codes(reason_codes: List[str]) -> List[str]:
         """Keep reason codes stable and free of duplicates."""
         return list(dict.fromkeys(code for code in reason_codes if code))
+
+    @staticmethod
+    def _has_clear_deterministic_evidence(evidence_summary: dict) -> bool:
+        """Return True when the finding includes a non-trivial source-to-sink path."""
+        return (
+            evidence_summary.get("path_length", 0) >= 3
+            or evidence_summary.get("intermediate_step_count", 0) > 0
+        )
+
+    @classmethod
+    def _supports_likely_promotion(
+        cls,
+        finding: NormalizedFinding,
+        evidence_summary: dict,
+    ) -> bool:
+        """Return True when deterministic evidence is strong enough for likely."""
+        if not cls._has_clear_deterministic_evidence(evidence_summary):
+            return False
+
+        if finding.vulnerability_type == "OPEN_REDIRECT":
+            return False
+
+        if cls._is_low_impact_path_finding(finding):
+            return False
+
+        return finding.vulnerability_type in {
+            "COMMAND_INJECTION",
+            "CODE_INJECTION",
+            "INSECURE_DESERIALIZATION",
+            "PATH_TRAVERSAL",
+            "SQL_INJECTION",
+        }
+
+    @staticmethod
+    def _likely_confidence_floor(finding: NormalizedFinding) -> float:
+        """Return a family-aware confidence floor for likely findings."""
+        if finding.vulnerability_type in {
+            "CODE_INJECTION",
+            "INSECURE_DESERIALIZATION",
+            "SQL_INJECTION",
+        }:
+            return 0.74
+
+        if finding.vulnerability_type == "PATH_TRAVERSAL":
+            return 0.68
+
+        return TriageEngine.DEFAULT_LIKELY_CONFIDENCE
+
+    @classmethod
+    def _should_keep_needs_review(cls, finding: NormalizedFinding) -> bool:
+        """Keep ambiguity visible when exploitability still depends on context."""
+        return finding.vulnerability_type == "OPEN_REDIRECT" or cls._is_low_impact_path_finding(
+            finding
+        )
+
+    @staticmethod
+    def _needs_review_explanation(finding: NormalizedFinding) -> str:
+        """Return a stable explanation for findings that should stay review-only."""
+        if finding.vulnerability_type == "OPEN_REDIRECT":
+            return (
+                "Open redirects depend heavily on target validation and deployment "
+                "context, so this finding stays visible but still needs manual review."
+            )
+
+        return (
+            "The path reaches a lower-impact filesystem check rather than a direct "
+            "file read or write sink, so manual review is still required."
+        )
+
+    @staticmethod
+    def _needs_review_reason_code(finding: NormalizedFinding) -> str:
+        """Return the reason code used when a finding stays in manual review."""
+        if finding.vulnerability_type == "OPEN_REDIRECT":
+            return "manual-review-open-redirect"
+        return "manual-review-low-impact-path-check"
+
+    @staticmethod
+    def _is_low_impact_path_finding(finding: NormalizedFinding) -> bool:
+        """Return True for path findings that only reach existence checks."""
+        if finding.vulnerability_type != "PATH_TRAVERSAL":
+            return False
+
+        sink_function = str(finding.detection_metadata.get("sink_function") or "").lower()
+        sink_pattern = str(finding.detection_metadata.get("sink_pattern") or "").lower()
+        return sink_function.endswith("exists") or ".exists" in sink_pattern
