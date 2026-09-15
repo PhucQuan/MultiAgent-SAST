@@ -1,0 +1,34 @@
+{
+  "cwe": "CWE-78",
+  "name": "COMMAND_INJECTION",
+  "language": "php",
+  "functional_semantics": "User input đi vào lệnh hệ điều hành do PHP thực thi qua shell",
+  "sources": ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "$_FILES['name']", "php://input"],
+  "sinks": ["system", "exec", "shell_exec", "passthru", "popen", "proc_open", "pcntl_exec", "backtick operator"],
+  "sanitizers": [
+    "escapeshellarg() cho từng tham số",
+    "escapeshellcmd() cho toàn chuỗi lệnh (yếu hơn, chỉ chặn metacharacter)",
+    "Allow-list ánh xạ input sang lệnh cố định",
+    "preg_match('/^[A-Za-z0-9_.-]+$/') trước khi ghép"
+  ],
+  "root_cause": "Nội suy biến vào chuỗi lệnh rồi đưa cho shell diễn giải",
+  "fp_indicators": [
+    "Tham số đã bọc escapeshellarg() trước khi nội suy",
+    "Input chỉ dùng để chọn phần tử trong mảng lệnh cố định",
+    "Đã kiểm tra bằng preg_match với ký tự an toàn trước khi ghép",
+    "Chuỗi lệnh là hằng số, biến chỉ nằm trong lời gọi error_log",
+    "Giá trị lấy từ hằng số define() chứ không từ superglobal"
+  ],
+  "few_shot": [
+    {
+      "code": "$f = $_GET['file'];\nsystem(\"cat \" . $f);",
+      "label": "TP",
+      "why": "Ghép thẳng vào system, chèn '; id' là chạy được lệnh khác"
+    },
+    {
+      "code": "$f = escapeshellarg($_GET['file']);\nsystem(\"cat \" . $f);",
+      "label": "FP",
+      "why": "escapeshellarg bọc nháy đơn nên shell coi toàn bộ là một tham số"
+    }
+  ]
+}

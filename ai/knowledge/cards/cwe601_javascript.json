@@ -1,0 +1,34 @@
+{
+  "cwe": "CWE-601",
+  "name": "OPEN_REDIRECT",
+  "language": "javascript",
+  "functional_semantics": "URL đích của chuyển hướng do người dùng kiểm soát",
+  "sources": ["req.query", "req.body", "req.params", "req.headers.referer", "req.cookies"],
+  "sinks": ["res.redirect", "res.location", "res.set('Location', ...)", "res.writeHead(302, {Location: ...})", "window.location assignment (client)"],
+  "sanitizers": [
+    "Allow-list hostname đích",
+    "new URL(input, base) rồi kiểm tra origin trùng base",
+    "Chỉ chấp nhận đường dẫn tương đối, chặn '//' và '://'",
+    "Ánh xạ input sang bảng đích cố định"
+  ],
+  "root_cause": "Header Location nhận URL từ input nên attacker chỉ định được origin đích",
+  "fp_indicators": [
+    "Đích dựng từ base URL hằng số, input chỉ là khoá tra bảng",
+    "Có new URL(input, base) kèm kiểm tra origin === base trước khi redirect",
+    "Đã chặn chuỗi bắt đầu bằng '//' hoặc chứa '://'",
+    "Chỉ redirect tới đường dẫn tương đối sau prefix cố định",
+    "Giá trị lấy từ session phía server chứ không từ request"
+  ],
+  "few_shot": [
+    {
+      "code": "res.redirect(req.query.url);",
+      "label": "TP",
+      "why": "Location hoàn toàn do người dùng kiểm soát"
+    },
+    {
+      "code": "const next = req.query.next || '/';\nconst u = new URL(next, BASE);\nif (u.origin !== BASE) return res.sendStatus(400);\nres.redirect(u.pathname);",
+      "label": "FP",
+      "why": "Chỉ cho phép origin trùng base, và chỉ dùng pathname"
+    }
+  ]
+}

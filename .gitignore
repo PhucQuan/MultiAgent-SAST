@@ -1,6 +1,9 @@
 # Aegis-SAST cache directory
 .aegis_cache/
 
+# Cache LLM của multi-agent layer (AEGIS_CACHE_DIR)
+cache/
+
 # Environment variables
 .env
 

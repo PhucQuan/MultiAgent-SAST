@@ -1,0 +1,35 @@
+{
+  "cwe": "CWE-94",
+  "name": "CODE_INJECTION",
+  "language": "python",
+  "functional_semantics": "Dữ liệu người dùng được đưa vào bộ thông dịch để thực thi như mã Python",
+  "sources": ["request.args.get", "request.form", "request.json", "request.cookies", "sys.argv", "input()"],
+  "sinks": ["eval", "exec", "compile", "__import__", "ast.literal_eval khi bị lạm dụng", "timeit.timeit", "pickle loads gián tiếp"],
+  "sanitizers": [
+    "ast.literal_eval() thay cho eval() khi chỉ cần literal",
+    "Allow-list ánh xạ input sang biểu thức cố định",
+    "Kiểm tra regex chặt trước khi đưa vào eval/exec",
+    "Kiểm tra chuỗi phải là literal (bọc nháy, không chứa nháy bên trong)",
+    "Ép kiểu int/float rồi tính bằng toán tử thường"
+  ],
+  "root_cause": "eval/exec thông dịch chuỗi thành mã nên input điều khiển được luồng thực thi",
+  "fp_indicators": [
+    "Dùng ast.literal_eval nên chỉ parse được literal, không gọi được hàm",
+    "Có guard kiểm tra chuỗi phải là literal đơn trước khi exec, ví dụ bắt buộc bắt đầu và kết thúc bằng nháy và không có nháy ở giữa",
+    "Chuỗi truyền vào eval là hằng số hoặc lấy từ allow-list nội bộ",
+    "Input đã ép kiểu số trước khi đưa vào biểu thức",
+    "Có early return chặn mọi giá trị không khớp mẫu an toàn trước khi tới sink"
+  ],
+  "few_shot": [
+    {
+      "code": "expr = request.args.get('q')\nresult = eval(expr)",
+      "label": "TP",
+      "why": "eval trên chuỗi do người dùng kiểm soát, thực thi mã tuỳ ý"
+    },
+    {
+      "code": "bar = thing.doSomething(param)\nif not bar.startswith(\"'\") or not bar.endswith(\"'\") or \"'\" in bar[1:-1]:\n    return 'Exec argument must be a plain string literal.'\nexec(bar)",
+      "label": "FP",
+      "why": "Guard bắt buộc bar là một string literal đơn, không có nháy bên trong nên không thoát ra được để chèn câu lệnh"
+    }
+  ]
+}

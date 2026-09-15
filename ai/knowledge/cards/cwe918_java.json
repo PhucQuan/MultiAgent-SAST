@@ -1,0 +1,35 @@
+{
+  "cwe": "CWE-918",
+  "name": "SSRF",
+  "language": "java",
+  "functional_semantics": "URL do người dùng kiểm soát được server dùng để phát sinh request ra ngoài",
+  "sources": ["request.getParameter", "request.getHeader", "@RequestParam", "@RequestBody"],
+  "sinks": ["new URL(...).openConnection", "HttpURLConnection", "HttpClient.send", "RestTemplate.getForObject", "WebClient.get().uri", "OkHttpClient.newCall", "Apache HttpClient execute"],
+  "sanitizers": [
+    "Allow-list host sau khi new URI(input).getHost()",
+    "InetAddress.getByName rồi chặn isLoopbackAddress/isSiteLocalAddress/isLinkLocalAddress",
+    "Chỉ cho phép protocol http/https",
+    "setInstanceFollowRedirects(false)",
+    "Gọi qua proxy egress có kiểm soát"
+  ],
+  "root_cause": "Server tin URL từ input nên bị ép truy cập tài nguyên nội bộ hoặc metadata endpoint của cloud",
+  "fp_indicators": [
+    "Host đã đối chiếu allow-list sau khi parse URI trước khi gọi",
+    "URL dựng từ base URL hằng số, input chỉ là path đã encode",
+    "Có kiểm tra protocol và chặn dải IP private/loopback trước khi mở kết nối",
+    "setInstanceFollowRedirects(false) kèm kiểm tra host sau mỗi hop",
+    "Input chỉ đi vào query string của endpoint nội bộ cố định"
+  ],
+  "few_shot": [
+    {
+      "code": "String u = request.getParameter(\"url\");\nHttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();\nc.getInputStream();",
+      "label": "TP",
+      "why": "URL hoàn toàn do người dùng kiểm soát, gọi được http://169.254.169.254/"
+    },
+    {
+      "code": "URI uri = new URI(request.getParameter(\"url\"));\nif (!ALLOWED.contains(uri.getHost())) { return; }\nHttpURLConnection c = (HttpURLConnection) uri.toURL().openConnection();\nc.setInstanceFollowRedirects(false);",
+      "label": "FP",
+      "why": "Host bị chặn bởi allow-list và redirect đã tắt"
+    }
+  ]
+}

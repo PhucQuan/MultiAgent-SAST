@@ -1,0 +1,34 @@
+{
+  "cwe": "CWE-78",
+  "name": "COMMAND_INJECTION",
+  "language": "java",
+  "functional_semantics": "Dữ liệu người dùng đi vào lệnh hệ điều hành do JVM thực thi",
+  "sources": ["request.getParameter", "request.getHeader", "@RequestParam", "@PathVariable", "args[]", "System.getenv"],
+  "sinks": ["Runtime.getRuntime().exec", "ProcessBuilder", "ProcessBuilder.command", "Runtime.exec(String)", "ScriptEngine.eval"],
+  "sanitizers": [
+    "ProcessBuilder với danh sách đối số tách rời (không qua shell)",
+    "Runtime.exec(String[]) thay cho Runtime.exec(String)",
+    "Allow-list ánh xạ input sang lệnh cố định",
+    "Kiểm tra Pattern.matches(\"[A-Za-z0-9_.-]+\", input) trước khi ghép"
+  ],
+  "root_cause": "Ghép input vào chuỗi lệnh rồi để sh -c diễn giải, hoặc đưa cả chuỗi cho Runtime.exec",
+  "fp_indicators": [
+    "Dùng ProcessBuilder/exec với mảng đối số nên không có shell diễn giải metacharacter",
+    "Lệnh chạy không đi qua sh -c hoặc cmd.exe /c",
+    "Input chỉ dùng để chọn phần tử trong enum/bảng lệnh cố định",
+    "Đã kiểm tra bằng Pattern chỉ cho ký tự an toàn ngay trước lời gọi",
+    "Chuỗi lệnh là hằng số, biến chỉ nằm trong logger"
+  ],
+  "few_shot": [
+    {
+      "code": "String host = request.getParameter(\"host\");\nRuntime.getRuntime().exec(\"sh -c \\\"ping -c 1 \" + host + \"\\\"\");",
+      "label": "TP",
+      "why": "Chuỗi đi qua sh -c nên ';' tách được lệnh mới"
+    },
+    {
+      "code": "String host = request.getParameter(\"host\");\nnew ProcessBuilder(\"ping\", \"-c\", \"1\", host).start();",
+      "label": "FP",
+      "why": "Đối số tách rời, không có shell nên metacharacter chỉ là chuỗi thường"
+    }
+  ]
+}

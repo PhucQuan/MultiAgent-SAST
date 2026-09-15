@@ -1,0 +1,34 @@
+{
+  "cwe": "CWE-94",
+  "name": "CODE_INJECTION",
+  "language": "php",
+  "functional_semantics": "Dữ liệu người dùng được PHP thông dịch như mã nguồn",
+  "sources": ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "php://input"],
+  "sinks": ["eval", "assert với chuỗi", "create_function", "preg_replace với cờ /e", "include của chuỗi remote", "call_user_func với tên do input"],
+  "sanitizers": [
+    "Allow-list ánh xạ input sang hàm/biểu thức cố định",
+    "Bỏ hẳn eval, dùng bảng ánh xạ mảng",
+    "preg_match kiểm tra ký tự an toàn trước khi ghép",
+    "Ép kiểu số trước khi tính toán"
+  ],
+  "root_cause": "eval và các biến thể thông dịch chuỗi thành mã PHP",
+  "fp_indicators": [
+    "Tên hàm truyền vào call_user_func lấy từ allow-list cố định",
+    "Có preg_match chặn mọi ký tự ngoài chữ và số trước khi tới eval",
+    "Chuỗi đưa vào eval là hằng số trong mã",
+    "Giá trị đã ép (int) trước khi ghép vào biểu thức",
+    "Có early return khi input không khớp mẫu an toàn"
+  ],
+  "few_shot": [
+    {
+      "code": "$code = $_GET['c'];\neval($code);",
+      "label": "TP",
+      "why": "eval trực tiếp chuỗi từ $_GET"
+    },
+    {
+      "code": "$op = $_GET['op'];\n$allowed = ['add' => 'doAdd', 'sub' => 'doSub'];\nif (!isset($allowed[$op])) { exit; }\ncall_user_func($allowed[$op]);",
+      "label": "FP",
+      "why": "Chỉ gọi được hàm nằm trong bảng ánh xạ cố định"
+    }
+  ]
+}
