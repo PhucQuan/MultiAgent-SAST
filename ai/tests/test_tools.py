@@ -2,7 +2,7 @@
 
 import json
 
-from ai.tools.code_tools import CodeToolsInterface, code_tools, make_mock_tools
+from ai.tools.code_tools import CodeToolsInterface, make_mock_tools
 from ai.tools.registry import MAX_TOOL_CALLS, TOOL_DEFINITIONS, dispatch_tool_call
 
 

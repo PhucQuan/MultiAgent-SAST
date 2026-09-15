@@ -21,7 +21,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Callable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ToolResult(BaseModel):

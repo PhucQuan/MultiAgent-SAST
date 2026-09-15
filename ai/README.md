@@ -4,6 +4,44 @@ Tầng multi-agent chạy trên NVIDIA NIM + LangGraph, nhận `NormalizedFindin
 Core SAST và trả về `triage_state` cuối cùng. Không chứa detector, benchmark
 hay SARIF — những phần đó thuộc `aegis_sast/`.
 
+Nguyên tắc chi phối toàn bộ tầng này: **phân tích tĩnh là nguồn bằng chứng, LLM
+chỉ phân loại và giải thích.** LLM không bao giờ là nguồn sự thật — mọi kết
+luận thay đổi được output đều phải trích được bằng chứng do chương trình sinh
+ra.
+
+## Chế độ chạy
+
+NVIDIA Build free tier là tài nguyên khan hiếm, nên mặc định **không** phải
+`active`. Đặt bằng `AEGIS_AI_MODE`:
+
+| Mode | Hành vi | Dùng khi |
+|---|---|---|
+| `disabled` | Không gọi LLM | Baseline, CI nhanh, debug core |
+| `heuristic` | Chỉ filter tất định | Cắt FP mà không tốn API |
+| `shadow` *(mặc định)* | Chạy AI, ghi log, **không đổi output** | Thu dữ liệu, kiểm tra an toàn |
+| `review-only` | AI tóm tắt evidence, không gắn verdict | Demo, người review |
+| `active` | AI gắn verdict theo policy | Chỉ bật sau khi benchmark ổn định |
+
+Ở `shadow` và `review-only`, verdict vẫn được sinh nhưng mang cờ
+`applies_to_output=False`. Phía gọi phải tôn trọng cờ này.
+
+## Điểm vào duy nhất
+
+Core, CLI và script chỉ được import từ `aegis_sast.ai.api`:
+
+```python
+from aegis_sast.ai.api import AITriageService, TriageRequest
+
+service = AITriageService(run_id="run-1")
+verdict = service.triage(TriageRequest(
+    finding_id="f-001", commit_sha=sha, normalized_finding=finding.model_dump()
+))
+```
+
+Import thẳng `ai.graph` hay `ai.llm.nvidia_client` từ bên ngoài là đi vòng qua
+eligibility gate và policy suppression — bỏ qua đúng hai cơ chế giữ cho verdict
+an toàn và chi phí có trần.
+
 ## Chạy
 
 ### Cách 1 — một lệnh, dùng cho code của bạn (khuyến nghị)
@@ -49,7 +87,7 @@ tiếp tục bằng `--resume <checkpoint.jsonl>`. Nó cũng xuất một report
 pip install -r requirements-ai.txt
 cp .env.example .env          # rồi điền NVIDIA_API_KEY=nvapi-...
 python -m ai.e2e_demo         # chạy 1 finding mẫu, xác nhận API thông
-pytest ai/tests -q            # 94 test, toàn bộ dùng LLM giả, không chạm mạng
+pytest ai/tests -q            # 154 test, toàn bộ dùng LLM giả, không chạm mạng
 ```
 
 ### Đọc kết quả
@@ -122,25 +160,54 @@ trần khi bị cắt 16384, `AEGIS_FINDING_BUDGET_SEC=1200`, `AEGIS_TIMEOUT_SEC
 ## Luồng
 
 ```
+Eligibility gate (rule-based, KHÔNG gọi LLM)
+  └─ severity thấp / evidence mỏng / hết ngân sách → NEEDS_REVIEW, 0 token
+Evidence inventory (KHÔNG gọi LLM)      → nạp evidence của Core vào ledger
 Planner (rule-based)
-  └─ evidence_quality < 0.3 → NEEDS_REVIEW, dừng, không tốn token
-Hypothesis Builder (qwen3-coder-480b)   → StructuredHypothesis, không pruning
+  └─ evidence_quality < 0.3 → NEEDS_REVIEW, dừng
+Investigation planner (rule-based)      → chọn ≤ 2 tool static cần chạy
+Tool executor (KHÔNG gọi LLM)           → chạy tool, ghi artifact có hash
+Hypothesis Builder                      → StructuredHypothesis, không pruning
 Knowledge Loader (≤ 2 card)             → RAG tĩnh từ ai/knowledge/cards/
-Auditor (qwen3-coder-480b + tool-use ≤5)
-  └─ confidence ≥ 0.8 → thẳng tới Judge
-Skeptic (deepseek-v3.1)                 → neutral, hoặc adversarial khi conf < 0.5
-  └─ đồng thuận + conf ≥ 0.7 → Judge; bất đồng → debate lại, hard-stop ở round 3
-Judge (nemotron-49b)                    → 3 tiêu chí + enforce policy trong Python
+Auditor (+ tool-use ≤ 5)
+Skeptic                                 → neutral, hoặc adversarial khi conf thấp
+Deterministic validator (KHÔNG gọi LLM) → chạy lại tool static, trả lời bằng
+                                           dữ liệu chương trình
+  └─ còn bất đồng / thiếu evidence VÀ vòng trước có artifact mới
+       → quay lại Investigation planner (hard-stop ở debate_round_max)
+Judge                                   → 3 tiêu chí + policy enforce trong Python
 ```
 
-## Ba bất biến không được phá
+Điểm khác cốt lõi so với bản đầu: nhánh quay lại dẫn về **planner**, không về
+Auditor. Hỏi lại cùng một mô hình trên cùng một ngữ cảnh chỉ lặp lại cùng thiên
+kiến với chi phí gấp đôi — bất đồng phải được giải quyết bằng dữ kiện mới. Nếu
+một vòng không thu thêm được artifact nào, graph chốt luôn thay vì tranh luận
+tiếp.
+
+Bốn node đầu và validator đều không gọi LLM, nên một finding bị gate loại hoặc
+được tool static giải quyết dứt điểm sẽ không tốn token nào.
+
+## Năm bất biến không được phá
+
+Tất cả đều enforce bằng Python trong `ai/policies/suppression.py`, không chỉ
+bằng lời dặn trong prompt: một mô hình có thể bỏ qua lời dặn, không thể bỏ qua
+câu lệnh `if`.
 
 1. **reasoning trước verdict** trong mọi schema — thứ tự field là thứ tự LLM
    sinh token, đảo lại là mất chuỗi suy luận.
 2. **Fail-open** — LLM lỗi thì finding về `needs-review`, không bao giờ
-   `suppressed`. Enforce ở cả prompt và `ai/nodes/judge.py`.
+   `suppressed`.
 3. **Anti-over-suppression** — CWE trong `SENSITIVE_CWES` tối đa
    `needs-review`, kể cả khi LLM khăng khăng `suppressed`.
+4. **High/Critical không bao giờ auto-suppress.** Cần bật tường minh
+   `AEGIS_HIGH_CRITICAL_AUTO_SUPPRESS=true` mới cho phép, và khi đó vẫn phải có
+   validator chứng minh. Một cảnh báo thừa tốn vài phút của người review; một
+   lỗ hổng bị giấu có thể lên production.
+5. **Suppress phải có bằng chứng tất định.** Verdict "false positive" của LLM
+   chỉ được ghi vào output khi validator chứng minh được mẫu an toàn (hằng số
+   ràng buộc, hoặc sanitizer tác động đúng biến mà sink đọc) VÀ citation của
+   agent trỏ tới `file:line` có thật. "Không tìm thấy dấu hiệu nguy hiểm" khác
+   hẳn "chứng minh được an toàn".
 
 ## Tích hợp với Core SAST
 
@@ -150,7 +217,19 @@ Judge (nemotron-49b)                    → 3 tiêu chí + enforce policy trong 
 
 ```python
 from ai.tools.code_tools import code_tools
-code_tools.bind(get_callers=..., get_callees=..., get_body=...)
+code_tools.bind(
+    get_callers=..., get_callees=..., get_body=...,
+    get_dataflow_path=..., get_sanitizer_trace=...,
+    get_backward_slice=..., get_forward_slice=...,
+    get_control_flow_context=..., get_constant_propagation=...,
+    resolve_symbol=...,
+)
 ```
 
-Mặc định là mock trả về rỗng, đủ để agent chạy độc lập.
+`scripts/python_code_tools_backend.py` đã cài sẵn toàn bộ backend trên cho
+Python; gọi `bind_python_backend(root)` là xong.
+
+Tool chưa gắn backend trả `ToolResult(success=False)` kèm lý do — **không** trả
+dữ liệu rỗng. Một `get_callers` trả `[]` vì backend chưa gắn sẽ bị agent đọc
+thành "không ai gọi hàm này" và dẫn thẳng tới kết luận không khai thác được.
+Cần mock tường minh thì dùng `make_mock_tools()`.
