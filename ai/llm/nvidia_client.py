@@ -159,6 +159,7 @@ class NvidiaLLMClient:
         self._rr = itertools.count()
         self._lock = Lock()
         self._cache: diskcache.Cache | None = None
+        self._cache_scope: dict[str, str] = {}
         self.usage_log: list[dict] = []
 
     # -- lazy init: không đụng tới API key cho tới lần gọi thật đầu tiên ----
@@ -221,19 +222,55 @@ class NvidiaLLMClient:
         )
 
     def _cache_key(self, model, messages, temperature, response_format, max_tokens=None) -> str:
+        """Khoá cache gồm cả provenance, không chỉ nội dung prompt.
+
+        Nội dung prompt một mình là không đủ. Sửa prompt template, đổi luật
+        định tuyến trong graph, hay cập nhật knowledge card đều làm câu trả
+        lời đúng thay đổi trong khi chuỗi message gửi đi có thể gần như y
+        nguyên — cache theo prompt sẽ trả về verdict của phiên bản cũ và
+        benchmark ghi nhận sai nguyên nhân thay đổi.
+
+        `commit_sha` do phía gọi đặt qua `set_cache_scope`: khi mã nguồn đổi,
+        mọi verdict đã cache cho commit trước phải hết hiệu lực, vì bằng chứng
+        dẫn tới verdict đó có thể đã biến mất.
+        """
+        s = get_settings()
         payload = json.dumps(
             {
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "seed": get_settings().seed,
-                "max_tokens": max_tokens or get_settings().max_tokens,
+                "seed": s.seed,
+                "max_tokens": max_tokens or s.max_tokens,
                 "response_format": str(response_format) if response_format else None,
+                # --- provenance ---
+                "provider": "nvidia_nim",
+                "base_url": s.nvidia_base_url,
+                "prompt_version": s.prompt_version,
+                "graph_version": s.graph_version,
+                "knowledge_version": s.knowledge_version,
+                "policy_version": s.policy_version,
+                "commit_sha": self._cache_scope.get("commit_sha", ""),
+                "evidence_hash": self._cache_scope.get("evidence_hash", ""),
             },
             sort_keys=True,
             default=str,
         )
         return hashlib.sha256(payload.encode()).hexdigest()
+
+    def set_cache_scope(self, commit_sha: str = "", evidence_hash: str = "") -> None:
+        """Gắn phạm vi cache cho các lời gọi tiếp theo.
+
+        Gọi trước khi triage một finding, để verdict cache lại đúng với commit
+        và bộ bằng chứng đã sinh ra nó.
+        """
+        self._cache_scope = {
+            "commit_sha": commit_sha,
+            "evidence_hash": evidence_hash,
+        }
+
+    def clear_cache_scope(self) -> None:
+        self._cache_scope = {}
 
     def _call(self, model, messages, temperature, response_format, max_tokens=None) -> dict:
         """Một lần gọi API, có retry. Raise nếu hết lượt retry."""

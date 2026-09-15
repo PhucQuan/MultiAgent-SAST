@@ -162,6 +162,30 @@ class PythonCodeToolsBackend:
                 self._source_cache[path] = []
         return self._source_cache[path]
 
+    def _sink_argument_names(self, file: str, line: int) -> set[str]:
+        """Tên biến xuất hiện trong ĐỐI SỐ của lời gọi tại `line`.
+
+        Không dùng `node.reads` của flow graph cho việc này: `reads` gồm cả
+        receiver của lời gọi, nên `cur.execute(q)` cho ra {cur, q}. Kiểm tra
+        hằng số trên `cur` luôn thất bại (nó là connection object), và khiến
+        một sink thực sự an toàn bị kết luận là không ràng buộc.
+        """
+        lines = self._source_lines(file)
+        try:
+            tree = ast.parse("\n".join(lines))
+        except SyntaxError:
+            return set()
+
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or node.lineno != line:
+                continue
+            for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                for sub in ast.walk(arg):
+                    if isinstance(sub, ast.Name):
+                        names.add(sub.id)
+        return names
+
     def get_dataflow_path(self, file: str, line: int) -> dict:
         """Truy ngược đường dataflow tới câu lệnh tại `file:line`.
 
@@ -244,7 +268,7 @@ class PythonCodeToolsBackend:
         if sink_node is None:
             return {"file": file, "line": line, "sanitizers": []}
 
-        tainted_vars = set(sink_node.reads)
+        tainted_vars = self._sink_argument_names(file, line) or set(sink_node.reads)
         sanitizers = []
         for node in graph.nodes.values():
             if node.kind != "call" or node.location.line_number >= line:
@@ -281,8 +305,10 @@ class PythonCodeToolsBackend:
         if graph is None:
             return {"file": file, "line": line, "error": "không dựng được flow graph"}
 
-        sink_node = graph.find_preferred_node(line, ["call", "assign", "return"])
-        wanted = {variable} if variable else set(sink_node.reads if sink_node else [])
+        wanted = {variable} if variable else self._sink_argument_names(file, line)
+        if not wanted:
+            sink_node = graph.find_preferred_node(line, ["call", "assign", "return"])
+            wanted = set(sink_node.reads if sink_node else [])
         if not wanted:
             return {"file": file, "line": line, "slice": [], "note": "sink không đọc biến nào"}
 
@@ -399,8 +425,10 @@ class PythonCodeToolsBackend:
         if graph is None:
             return {"file": file, "line": line, "error": "không dựng được flow graph"}
 
-        sink_node = graph.find_preferred_node(line, ["call", "assign", "return"])
-        wanted = {variable} if variable else set(sink_node.reads if sink_node else [])
+        wanted = {variable} if variable else self._sink_argument_names(file, line)
+        if not wanted:
+            sink_node = graph.find_preferred_node(line, ["call", "assign", "return"])
+            wanted = set(sink_node.reads if sink_node else [])
         if not wanted:
             return {"file": file, "line": line, "constant_bound": False, "assignments": []}
 

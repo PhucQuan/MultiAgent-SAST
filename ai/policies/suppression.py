@@ -8,7 +8,7 @@ Bốn luật, áp dụng theo thứ tự, bằng Python chứ không bằng lờ
 — một mô hình có thể bỏ qua lời dặn, không thể bỏ qua câu lệnh `if`:
 
 1. LLM hỏng  -> `needs-review` (fail-open).
-2. High/Critical chưa được validator xác nhận an toàn -> không bao giờ suppress.
+2. High/Critical -> không bao giờ suppress (trừ khi bật cờ tường minh).
 3. Verdict không trích được evidence có thật -> hạ xuống `needs-review`.
 4. Kết luận "false positive" mà validator không chứng minh -> hạ xuống.
 
@@ -108,12 +108,17 @@ def apply_suppression_policy(
         events.append("llm_failed_noted")
 
     # --- Luật 2: High/Critical được bảo vệ -----------------------------
+    # Cờ tắt (mặc định) là cấm tuyệt đối, kể cả khi validator nói an toàn.
+    # Đây là điểm mà policy cố tình không tin vào chính bằng chứng của mình:
+    # validator dựa trên phân tích tĩnh trong một file, nên nó có thể bỏ sót
+    # một đường gọi từ nơi khác. Với severity thấp, đánh đổi đó chấp nhận
+    # được; với High/Critical thì không.
     if proposed in SUPPRESSING_STATES and severity in PROTECTED_SEVERITIES:
         if not s.high_critical_auto_suppress:
-            validator_cleared = bool(validator and validator.proved_safe_pattern)
-            if not validator_cleared:
-                return downgrade("high_critical_no_auto_suppress")
-            events.append("high_critical_suppress_allowed_by_validator")
+            return downgrade("high_critical_no_auto_suppress")
+        if not (validator and validator.proved_safe_pattern):
+            return downgrade("high_critical_requires_validator_proof")
+        events.append("high_critical_suppress_allowed_by_validator")
 
     # --- Luật 3: verdict phải có evidence có thật ----------------------
     if s.require_evidence_citations and proposed in SUPPRESSING_STATES:
