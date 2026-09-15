@@ -5,7 +5,7 @@ không hard-code model name trong node code (Quy tắc 6, mục 0 của guide).
 """
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -66,6 +66,69 @@ class Settings(BaseSettings):
         0.99, alias="AEGIS_SKIP_SKEPTIC_CONFIDENCE"
     )
     cache_dir: str = Field("./cache/llm", alias="AEGIS_CACHE_DIR")
+
+    # ------------------------------------------------------------------
+    # Chế độ chạy tầng AI (mục 3.2 của kế hoạch nâng cấp).
+    # NVIDIA Build free tier là tài nguyên khan hiếm: mặc định KHÔNG phải
+    # `active`, để không bao giờ vô tình đốt quota cho toàn bộ finding.
+    #   disabled    - không gọi LLM, chỉ static SAST
+    #   heuristic   - chỉ chạy Skeptic/filter tất định, không tốn API
+    #   shadow      - chạy AI nhưng KHÔNG đổi output chính, chỉ ghi log
+    #   review-only - AI tóm tắt evidence, không tự gắn verdict
+    #   active      - AI được gắn verdict theo policy
+    # ------------------------------------------------------------------
+    ai_mode: Literal[
+        "disabled", "heuristic", "shadow", "review-only", "active"
+    ] = Field("shadow", alias="AEGIS_AI_MODE")
+
+    # ---- Eligibility gate: chặn trước khi tốn một token nào -----------
+    min_severity_for_llm: Literal["low", "medium", "high", "critical"] = Field(
+        "medium", alias="AEGIS_MIN_SEVERITY_FOR_LLM"
+    )
+    max_llm_findings_per_scan: int = Field(
+        20, alias="AEGIS_MAX_LLM_FINDINGS_PER_SCAN"
+    )
+    max_llm_findings_per_file: int = Field(
+        3, alias="AEGIS_MAX_LLM_FINDINGS_PER_FILE"
+    )
+    # Evidence tối thiểu: dưới ngưỡng này thì tool static còn rẻ hơn LLM.
+    min_evidence_quality_for_llm: float = Field(
+        0.3, alias="AEGIS_MIN_EVIDENCE_QUALITY_FOR_LLM"
+    )
+
+    # ---- Budget cho MỘT finding ---------------------------------------
+    tool_call_budget: int = Field(4, alias="AEGIS_TOOL_CALL_BUDGET")
+    token_budget: int = Field(3500, alias="AEGIS_TOKEN_BUDGET")
+
+    # ---- Policy chống suppress sai (mục 9.2) --------------------------
+    # Verdict TP/FP không trích được evidence nào thì bị hạ xuống needs-review.
+    require_evidence_citations: bool = Field(
+        True, alias="AEGIS_REQUIRE_EVIDENCE_CITATIONS"
+    )
+    # FP chỉ hợp lệ khi validator tất định xác nhận, không tin lời LLM.
+    require_static_validation_for_false_positive: bool = Field(
+        True, alias="AEGIS_REQUIRE_STATIC_VALIDATION_FOR_FP"
+    )
+    # Không bao giờ auto-suppress High/Critical trừ khi bật tường minh.
+    high_critical_auto_suppress: bool = Field(
+        False, alias="AEGIS_HIGH_CRITICAL_AUTO_SUPPRESS"
+    )
+
+    # ---- Provenance: đưa vào cache key để đổi version là cache chết ----
+    prompt_version: str = Field("2026.09.1", alias="AEGIS_PROMPT_VERSION")
+    graph_version: str = Field("2026.09.1", alias="AEGIS_GRAPH_VERSION")
+    knowledge_version: str = Field("3.0.0", alias="AEGIS_KNOWLEDGE_VERSION")
+    policy_version: str = Field("2026.09.1", alias="AEGIS_POLICY_VERSION")
+
+    @property
+    def llm_enabled(self) -> bool:
+        """LLM chỉ được gọi ở 3 mode này."""
+        return self.ai_mode in ("shadow", "review-only", "active")
+
+    @property
+    def verdict_applies_to_output(self) -> bool:
+        """Chỉ `active` mới được ghi verdict của AI vào output chính."""
+        return self.ai_mode == "active"
 
     @field_validator("nvidia_api_key")
     @classmethod

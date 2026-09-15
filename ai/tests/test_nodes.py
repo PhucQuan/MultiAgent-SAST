@@ -91,7 +91,10 @@ def test_auditor_returns_verdict(fake_structured, hypothesis):
     assert out.llm_failed is False
 
 
-def test_auditor_executes_tool_calls(fake_structured, fake_openai, hypothesis):
+def test_auditor_executes_tool_calls(
+    fake_structured, fake_openai, hypothesis, mock_code_tools
+):
+    mock_code_tools()
     fake_structured({"AgentVerdict": verdict()})
     tool_call = FakeToolCall("call_1", "get_function_body", '{"function_name": "run"}')
     fake_openai(

@@ -272,3 +272,22 @@ def fake_openai(monkeypatch):
         return fake
 
     return _install
+
+
+@pytest.fixture
+def mock_code_tools(monkeypatch):
+    """Gắn tool giả lập cho test cần tool call trả dữ liệu.
+
+    Tool chưa gắn backend cố tình trả `success=False`, nên test nào dựa vào
+    dữ liệu tool phải yêu cầu fixture này — không còn mock ngầm toàn cục có
+    thể khiến agent tưởng đang đọc code thật.
+    """
+    import ai.tools.registry as registry
+    from ai.tools.code_tools import make_mock_tools
+
+    def _bind(**overrides):
+        tools = make_mock_tools(**overrides)
+        monkeypatch.setattr(registry, "code_tools", tools)
+        return tools
+
+    return _bind
