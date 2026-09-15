@@ -5,12 +5,14 @@ import pytest
 from ai.graph.build import aegis_graph, run_triage
 from ai.graph.routing import (
     route_after_auditor,
+    route_after_eligibility,
     route_after_hypothesis,
     route_after_planner,
     route_after_skeptic,
+    route_after_validator,
 )
 from ai.schemas.finding import Language
-from ai.schemas.state import GraphState
+from ai.schemas.state import GraphState, ValidatorAssessment
 from ai.schemas.verdict import TriageState
 from conftest import judge_decision, make_finding, verdict
 
@@ -20,6 +22,15 @@ def test_route_after_planner():
     decided = GraphState(finding=make_finding(), triage_state=TriageState.NEEDS_REVIEW)
     assert route_after_planner(decided) == "end"
     assert route_after_planner(GraphState(finding=make_finding())) == "hypothesis_builder"
+
+
+def test_route_after_eligibility_short_circuits_rejected_finding():
+    """Finding bị gate loại ra thẳng END, không đi qua node LLM nào."""
+    rejected = GraphState(
+        finding=make_finding(), triage_state=TriageState.NEEDS_REVIEW
+    )
+    assert route_after_eligibility(rejected) == "end"
+    assert route_after_eligibility(GraphState(finding=make_finding())) == "evidence_inventory"
 
 
 def test_route_after_hypothesis():
@@ -37,7 +48,8 @@ def test_route_after_auditor_skips_skeptic_only_above_configured_threshold():
     """
     confident = GraphState(finding=make_finding(), auditor_verdict=verdict(confidence=0.99))
     typical = GraphState(finding=make_finding(), auditor_verdict=verdict(confidence=0.95))
-    assert route_after_auditor(confident) == "judge"
+    # Bỏ Skeptic vẫn phải qua validator: không agent nào tự xác nhận chính mình.
+    assert route_after_auditor(confident) == "validator"
     assert route_after_auditor(typical) == "skeptic"
 
 
@@ -47,7 +59,7 @@ def test_skip_skeptic_threshold_is_configurable(monkeypatch):
     monkeypatch.setenv("AEGIS_SKIP_SKEPTIC_CONFIDENCE", "0.5")
     config_module.reset_settings()
     state = GraphState(finding=make_finding(), auditor_verdict=verdict(confidence=0.6))
-    assert route_after_auditor(state) == "judge"
+    assert route_after_auditor(state) == "validator"
 
 
 def test_route_after_auditor_fails_open():
@@ -55,32 +67,81 @@ def test_route_after_auditor_fails_open():
     assert route_after_auditor(dead) == "judge"
 
 
-def test_route_after_skeptic_consensus_goes_to_judge():
+def test_route_after_skeptic_always_goes_to_validator():
+    """Skeptic không được chốt thẳng: kết luận phải qua kiểm chứng tất định."""
     state = GraphState(
         finding=make_finding(),
         auditor_verdict=verdict(exploitable=True, confidence=0.75),
         skeptic_verdict=verdict(exploitable=True, confidence=0.8),
     )
-    assert route_after_skeptic(state) == "judge"
+    assert route_after_skeptic(state) == "validator"
 
 
-def test_route_after_skeptic_disagreement_triggers_debate():
+def test_validator_routes_to_judge_on_consensus():
     state = GraphState(
         finding=make_finding(),
-        auditor_verdict=verdict(exploitable=True, confidence=0.6),
-        skeptic_verdict=verdict(exploitable=False, confidence=0.6),
+        auditor_verdict=verdict(exploitable=True, confidence=0.75),
+        skeptic_verdict=verdict(exploitable=True, confidence=0.8),
+        validator_assessment=ValidatorAssessment(dataflow_confirmed=True),
     )
-    assert route_after_skeptic(state) == "auditor_reround"
+    assert route_after_validator(state) == "judge"
 
 
-def test_route_after_skeptic_hard_stops_at_round_three():
+def test_validator_reinvestigates_on_disagreement_when_progress_was_made():
+    """Bất đồng + vòng trước có thu được artifact mới => đi tìm thêm bằng chứng."""
     state = GraphState(
         finding=make_finding(),
         auditor_verdict=verdict(exploitable=True, confidence=0.6),
         skeptic_verdict=verdict(exploitable=False, confidence=0.6),
+        validator_assessment=ValidatorAssessment(dataflow_confirmed=True),
+    )
+    state.evidence.add(artifact_type="dataflow_path", producer="t", payload={"a": 1})
+    state.model_metadata["evidence_count_at_round_start"] = 0
+    assert route_after_validator(state) == "reinvestigate"
+
+
+def test_validator_stops_looping_when_no_new_evidence():
+    """Bất đồng nhưng vòng trước KHÔNG thu thêm được gì => chốt, không lặp.
+
+    Đây là điểm khác cốt lõi so với vòng debate cũ: hỏi lại mô hình trên cùng
+    một ngữ cảnh chỉ lặp lại cùng thiên kiến với chi phí gấp đôi.
+    """
+    state = GraphState(
+        finding=make_finding(),
+        auditor_verdict=verdict(exploitable=True, confidence=0.6),
+        skeptic_verdict=verdict(exploitable=False, confidence=0.6),
+        validator_assessment=ValidatorAssessment(dataflow_confirmed=True),
+    )
+    state.evidence.add(artifact_type="dataflow_path", producer="t", payload={"a": 1})
+    state.model_metadata["evidence_count_at_round_start"] = 1
+    assert route_after_validator(state) == "judge"
+
+
+def test_validator_hard_stops_at_round_max():
+    state = GraphState(
+        finding=make_finding(),
+        auditor_verdict=verdict(exploitable=True, confidence=0.6),
+        skeptic_verdict=verdict(exploitable=False, confidence=0.6),
+        validator_assessment=ValidatorAssessment(insufficient_evidence=True),
         debate_round=3,
     )
-    assert route_after_skeptic(state) == "judge"
+    assert route_after_validator(state) == "judge"
+
+
+def test_validator_stops_when_tool_budget_exhausted(monkeypatch):
+    from ai import config as config_module
+
+    monkeypatch.setenv("AEGIS_TOOL_CALL_BUDGET", "2")
+    config_module.reset_settings()
+    state = GraphState(
+        finding=make_finding(),
+        auditor_verdict=verdict(exploitable=True, confidence=0.6),
+        skeptic_verdict=verdict(exploitable=False, confidence=0.6),
+        validator_assessment=ValidatorAssessment(insufficient_evidence=True),
+        tool_calls_used=2,
+    )
+    assert route_after_validator(state) == "judge"
+    config_module.reset_settings()
 
 
 # --- end-to-end -----------------------------------------------------------
@@ -152,15 +213,73 @@ def test_end_to_end_hypothesis_failure_reaches_judge_fail_open(fake_structured):
     assert final.knowledge_cards == []
 
 
-def test_end_to_end_debate_hard_stops_at_three_rounds(fake_structured, hypothesis):
-    disagreeing = []
-    for _ in range(8):
-        disagreeing.append(verdict(exploitable=True, confidence=0.6))   # auditor
-        disagreeing.append(verdict(exploitable=False, confidence=0.6))  # skeptic
+def _disagreeing_verdicts(rounds: int = 8) -> list:
+    out = []
+    for _ in range(rounds):
+        out.append(verdict(exploitable=True, confidence=0.6))   # auditor
+        out.append(verdict(exploitable=False, confidence=0.6))  # skeptic
+    return out
+
+
+def test_debate_stops_immediately_when_no_tool_can_add_evidence(
+    fake_structured, hypothesis
+):
+    """Bất đồng nhưng không tool nào gắn backend => dừng ngay, không tranh luận.
+
+    Vòng debate cũ sẽ chạy đủ ba vòng ở đây và tốn sáu lượt gọi LLM để nhận
+    lại đúng hai ý kiến ban đầu. Vòng mới nhận ra không có bằng chứng nào có
+    thể thu thêm nên chốt luôn ở needs-review.
+    """
     fake_structured(
         {
             "StructuredHypothesis": hypothesis,
-            "AgentVerdict": disagreeing,
+            "AgentVerdict": _disagreeing_verdicts(),
+            "JudgeDecision": [judge_decision(TriageState.NEEDS_REVIEW)],
+        }
+    )
+    final = run_triage(make_finding())
+
+    assert final.debate_round == 1
+    assert final.triage_state == TriageState.NEEDS_REVIEW
+
+
+def test_debate_hard_stops_at_round_max_even_when_evidence_keeps_arriving(
+    fake_structured, hypothesis, mock_code_tools, monkeypatch
+):
+    """Có bằng chứng mới mỗi vòng thì vẫn bị chặn cứng ở debate_round_max.
+
+    Trần này là thứ giữ cho một finding khó không ngốn vô hạn quota: kể cả khi
+    mỗi vòng đều tiến triển, graph vẫn phải dừng và giao cho người xem.
+    """
+    import ai.nodes.tool_executor as tool_executor
+    import ai.nodes.validator as validator_mod
+    import ai.nodes.investigation_planner as planner_mod
+
+    monkeypatch.setenv("AEGIS_TOOL_CALL_BUDGET", "50")
+    from ai import config as config_module
+
+    config_module.reset_settings()
+
+    counter = {"n": 0}
+
+    def unique_dataflow(file, line):
+        counter["n"] += 1
+        return {"file": file, "line": line, "reaches_sink": True, "probe": counter["n"]}
+
+    tools = mock_code_tools(
+        get_dataflow_path=unique_dataflow,
+        get_sanitizer_trace=lambda file, line: {"file": file, "line": line, "probe": counter["n"]},
+        get_constant_propagation=lambda file, line, variable="": {"constant_bound": False, "probe": counter["n"]},
+        get_control_flow_context=lambda file, line: {"guards": [], "probe": counter["n"]},
+        get_backward_slice=lambda file, line, variable="": {"slice": [], "probe": counter["n"]},
+    )
+    for mod in (tool_executor, validator_mod, planner_mod):
+        monkeypatch.setattr(mod, "code_tools", tools)
+
+    fake_structured(
+        {
+            "StructuredHypothesis": hypothesis,
+            "AgentVerdict": _disagreeing_verdicts(),
             "JudgeDecision": [judge_decision(TriageState.NEEDS_REVIEW)],
         }
     )
@@ -168,6 +287,7 @@ def test_end_to_end_debate_hard_stops_at_three_rounds(fake_structured, hypothesi
 
     assert final.debate_round == 3
     assert final.triage_state == TriageState.NEEDS_REVIEW
+    config_module.reset_settings()
 
 
 def test_end_to_end_sensitive_cwe_never_suppressed(fake_structured, hypothesis):

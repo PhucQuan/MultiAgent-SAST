@@ -1,7 +1,8 @@
 """Judge — chốt triage_state. Policy được enforce ở CẢ prompt VÀ Python code."""
 
-from ..config import settings
+from ..config import get_settings, settings
 from ..llm.nvidia_client import llm_client
+from ..policies.suppression import apply_suppression_policy
 from ..prompts.judge import SENSITIVE_CWES, build_judge_prompt
 from ..schemas.state import GraphState
 from ..schemas.verdict import JudgeDecision, TriageState
@@ -51,9 +52,10 @@ def judge_node(state: GraphState) -> GraphState:
             confidence=0.0,
             policy_applied=["fail_open"],
         )
+        new_state.record_policy("fail_open")
         return new_state
 
-    # DOUBLE-ENFORCE anti-over-suppression
+    # DOUBLE-ENFORCE anti-over-suppression cho nhóm CWE nhạy cảm
     if (
         state.finding.cwe in SENSITIVE_CWES
         and decision.triage_state == TriageState.SUPPRESSED
@@ -61,10 +63,17 @@ def judge_node(state: GraphState) -> GraphState:
         decision.triage_state = TriageState.NEEDS_REVIEW
         decision.policy_applied.append("anti_over_suppression_enforced")
 
-    # DOUBLE-ENFORCE fail-open
-    if state.llm_failed and decision.triage_state == TriageState.SUPPRESSED:
-        decision.triage_state = TriageState.NEEDS_REVIEW
-        decision.policy_applied.append("fail_open_enforced")
+    # Policy tất định là tiếng nói cuối cùng. Judge chỉ ĐỀ XUẤT một trạng
+    # thái; việc nó có được phép giấu cảnh báo hay không do Python quyết,
+    # dựa trên validator và citation — không dựa trên lời model tự khẳng định.
+    outcome = apply_suppression_policy(
+        new_state, decision.triage_state, get_settings()
+    )
+    for event in outcome.events:
+        new_state.record_policy(event)
+    if outcome.changed:
+        decision.policy_applied.extend(outcome.events)
+    decision.triage_state = outcome.triage_state
 
     new_state.judge_decision = decision
     new_state.triage_state = decision.triage_state

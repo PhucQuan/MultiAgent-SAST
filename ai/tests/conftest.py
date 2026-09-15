@@ -80,14 +80,16 @@ def make_finding(
     cwe="CWE-89",
     evidence_quality=0.8,
     finding_id="test-001",
+    severity="high",
+    confidence=0.7,
 ) -> NormalizedFinding:
     return NormalizedFinding(
         finding_id=finding_id,
         vuln_type="SQL_INJECTION",
         cwe=cwe,
         language=language,
-        severity="high",
-        confidence=0.7,
+        severity=severity,
+        confidence=confidence,
         evidence=EvidenceBundle(
             source=Location(
                 file="app.php", line=10, code_slice="$name = $_POST['name']; //potential"

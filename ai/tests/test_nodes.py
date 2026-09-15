@@ -7,7 +7,7 @@ from ai.nodes.knowledge_loader import knowledge_loader_node
 from ai.nodes.planner import planner_node
 from ai.nodes.skeptic import skeptic_node
 from ai.schemas.finding import Language
-from ai.schemas.state import GraphState
+from ai.schemas.state import GraphState, ValidatorAssessment
 from ai.schemas.verdict import TriageState
 from conftest import (
     FakeMessage,
@@ -237,13 +237,88 @@ def test_judge_never_suppresses_when_llm_failed(fake_structured):
     assert "fail_open_enforced" in out.judge_decision.policy_applied
 
 
-def test_judge_can_suppress_ordinary_cwe(fake_structured):
+def test_judge_suppresses_only_with_validator_proof(fake_structured):
+    """Suppress hợp lệ: severity thấp + validator chứng minh + citation có thật."""
     fake_structured({"JudgeDecision": judge_decision(TriageState.SUPPRESSED)})
     state = GraphState(
-        finding=make_finding(cwe="CWE-89"), auditor_verdict=verdict(exploitable=False)
+        finding=make_finding(cwe="CWE-89", severity="medium"),
+        auditor_verdict=verdict(exploitable=False),
+        validator_assessment=ValidatorAssessment(
+            dataflow_confirmed=True,
+            constant_bound=True,
+            proved_safe_pattern=True,
+            evidence_ids=["ev_001"],
+        ),
     )
     out = judge_node(state)
     assert out.triage_state == TriageState.SUPPRESSED
+    assert "suppression_allowed_with_evidence" in out.policy_events
+
+
+def test_judge_refuses_suppress_without_validator(fake_structured):
+    """Không có validator thì lời LLM một mình không đủ để giấu cảnh báo."""
+    fake_structured({"JudgeDecision": judge_decision(TriageState.SUPPRESSED)})
+    state = GraphState(
+        finding=make_finding(cwe="CWE-89", severity="medium"),
+        auditor_verdict=verdict(exploitable=False),
+    )
+    out = judge_node(state)
+    assert out.triage_state == TriageState.NEEDS_REVIEW
+    assert "suppression_without_validator" in out.policy_events
+
+
+def test_judge_never_suppresses_high_severity(fake_structured):
+    """High/Critical không bao giờ bị auto-suppress, kể cả khi validator OK.
+
+    Đây là luật đắt nhất của tầng AI: một lỗ hổng High bị giấu đi tốn hơn
+    nhiều so với một cảnh báo thừa mà người review loại trong vài phút.
+    """
+    fake_structured({"JudgeDecision": judge_decision(TriageState.SUPPRESSED)})
+    state = GraphState(
+        finding=make_finding(cwe="CWE-89", severity="high"),
+        auditor_verdict=verdict(exploitable=False),
+        validator_assessment=ValidatorAssessment(
+            constant_bound=False,
+            proved_safe_pattern=False,
+            evidence_ids=["ev_001"],
+        ),
+    )
+    out = judge_node(state)
+    assert out.triage_state == TriageState.NEEDS_REVIEW
+    assert "high_critical_no_auto_suppress" in out.policy_events
+
+
+def test_judge_refuses_suppress_with_fabricated_citation(fake_structured):
+    """Citation trỏ tới file:line không có trong evidence là dấu hiệu bịa."""
+    fake_structured({"JudgeDecision": judge_decision(TriageState.SUPPRESSED)})
+    fabricated = verdict(exploitable=False)
+    fabricated.grounded_citations = ["khong_ton_tai.php:999"]
+    state = GraphState(
+        finding=make_finding(cwe="CWE-89", severity="medium"),
+        auditor_verdict=fabricated,
+        validator_assessment=ValidatorAssessment(
+            proved_safe_pattern=True, evidence_ids=["ev_001"]
+        ),
+    )
+    out = judge_node(state)
+    assert out.triage_state == TriageState.NEEDS_REVIEW
+    assert "suppression_without_grounded_evidence" in out.policy_events
+
+
+def test_judge_refuses_suppress_on_disagreement(fake_structured):
+    """Auditor và Skeptic bất đồng thì phải đưa người xem, không tự chốt."""
+    fake_structured({"JudgeDecision": judge_decision(TriageState.SUPPRESSED)})
+    state = GraphState(
+        finding=make_finding(cwe="CWE-89", severity="medium"),
+        auditor_verdict=verdict(exploitable=True),
+        skeptic_verdict=verdict(exploitable=False),
+        validator_assessment=ValidatorAssessment(
+            proved_safe_pattern=True, evidence_ids=["ev_001"]
+        ),
+    )
+    out = judge_node(state)
+    assert out.triage_state == TriageState.NEEDS_REVIEW
+    assert "unresolved_disagreement" in out.policy_events
 
 
 def test_judge_respects_planner_decision(fake_structured):

@@ -8,6 +8,12 @@ Hai nhóm policy tách bạch:
   Chạy sau, là lưới an toàn chống suppress nhầm lỗ hổng thật.
 """
 
+from .suppression import (
+    PROTECTED_SEVERITIES,
+    PolicyOutcome,
+    apply_suppression_policy,
+    build_suppression_record,
+)
 from .eligibility import (
     EligibilityDecision,
     SEVERITY_RANK,
@@ -17,6 +23,10 @@ from .eligibility import (
 )
 
 __all__ = [
+    "PROTECTED_SEVERITIES",
+    "PolicyOutcome",
+    "apply_suppression_policy",
+    "build_suppression_record",
     "EligibilityDecision",
     "SEVERITY_RANK",
     "check_eligibility",
