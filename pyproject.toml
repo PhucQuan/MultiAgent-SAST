@@ -20,10 +20,6 @@ tree-sitter-php = ">=0.21.0"
 click = "^8.1.0"
 google-genai = {version = ">=0.3.0", optional = true}
 langgraph = {version = ">=1.2.10,<2.0.0", optional = true}
-openai = {version = ">=1.50.0", optional = true}
-pydantic = {version = ">=2.7.0", optional = true}
-pydantic-settings = {version = ">=2.7.0", optional = true}
-python-dotenv = {version = ">=1.0.0", optional = true}
 diskcache = "^5.6.0"
 tqdm = "^4.66.0"
 rich = "^13.7.0"
@@ -40,7 +36,7 @@ ruff = "^0.1.0"
 aegis-sast = "aegis_sast.cli:main"
 
 [tool.poetry.extras]
-ai = ["google-genai", "langgraph", "openai", "pydantic", "pydantic-settings", "python-dotenv"]
+ai = ["google-genai", "langgraph"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -55,7 +51,7 @@ line-length = 100
 target-version = "py310"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "ai/tests"]
+testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v"
