@@ -29,6 +29,7 @@ class ValidatorAssessment(BaseModel):
     sanitizer_confirmed: bool = False
     constant_bound: bool = False
     guarded_by_control_flow: bool = False
+    guarded_by_early_return: bool = False
     # Điều kiện DUY NHẤT cho phép suppress tự động.
     proved_safe_pattern: bool = False
     insufficient_evidence: bool = False

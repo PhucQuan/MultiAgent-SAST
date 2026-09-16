@@ -33,6 +33,30 @@ SANITIZER_KEYWORDS = (
 )
 
 
+# Phương thức làm thay đổi nội dung của đối tượng nhận. Danh sách cố tình
+# rộng: bỏ sót một phương thức ở đây nghĩa là một biến bị coi nhầm là hằng số.
+_MUTATING_METHODS = frozenset({
+    "append", "extend", "insert", "add", "update", "setdefault",
+    "join", "format", "format_map", "write", "writelines",
+    "__setitem__", "__iadd__",
+})
+
+
+def _is_literal_expr(node) -> bool:
+    """Biểu thức có phải hằng số thuần không.
+
+    f-string (`JoinedStr`) KHÔNG bao giờ là literal kể cả khi mọi phần tĩnh
+    đều là chuỗi: nó tồn tại chính là để nhúng giá trị runtime vào.
+    """
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(_is_literal_expr(e) for e in node.elts)
+    if isinstance(node, ast.BinOp):
+        return _is_literal_expr(node.left) and _is_literal_expr(node.right)
+    return False
+
+
 @dataclass
 class FunctionRecord:
     name: str
@@ -402,16 +426,93 @@ class PythonCodeToolsBackend:
                     "kind": kind,
                     "condition": test_src,
                     "dominates_sink": True,
+                    "enclosing": True,
                     "code": lines[start - 1].strip() if 0 < start <= len(lines) else "",
                 }
             )
+
+        early_returns = self._early_return_guards(tree, lines, line)
+        guards.extend(early_returns)
+
         return {
             "file": file,
             "line": line,
             "guards": guards,
             "guard_count": len(guards),
-            "enclosing_branch": bool(guards),
+            "enclosing_branch": any(g.get("enclosing") for g in guards),
+            "early_return_guards": early_returns,
+            "guarded_by_early_return": bool(early_returns),
         }
+
+    def _early_return_guards(self, tree, lines: list[str], line: int) -> list[dict]:
+        """Guard dạng `if <điều kiện xấu>: return` nằm TRƯỚC sink.
+
+        Mẫu này chi phối sink bằng cách thoát sớm chứ không bao bọc nó, nên
+        cách tìm guard thông thường (khối chứa dòng sink) hoàn toàn bỏ sót.
+        Đây lại là cách viết phòng thủ phổ biến nhất trong mã thật: kiểm tra
+        đầu vào, trả lời lỗi rồi `return`, phần còn lại của hàm coi như đã an
+        toàn.
+
+        Chỉ tính là guard khi hội đủ ba điều kiện: nằm cùng hàm với sink, thân
+        `if` kết thúc bằng `return`/`raise` vô điều kiện, và điều kiện kiểm tra
+        có đọc một biến mà sink cũng đọc. Thiếu điều kiện thứ ba thì đó chỉ là
+        một lần thoát sớm vì lý do khác, không liên quan tới dữ liệu vào sink.
+        """
+        sink_vars = self._sink_argument_names_from_tree(tree, line)
+        if not sink_vars:
+            return []
+
+        enclosing = None
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            end = getattr(node, "end_lineno", node.lineno) or node.lineno
+            if node.lineno <= line <= end:
+                # Hàm lồng nhau: lấy hàm gần nhất bao quanh sink.
+                if enclosing is None or node.lineno > enclosing.lineno:
+                    enclosing = node
+        if enclosing is None:
+            return []
+
+        found = []
+        for node in ast.walk(enclosing):
+            if not isinstance(node, ast.If) or node.lineno >= line:
+                continue
+            exits = node.body and isinstance(node.body[-1], (ast.Return, ast.Raise))
+            if not exits:
+                continue
+            test_vars = {
+                sub.id for sub in ast.walk(node.test) if isinstance(sub, ast.Name)
+            }
+            if not (test_vars & sink_vars):
+                continue
+            found.append(
+                {
+                    "line": node.lineno,
+                    "kind": "early_return",
+                    "condition": ast.unparse(node.test)[:300],
+                    "dominates_sink": True,
+                    "enclosing": False,
+                    "checked_variables": sorted(test_vars & sink_vars),
+                    "code": lines[node.lineno - 1].strip()
+                    if 0 < node.lineno <= len(lines)
+                    else "",
+                }
+            )
+        return found
+
+    @staticmethod
+    def _sink_argument_names_from_tree(tree, line: int) -> set[str]:
+        """Như `_sink_argument_names` nhưng dùng lại cây AST đã parse."""
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or node.lineno != line:
+                continue
+            for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                for sub in ast.walk(arg):
+                    if isinstance(sub, ast.Name):
+                        names.add(sub.id)
+        return names
 
     def get_constant_propagation(self, file: str, line: int, variable: str = "") -> dict:
         """Giá trị tại sink có bị ràng buộc về hằng số/tập hữu hạn không.
@@ -438,30 +539,76 @@ class PythonCodeToolsBackend:
             return {"file": file, "line": line, "error": f"parse lỗi: {e}"}
 
         assignments = []
+        mutations = []
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign) or node.lineno >= line:
+            if getattr(node, "lineno", line) >= line:
                 continue
-            names = {t.id for t in node.targets if isinstance(t, ast.Name)}
-            if not (names & wanted):
+
+            # Gán thường: `x = <giá trị>`
+            if isinstance(node, ast.Assign):
+                names = {t.id for t in node.targets if isinstance(t, ast.Name)}
+                if names & wanted:
+                    assignments.append(
+                        {
+                            "line": node.lineno,
+                            "target": sorted(names & wanted),
+                            "value": ast.unparse(node.value)[:200],
+                            "is_literal": _is_literal_expr(node.value),
+                        }
+                    )
                 continue
-            is_literal = isinstance(node.value, ast.Constant) or (
-                isinstance(node.value, (ast.List, ast.Tuple, ast.Set))
-                and all(isinstance(e, ast.Constant) for e in node.value.elts)
-            )
-            assignments.append(
-                {
-                    "line": node.lineno,
-                    "target": sorted(names & wanted),
-                    "value": ast.unparse(node.value)[:200],
-                    "is_literal": is_literal,
-                }
-            )
+
+            # Gán cộng dồn: `x += <giá trị>`. Bỏ sót nhánh này là lỗi nguy
+            # hiểm nhất của kiểm tra hằng số — `s = ""` rồi `s += f"...{bẩn}"`
+            # trông như một biến chỉ nhận literal, trong khi nó vừa nuốt trọn
+            # dữ liệu do người dùng kiểm soát.
+            if isinstance(node, ast.AugAssign):
+                target = node.target
+                if isinstance(target, ast.Name) and target.id in wanted:
+                    assignments.append(
+                        {
+                            "line": node.lineno,
+                            "target": [target.id],
+                            "value": f"{ast.unparse(node.op).strip() if hasattr(ast, 'unparse') else '+'}= "
+                            + ast.unparse(node.value)[:200],
+                            "is_literal": _is_literal_expr(node.value),
+                            "augmented": True,
+                        }
+                    )
+                continue
+
+            # Lời gọi làm thay đổi nội dung: `x.append(...)`, `x.extend(...)`.
+            # Cùng lý do: danh sách khởi tạo bằng literal vẫn có thể được nối
+            # thêm dữ liệu bẩn mà không có phép gán nào lên chính tên biến.
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                receiver = node.func.value
+                if (
+                    isinstance(receiver, ast.Name)
+                    and receiver.id in wanted
+                    and node.func.attr in _MUTATING_METHODS
+                ):
+                    args_literal = all(_is_literal_expr(a) for a in node.args)
+                    mutations.append(
+                        {
+                            "line": node.lineno,
+                            "target": receiver.id,
+                            "method": node.func.attr,
+                            "value": ast.unparse(node)[:200],
+                            "is_literal": args_literal,
+                        }
+                    )
+
+        all_writes = assignments + mutations
         return {
             "file": file,
             "line": line,
             "variables": sorted(wanted),
             "assignments": assignments,
-            "constant_bound": bool(assignments) and all(a["is_literal"] for a in assignments),
+            "mutations": mutations,
+            # Ràng buộc hằng số chỉ thành lập khi MỌI phép ghi tới biến đều là
+            # literal. Một phép ghi không phải literal là đủ để kết luận không
+            # ràng buộc — thà bỏ lỡ cơ hội suppress còn hơn suppress nhầm.
+            "constant_bound": bool(all_writes) and all(w["is_literal"] for w in all_writes),
         }
 
     def resolve_symbol(self, symbol: str, file: str = "") -> dict:

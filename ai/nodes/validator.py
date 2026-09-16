@@ -93,11 +93,16 @@ def validator_node(state: GraphState) -> GraphState:
     # ---- 4. Guard ---------------------------------------------------------
     guards = control_flow.get("guards") or []
     guarded = bool(guards)
+    # Guard thoát sớm kiểm tra đúng biến mà sink đọc là bằng chứng an toàn
+    # mạnh ngang hằng số ràng buộc: sink không đạt tới được khi giá trị xấu.
+    # Phải tách riêng khỏi `guarded` vì một khối `if` bao quanh sink nói chung
+    # không chứng minh gì — nó chỉ nói sink nằm trong một nhánh nào đó.
+    early_return_guarded = bool(control_flow.get("guarded_by_early_return"))
 
     # ---- Tổng hợp ---------------------------------------------------------
     # `proved_safe` là điều kiện DUY NHẤT cho phép suppress tự động. Cố ý hẹp:
     # phải có bằng chứng dương tính cụ thể, không phải "không tìm thấy gì".
-    proved_safe = constant_bound or sanitizer_confirmed
+    proved_safe = constant_bound or sanitizer_confirmed or early_return_guarded
 
     # Evidence coi là đủ khi trả lời được câu hỏi dataflow bằng tool thật.
     insufficient_evidence = not evidence_ids and not finding.evidence.data_flow_path
@@ -113,6 +118,7 @@ def validator_node(state: GraphState) -> GraphState:
         sanitizer_confirmed=sanitizer_confirmed,
         constant_bound=constant_bound,
         guarded_by_control_flow=guarded,
+        guarded_by_early_return=early_return_guarded,
         proved_safe_pattern=proved_safe,
         insufficient_evidence=insufficient_evidence,
         evidence_ids=evidence_ids,

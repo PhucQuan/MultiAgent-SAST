@@ -168,3 +168,88 @@ def test_validator_reports_unavailable_tools_instead_of_guessing():
     assert any("chưa gắn backend" in note for note in assessment.notes)
     # Vẫn dùng được evidence của Core SAST để trả lời câu hỏi dataflow.
     assert assessment.dataflow_confirmed is True
+
+
+# --- các mẫu mà validator từng kết luận sai ------------------------------
+AUGMENTED_SOURCE = '''import subprocess
+from flask import request
+
+
+def build_command():
+    bar = request.args.get('cmd')
+    argStr = ""
+    if True:
+        argStr = "sh -c "
+    argStr += f"echo {bar}"
+    proc = subprocess.run(argStr, shell=True)
+    return proc
+'''
+
+MUTATED_LIST_SOURCE = '''import subprocess
+from flask import request
+
+
+def build_args():
+    bar = request.args.get('cmd')
+    argList = []
+    argList.append("sh")
+    argList.append("-c")
+    argList.append(f"echo {bar}")
+    proc = subprocess.run(argList)
+    return proc
+'''
+
+EARLY_RETURN_SOURCE = '''from flask import request
+
+
+def guarded_exec():
+    param = request.args.get('p')
+    bar = param
+    if not bar.startswith("'") or not bar.endswith("'"):
+        return "Chỉ chấp nhận chuỗi literal."
+    exec(bar)
+    return "ok"
+'''
+
+
+def test_augmented_assignment_is_not_constant_bound(bound_backend):
+    """`s = ""` rồi `s += f"...{bẩn}"` KHÔNG phải ràng buộc hằng số.
+
+    Đây là ca validator từng kết luận sai: chỉ xét `ast.Assign` nên phép gán
+    cộng dồn nuốt trọn dữ liệu người dùng mà không để lại dấu vết nào, và một
+    command injection thật bị chứng nhận là an toàn.
+    """
+    root = bound_backend({"aug.py": AUGMENTED_SOURCE})
+    file = str(root / "aug.py")
+    state = GraphState(finding=_finding(file, 6, 11))
+
+    assessment = validator_node(state).validator_assessment
+    assert assessment.constant_bound is False
+    assert assessment.proved_safe_pattern is False
+
+
+def test_mutating_call_is_not_constant_bound(bound_backend):
+    """`lst = []` rồi `lst.append(f"...{bẩn}")` cũng không phải hằng số."""
+    root = bound_backend({"mut.py": MUTATED_LIST_SOURCE})
+    file = str(root / "mut.py")
+    state = GraphState(finding=_finding(file, 6, 11))
+
+    assessment = validator_node(state).validator_assessment
+    assert assessment.constant_bound is False
+    assert assessment.proved_safe_pattern is False
+
+
+def test_early_return_guard_counts_as_proof_of_safety(bound_backend):
+    """Guard thoát sớm kiểm tra đúng biến của sink là bằng chứng an toàn.
+
+    Mẫu `if <điều kiện xấu>: return` chi phối sink bằng cách thoát sớm chứ
+    không bao bọc nó, nên cách tìm guard theo khối chứa dòng sink bỏ sót hoàn
+    toàn — dù đây là cách viết phòng thủ phổ biến nhất trong mã thật.
+    """
+    root = bound_backend({"guard.py": EARLY_RETURN_SOURCE})
+    file = str(root / "guard.py")
+    state = GraphState(finding=_finding(file, 5, 9))
+
+    assessment = validator_node(state).validator_assessment
+    assert assessment.guarded_by_early_return is True
+    assert assessment.proved_safe_pattern is True
