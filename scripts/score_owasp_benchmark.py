@@ -87,7 +87,7 @@ else:
     console = Console()
 
 
-CASE_ID_RE = re.compile(r"(BenchmarkTest\d+)", re.IGNORECASE)
+CASE_ID_RE = re.compile(r"benchmarktest(\d+)", re.IGNORECASE)
 OWASP_CATEGORY_TO_FAMILY = {
     "cmdi": "COMMAND_INJECTION",
     "codeinj": "CODE_INJECTION",
@@ -124,6 +124,38 @@ class ExpectedCase(NamedTuple):
     family: str | None
     vulnerable: bool
     cwe: str | None = None
+
+
+def canonicalize_case_id(value: str | None) -> str | None:
+    """Convert any BenchmarkTest token into the canonical case-id shape."""
+    if not value:
+        return None
+    match = CASE_ID_RE.search(str(value))
+    if not match:
+        return None
+    return f"BenchmarkTest{match.group(1).zfill(5)}"
+
+
+def normalize_path_like(value: str | None) -> str:
+    """Normalize path separators and strip surrounding whitespace."""
+    if not value:
+        return ""
+    return str(value).strip().replace("\\", "/")
+
+
+def extract_case_id_from_text(value: str | None) -> str | None:
+    """Extract a canonical case-id from free-form text or path-like content."""
+    normalized = normalize_path_like(value)
+    if not normalized:
+        return None
+
+    direct = canonicalize_case_id(normalized)
+    if direct:
+        return direct
+
+    basename = normalized.rsplit("/", 1)[-1]
+    stem = basename.rsplit(".", 1)[0]
+    return canonicalize_case_id(stem)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -203,9 +235,10 @@ def load_expected_cases(path: Path) -> list[ExpectedCase]:
 
             category = row[1].strip()
             family = OWASP_CATEGORY_TO_FAMILY.get(category)
+            case_id = canonicalize_case_id(first) or first
             cases.append(
                 ExpectedCase(
-                    case_id=first,
+                    case_id=case_id,
                     category=category,
                     family=family,
                     vulnerable=row[2].strip().lower() == "true",
@@ -228,19 +261,29 @@ def normalize_family_name(value: str | None) -> str | None:
 
 def extract_case_id(payload: dict[str, Any]) -> str | None:
     """Extract a BenchmarkTest identifier from a finding payload."""
+    evidence = payload.get("evidence", {}) or {}
+    triage_finding = payload.get("triage_input", {}).get("finding", {}) or {}
+    location = payload.get("location", {}) or {}
     candidates = [
         payload.get("file"),
+        payload.get("file_path"),
         payload.get("path"),
+        location.get("path"),
         payload.get("message"),
-        payload.get("evidence", {}).get("sink", {}).get("file"),
-        payload.get("evidence", {}).get("source", {}).get("file"),
+        triage_finding.get("file"),
+        triage_finding.get("file_path"),
+        evidence.get("sink", {}).get("file"),
+        evidence.get("source", {}).get("file"),
     ]
     for candidate in candidates:
-        if not candidate:
-            continue
-        match = CASE_ID_RE.search(str(candidate))
-        if match:
-            return match.group(1)
+        case_id = extract_case_id_from_text(candidate)
+        if case_id:
+            return case_id
+
+    for summary_item in evidence.get("path_summary", []) or []:
+        case_id = extract_case_id_from_text(summary_item)
+        if case_id:
+            return case_id
     return None
 
 
@@ -319,6 +362,27 @@ def _rounded_metric(value: float) -> float:
     return round(value, 4)
 
 
+def _coerce_runtime_seconds(report: dict[str, Any]) -> float | None:
+    """Return scan runtime in seconds when report metadata provides it."""
+    raw_value = report.get("scan_metadata", {}).get("duration_seconds")
+    try:
+        runtime = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+    if runtime < 0:
+        return None
+    return _rounded_metric(runtime)
+
+
+def _fp_reduction_percent(fp_all: int, fp_mode: int) -> float:
+    """Compute false-positive reduction percentage versus the all-findings mode."""
+    if fp_all <= 0:
+        return 0.0
+    reduction = _safe_divide(fp_all - fp_mode, fp_all) * 100.0
+    return _rounded_metric(reduction)
+
+
 def score_family(
     family: str,
     expected_cases: list[ExpectedCase],
@@ -328,9 +392,9 @@ def score_family(
 ) -> dict[str, Any]:
     """Score one family at the case level."""
     family_cases = [case for case in expected_cases if case.family == family]
-    all_expected_case_ids = {case.case_id for case in expected_cases}
+    family_case_ids = {case.case_id for case in family_cases}
     true_case_ids = {case.case_id for case in family_cases if case.vulnerable}
-    false_case_ids = all_expected_case_ids - true_case_ids
+    false_case_ids = family_case_ids - true_case_ids
     detected_case_ids = {
         finding["_case_id"]
         for finding in findings
@@ -338,10 +402,10 @@ def score_family(
     }
 
     true_positives = sorted(true_case_ids & detected_case_ids)
-    false_positives = sorted(false_case_ids & detected_case_ids)
+    unexpected_case_ids = sorted(detected_case_ids - family_case_ids)
+    false_positives = sorted((false_case_ids & detected_case_ids) | set(unexpected_case_ids))
     false_negatives = sorted(true_case_ids - detected_case_ids)
     true_negatives = sorted(false_case_ids - detected_case_ids)
-    unexpected_case_ids = sorted(detected_case_ids - (true_case_ids | false_case_ids))
 
     tp = len(true_positives)
     fp = len(false_positives)
@@ -355,7 +419,7 @@ def score_family(
         "family": family,
         "expected_true_case_count": len(true_case_ids),
         "expected_false_case_count": len(false_case_ids),
-        "expected_case_count": len(all_expected_case_ids),
+        "expected_case_count": len(family_case_ids),
         "detected_case_count": len(detected_case_ids),
         "tp": tp,
         "fp": fp,
@@ -441,12 +505,26 @@ def score_report(
             ),
         }
 
+    aggregate_all = modes["all"]["aggregate"]
+    aggregate_visible = modes["visible"]["aggregate"]
+    aggregate_high_confidence = modes["high-confidence"]["aggregate"]
+    fp_reduction_visible = _fp_reduction_percent(
+        aggregate_all["fp"],
+        aggregate_visible["fp"],
+    )
+    fp_reduction_high_confidence = _fp_reduction_percent(
+        aggregate_all["fp"],
+        aggregate_high_confidence["fp"],
+    )
+    runtime_seconds = _coerce_runtime_seconds(report)
+
     category_counts = Counter(case.category for case in expected_cases)
     return {
         "schema_version": "aegis-owasp-benchmark-score-v1",
         "generated_at": datetime.now().isoformat(),
         "target": report.get("scan_metadata", {}).get("target"),
         "files_scanned": report.get("scan_metadata", {}).get("files_scanned", 0),
+        "runtime_seconds": runtime_seconds,
         "total_findings": len(report.get("findings", [])),
         "expected_case_count": len(expected_cases),
         "supported_expected_case_count": sum(
@@ -454,21 +532,39 @@ def score_report(
         ),
         "families": selected_families,
         "expected_category_counts": dict(category_counts),
+        "fp_reduction_visible": fp_reduction_visible,
+        "fp_reduction_high_confidence": fp_reduction_high_confidence,
         "modes": modes,
     }
 
 
 def render_markdown(summary: dict[str, Any]) -> str:
     """Render one Markdown benchmark summary."""
+    runtime_seconds = summary.get("runtime_seconds")
     lines = [
         "# OWASP Benchmark Score",
         "",
         f"- Target: `{summary.get('target') or 'unknown'}`",
         f"- Files scanned: {summary.get('files_scanned', 0)}",
+        (
+            f"- Scan runtime (seconds): {runtime_seconds:.4f}"
+            if isinstance(runtime_seconds, (int, float))
+            else "- Scan runtime (seconds): n/a"
+        ),
         f"- Report findings: {summary.get('total_findings', 0)}",
         f"- Expected cases loaded: {summary.get('expected_case_count', 0)}",
         f"- Expected cases scored: {summary.get('supported_expected_case_count', 0)}",
         f"- Families: {', '.join(summary.get('families', [])) or 'none'}",
+        "",
+        "## FP Reduction vs all",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+        f"| FP reduction (visible) | {summary.get('fp_reduction_visible', 0.0):.4f}% |",
+        (
+            "| FP reduction (high-confidence) | "
+            f"{summary.get('fp_reduction_high_confidence', 0.0):.4f}% |"
+        ),
         "",
     ]
 
