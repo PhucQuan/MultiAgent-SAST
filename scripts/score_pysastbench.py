@@ -17,9 +17,16 @@ Quy tắc chấm, ở mức TEST CASE chứ không phải mức finding:
   không có -> false negative;
 * file `_fix.py` có finding đúng họ -> false positive; không có -> true negative.
 
-Chấm theo họ chứ không theo dòng: dataset chỉ ghi vị trí ở mức hàm
-(`Vul Position` trong SyntheticDataset.csv), nên đòi khớp dòng sẽ là áp một
-tiêu chí chặt hơn dữ liệu cho phép.
+Hai chế độ khớp, chọn bằng `--match`:
+
+* `official` (mặc định) — theo đúng `scripts/evaluate/Synthetic/parsers.py` của
+  nhóm tác giả: finding phải vừa đúng họ lỗ hổng, vừa nằm trong đúng hàm ghi ở
+  cột `Vul Position` của `SyntheticDataset.csv`. Tên hàm lấy bằng cách dò cây
+  AST tìm scope bao dòng đó, nối bằng dấu chấm cho hàm lồng trong lớp. Dùng chế
+  độ này khi cần so sánh với bảng trong bài báo.
+* `family` — chỉ cần đúng họ, không xét hàm. Rộng rãi hơn, nên cho chặn trên
+  của recall; hữu ích để tách riêng câu hỏi "có phát hiện được gì không" khỏi
+  câu hỏi "có chỉ đúng chỗ không".
 
 Ví dụ:
   python scripts/score_pysastbench.py \
@@ -30,6 +37,8 @@ Ví dụ:
 from __future__ import annotations
 
 import argparse
+import ast
+import csv
 import json
 import sys
 import time
@@ -95,6 +104,57 @@ class Counts:
         }
 
 
+
+def get_enclosing_scope(path: Path, line_num: int) -> str:
+    """Tên hàm/lớp bao quanh một dòng, dạng 'Lop.ham'.
+
+    Cài lại theo `getFunc` trong parsers.py của nhóm tác giả, để tên sinh ra ở
+    đây khớp đúng định dạng của cột `Vul Position`.
+    """
+    try:
+        tree = ast.parse(path.read_text(errors="replace"))
+    except (SyntaxError, OSError):
+        return ""
+
+    scope: list[str] = []
+    current: ast.AST | None = tree
+
+    def find_body(node: ast.AST):
+        body = getattr(node, "body", None)
+        if body is None:
+            return None
+        if isinstance(node, ast.Try):
+            body = body + node.handlers + node.orelse + node.finalbody
+        for n in body:
+            lineno = getattr(n, "lineno", None)
+            end = getattr(n, "end_lineno", None)
+            if lineno is None or end is None:
+                continue
+            if lineno <= line_num <= end:
+                if isinstance(n, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    scope.append(n.name)
+                return n
+        return None
+
+    while current is not None:
+        current = find_body(current)
+    return ".".join(scope)
+
+
+def load_positions(dataset: Path) -> dict[str, str]:
+    """Đọc cột `Vul Position` từ SyntheticDataset.csv cạnh thư mục dataset."""
+    csv_path = dataset.parent / "SyntheticDataset.csv"
+    if not csv_path.exists():
+        return {}
+    out: dict[str, str] = {}
+    with csv_path.open(encoding="utf-8-sig") as fh:
+        for row in csv.DictReader(fh):
+            case = (row.get("TestCase") or "").strip()
+            if case:
+                out[case] = (row.get("Vul Position") or "").strip()
+    return out
+
+
 def scan_file(path: Path, registry, rule_engine_cls, detector_cls) -> list:
     """Quét một file, trả về danh sách Vulnerability."""
     detector = detector_cls(rule_engine_cls(), max_depth=5)
@@ -124,10 +184,19 @@ def main() -> int:
     ap.add_argument("--output-dir", type=Path, default=None)
     ap.add_argument("--include-out-of-scope", action="store_true",
                     help="Tính cả các họ ngoài phạm vi (ví dụ XSS) vào tổng")
+    ap.add_argument("--match", choices=("official", "family"), default="official",
+                    help="official: khớp cả họ và tên hàm như script của tác giả; "
+                         "family: chỉ khớp họ (rộng hơn)")
     args = ap.parse_args()
 
     from aegis_sast.analysis.rule_engine import RuleEngine
     from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
+
+    positions = load_positions(args.dataset)
+    if args.match == "official" and not positions:
+        print("Không đọc được SyntheticDataset.csv — cần nó cho chế độ official",
+              file=sys.stderr)
+        return 1
 
     pairs = collect_pairs(args.dataset)
     if not pairs:
@@ -155,10 +224,16 @@ def main() -> int:
                 vulns = scan_file(path, None, RuleEngine, VulnerabilityDetector)
                 scanned += 1
                 hits = {m: False for m in modes}
+                expected_scope = positions.get(case_id, "")
                 for v in vulns:
                     vtype = getattr(v.vuln_type, "value", str(v.vuln_type))
                     if vtype != family:
                         continue
+                    if args.match == "official" and expected_scope:
+                        # Finding phải nằm đúng trong hàm mà ground truth chỉ ra.
+                        scope = get_enclosing_scope(path, int(v.line_number or 0))
+                        if scope != expected_scope:
+                            continue
                     raw_status = v.infer_triage_status()
                     status = str(getattr(raw_status, "value", raw_status or "")).lower()
                     hits["all"] = True
@@ -194,6 +269,8 @@ def main() -> int:
     print(f"Test case    : {len(cases)} cặp vul/fix  ({scanned} file đã quét)")
     print(f"Thời gian    : {elapsed:.1f}s")
     print(f"Phạm vi tổng : {'mọi họ' if args.include_out_of_scope else 'chỉ họ Aegis hỗ trợ'}")
+    print(f"Quy tắc khớp : {args.match}"
+          f"{' (khớp cả họ và tên hàm, như script của tác giả)' if args.match == 'official' else ' (chỉ khớp họ)'}")
     print()
     print(f"{'Mode':18}{'TP':>5}{'FP':>5}{'FN':>5}{'TN':>5}{'Precision':>11}{'Recall':>9}{'F1':>9}")
     print("-" * 67)
@@ -220,6 +297,7 @@ def main() -> int:
             "files_scanned": scanned,
             "elapsed_sec": round(elapsed, 2),
             "in_scope_families": sorted(IN_SCOPE),
+            "match_mode": args.match,
             "modes": {m: totals[m].as_dict() for m in modes},
             "per_family": {
                 m: {f: c.as_dict() for f, c in per_family[m].items()} for m in modes
