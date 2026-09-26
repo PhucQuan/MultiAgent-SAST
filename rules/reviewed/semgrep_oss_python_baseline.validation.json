@@ -1,0 +1,45 @@
+{
+  "valid": true,
+  "profile": "generic",
+  "rules_checked": 53,
+  "error_count": 0,
+  "warning_count": 5,
+  "errors": [],
+  "warnings": [
+    {
+      "level": "warning",
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "path": "rules[33].detection.sink_patterns[1].exact",
+      "code": "call_pattern_without_exact",
+      "message": "Call-like sink_pattern pattern 'asyncio.subprocess.create_subprocess_shell($CMD, ...)' should likely set exact=true to avoid substring bleed into unrelated APIs."
+    },
+    {
+      "level": "warning",
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "path": "rules[33].detection.sink_patterns[2].exact",
+      "code": "call_pattern_without_exact",
+      "message": "Call-like sink_pattern pattern 'asyncio.create_subprocess_shell($CMD, ...)' should likely set exact=true to avoid substring bleed into unrelated APIs."
+    },
+    {
+      "level": "warning",
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "path": "rules[37].detection.sink_patterns[0].exact",
+      "code": "call_pattern_without_exact",
+      "message": "Call-like sink_pattern pattern '_xxsubinterpreters.run_string($ID, $PAYLOAD, ...)\n' should likely set exact=true to avoid substring bleed into unrelated APIs."
+    },
+    {
+      "level": "warning",
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "path": "rules[40].detection.sink_patterns[0].exact",
+      "code": "call_pattern_without_exact",
+      "message": "Call-like sink_pattern pattern '_testcapi.run_in_subinterp($PAYLOAD, ...)\n' should likely set exact=true to avoid substring bleed into unrelated APIs."
+    },
+    {
+      "level": "warning",
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "path": "rules[40].detection.sink_patterns[1].exact",
+      "code": "call_pattern_without_exact",
+      "message": "Call-like sink_pattern pattern 'test.support.run_in_subinterp($PAYLOAD, ...)\n' should likely set exact=true to avoid substring bleed into unrelated APIs."
+    }
+  ]
+}

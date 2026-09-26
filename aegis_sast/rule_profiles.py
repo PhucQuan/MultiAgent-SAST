@@ -50,6 +50,41 @@ _REVIEWED_RULE_PROFILES = {
             REPO_ROOT / "rules" / "reviewed" / "semgrep_python_ssrf_reviewed.legacy.yaml",
         ),
     ),
+    "semgrep-oss-full": ReviewedRuleProfile(
+        name="semgrep-oss-full",
+        description=(
+            "Unified Semgrep OSS Community Baseline covering OWASP Top 10 and CWE Top 25 "
+            "(COMMAND_INJECTION, PATH_TRAVERSAL, SQL_INJECTION, INSECURE_DESERIALIZATION, SSRF, XSS)."
+        ),
+        language_scope=("python",),
+        family_scope=(
+            "COMMAND_INJECTION",
+            "PATH_TRAVERSAL",
+            "SQL_INJECTION",
+            "INSECURE_DESERIALIZATION",
+            "SSRF",
+            "XSS",
+        ),
+        append_rules_paths=(
+            REPO_ROOT / "rules" / "reviewed" / "semgrep_oss_python_baseline.legacy.yaml",
+        ),
+    ),
+    "semgrep-community-python": ReviewedRuleProfile(
+        name="semgrep-community-python",
+        description="Authoritative Semgrep OSS Community Registry baseline for Python security scans.",
+        language_scope=("python",),
+        family_scope=(
+            "COMMAND_INJECTION",
+            "PATH_TRAVERSAL",
+            "SQL_INJECTION",
+            "INSECURE_DESERIALIZATION",
+            "SSRF",
+            "XSS",
+        ),
+        append_rules_paths=(
+            REPO_ROOT / "rules" / "reviewed" / "semgrep_oss_python_baseline.legacy.yaml",
+        ),
+    ),
 }
 
 

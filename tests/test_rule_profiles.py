@@ -60,3 +60,31 @@ def test_semgrep_python_ssrf_profile_is_listed_and_merges_into_python_rule_engin
 
     assert "requests.get(" in ssrf_patterns
     assert "urllib.request.urlopen(" in ssrf_patterns
+
+
+def test_semgrep_oss_full_profile_is_listed_and_merges():
+    assert "semgrep-oss-full" in reviewed_rule_profile_choices()
+    assert "semgrep-community-python" in reviewed_rule_profile_choices()
+
+    profile = resolve_reviewed_rule_profile("semgrep-oss-full")
+    assert profile is not None
+    assert profile.name == "semgrep-oss-full"
+    assert "COMMAND_INJECTION" in profile.family_scope
+    assert "PATH_TRAVERSAL" in profile.family_scope
+    assert "SQL_INJECTION" in profile.family_scope
+    assert "SSRF" in profile.family_scope
+    assert "XSS" in profile.family_scope
+    assert all(path.exists() for path in profile.append_rules_paths)
+
+    engine = RuleEngine(language="python", extra_rules_paths=list(profile.append_rules_paths))
+    rules = engine.get_rules()
+
+    sinks = rules["sinks"]
+    assert "rce" in sinks
+    assert "path_traversal" in sinks
+    assert "sqli" in sinks
+    assert "ssrf" in sinks
+    assert "xss" in sinks
+    assert "deserialization" in sinks
+    assert len(rules["sources"]) >= 30
+
