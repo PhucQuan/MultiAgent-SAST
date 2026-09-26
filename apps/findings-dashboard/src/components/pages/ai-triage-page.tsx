@@ -17,33 +17,40 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatLabel, shortenPath } from "@/lib/dashboard-ui";
-import type { NormalizedFinding, ReviewerDisposition } from "@/lib/report-types";
+import type {
+  NormalizedFinding,
+  ReviewerDisposition,
+  ReviewerFeedbackStore,
+} from "@/lib/report-types";
 
 interface AiTriagePageProps {
   findings: NormalizedFinding[];
   onOpenFindingDeepDive?: (finding: NormalizedFinding) => void;
   onSetDisposition?: (key: string, disposition: ReviewerDisposition) => void;
+  reviewStore: ReviewerFeedbackStore;
 }
 
 export function AiTriagePage({
   findings,
   onOpenFindingDeepDive,
   onSetDisposition,
+  reviewStore,
 }: AiTriagePageProps) {
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [search, setSearch] = useState("");
+
+  const getReviewerDisposition = (finding: NormalizedFinding) =>
+    reviewStore[finding.key]?.disposition ?? null;
+  const getDisplayStatus = (finding: NormalizedFinding) =>
+    getReviewerDisposition(finding) ?? finding.status;
 
   const filtered = findings.filter((f) => {
-    if (filterStatus !== "all" && f.status !== filterStatus) return false;
-    if (search && !f.cweId.toLowerCase().includes(search.toLowerCase()) && !f.message.toLowerCase().includes(search.toLowerCase())) {
-      return false;
-    }
+    if (filterStatus !== "all" && getDisplayStatus(f) !== filterStatus) return false;
     return true;
   });
 
-  const confirmedCount = findings.filter((f) => f.status === "confirmed" || f.status === "likely").length;
-  const suppressedCount = findings.filter((f) => f.status === "suppressed").length;
-  const needsReviewCount = findings.filter((f) => f.status === "needs-review" || f.status === "unknown").length;
+  const confirmedCount = findings.filter((f) => ["confirmed", "likely"].includes(getDisplayStatus(f))).length;
+  const suppressedCount = findings.filter((f) => ["suppressed", "false-positive"].includes(getDisplayStatus(f))).length;
+  const needsReviewCount = findings.filter((f) => ["needs-review", "unknown"].includes(getDisplayStatus(f))).length;
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto bg-slate-50/50 p-8 dark:bg-[#0b0f19]">
@@ -158,7 +165,8 @@ export function AiTriagePage({
                   <th className="px-2 py-2.5">Severity</th>
                   <th className="px-2 py-2.5">Location</th>
                   <th className="px-2 py-2.5">AI Confidence</th>
-                  <th className="px-2 py-2.5">AI Multi-Agent Verdict</th>
+                  <th className="px-2 py-2.5">Engine Status</th>
+                  <th className="px-2 py-2.5">Reviewer Disposition</th>
                   <th className="py-2.5 pl-2 pr-4 text-right">Quick Triage Action</th>
                 </tr>
               </thead>
@@ -182,7 +190,7 @@ export function AiTriagePage({
                       {shortenPath(finding.filePath, 2)}:{finding.line || 42}
                     </td>
                     <td className="px-2 py-3 font-mono text-[12px] font-bold text-slate-700 dark:text-slate-300">
-                      {finding.confidence ? `${(finding.confidence * 100).toFixed(0)}%` : "94%"}
+                      {finding.confidence == null ? "n/a" : `${(finding.confidence * 100).toFixed(0)}%`}
                     </td>
                     <td className="px-2 py-3">
                       {finding.status === "suppressed" ? (
@@ -191,9 +199,14 @@ export function AiTriagePage({
                         </span>
                       ) : (
                         <span className="rounded-md bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
-                          Confirmed Exploit
+                          {finding.status}
                         </span>
                       )}
+                    </td>
+                    <td className="px-2 py-3">
+                      <span className="rounded-md border border-border bg-surface-muted px-2.5 py-1 text-[11px] font-semibold text-foreground">
+                        {getReviewerDisposition(finding) ?? "Unreviewed"}
+                      </span>
                     </td>
                     <td
                       className="py-3 pl-2 pr-4 text-right"

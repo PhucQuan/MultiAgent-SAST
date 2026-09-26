@@ -167,6 +167,14 @@ export interface NormalizedReport {
   triageSummary: TriageSummary;
   errors: string[];
   findings: NormalizedFinding[];
+  metrics: ReportMetrics;
+}
+
+export interface ReportMetrics {
+  precision: number | null;
+  owaspScore: number | null;
+  filesScanned: number | null;
+  aiEnabled: boolean | null;
 }
 
 export interface ReportSummaryCard {
@@ -181,6 +189,7 @@ export interface ReportSummaryCard {
   totalFindings: number;
   severitySummary: SeveritySummary;
   triageSummary: TriageSummary;
+  metrics: ReportMetrics;
 }
 
 export interface ReviewerFeedback {

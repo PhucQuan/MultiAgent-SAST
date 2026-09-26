@@ -56,7 +56,16 @@ export function FindingQueue({
   loading,
   error,
 }: FindingQueueProps) {
-  const [currentPage, setCurrentPage] = useState(1);
+  const filterKey = [
+    filters.search,
+    filters.status,
+    filters.severity,
+    filters.language,
+    filters.family,
+    filters.includeMuted ? "muted" : "visible",
+  ].join("|");
+  const [pagination, setPagination] = useState({ key: "", page: 1 });
+  const currentPage = pagination.key === filterKey ? pagination.page : 1;
   const rowsPerPage = 12;
 
   // Pagination slice
@@ -291,7 +300,7 @@ export function FindingQueue({
           <button
             type="button"
             disabled={currentPage <= 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            onClick={() => setPagination({ key: filterKey, page: Math.max(1, currentPage - 1) })}
             className="flex h-7 w-7 items-center justify-center rounded border border-border text-slate-600 disabled:opacity-30 dark:text-slate-300"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
@@ -304,7 +313,7 @@ export function FindingQueue({
               <button
                 key={pageNum}
                 type="button"
-                onClick={() => setCurrentPage(pageNum)}
+                onClick={() => setPagination({ key: filterKey, page: pageNum })}
                 className={`flex h-7 w-7 items-center justify-center rounded border text-[11.5px] font-medium ${
                   isCur
                     ? "border-blue-600 bg-blue-600 text-white"
@@ -319,7 +328,7 @@ export function FindingQueue({
           <button
             type="button"
             disabled={currentPage >= totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => setPagination({ key: filterKey, page: Math.min(totalPages, currentPage + 1) })}
             className="flex h-7 w-7 items-center justify-center rounded border border-border text-slate-600 disabled:opacity-30 dark:text-slate-300"
           >
             <ChevronRight className="h-3.5 w-3.5" />

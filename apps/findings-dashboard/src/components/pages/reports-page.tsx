@@ -57,10 +57,6 @@ export function ReportsPage({
       .catch(() => toast.error("Failed to download report JSON"));
   };
 
-  const handleExportSarif = (report: ReportSummaryCard) => {
-    toast.success(`Exported ${report.shortName} as SARIF v2.1.0 standard artifact`);
-  };
-
   return (
     <div className="flex flex-1 flex-col overflow-y-auto bg-slate-50/50 p-8 dark:bg-[#0b0f19]">
       <div className="mx-auto w-full max-w-[1380px] space-y-7">
@@ -93,11 +89,9 @@ export function ReportsPage({
             </Button>
           </div>
         </div>
-
         {/* Search & Stats Bar */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input
               type="text"
               placeholder="Search reports by repository or path..."
@@ -192,12 +186,12 @@ export function ReportsPage({
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleExportSarif(report)}
+                          disabled
                           className="h-8 gap-1 rounded-lg text-[11.5px]"
-                          title="Export SARIF Standard"
+                          title="Feature in preview"
                         >
                           <FileCode className="h-3.5 w-3.5" />
-                          <span>SARIF</span>
+                          <span>SARIF (Preview)</span>
                         </Button>
                         <Button
                           size="sm"
