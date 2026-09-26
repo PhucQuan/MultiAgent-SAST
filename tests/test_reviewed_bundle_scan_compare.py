@@ -77,6 +77,20 @@ def test_ensure_report_formats_keeps_json_first_and_dedupes():
     ]
 
 
+def test_parser_accepts_reviewed_rule_profile_option():
+    module = _load_module()
+    args = module.build_parser().parse_args(
+        [
+            "sample.py",
+            "--reviewed-rule-profile",
+            "semgrep-python-core4",
+        ]
+    )
+
+    assert args.reviewed_rule_profile == "semgrep-python-core4"
+    assert args.reviewed_rules is None
+
+
 def test_build_comparison_summary_tracks_deltas_and_mismatches(tmp_path):
     module = _load_module()
     default_path = tmp_path / "default.json"
@@ -146,13 +160,19 @@ def test_build_comparison_summary_tracks_deltas_and_mismatches(tmp_path):
 
     summary = module.build_comparison_summary(
         target=Path("examples/vulnerable_rce.py"),
-        reviewed_rules=Path("reports/rule_review/command.legacy.yaml"),
+        reviewed_rule_profile=None,
+        resolved_reviewed_rules=[Path("reports/rule_review/command.legacy.yaml")],
         output_dir=tmp_path / "outputs",
         default_report_path=default_path,
         reviewed_report_path=reviewed_path,
         mismatch_limit=10,
     )
 
+    assert summary["reviewed_rule_profile"] is None
+    assert len(summary["resolved_reviewed_rules"]) == 1
+    assert Path(summary["resolved_reviewed_rules"][0]) == Path(
+        "reports/rule_review/command.legacy.yaml"
+    )
     assert summary["default"]["total_findings"] == 2
     assert summary["reviewed"]["total_findings"] == 1
     assert summary["comparison"]["finding_delta"] == -1

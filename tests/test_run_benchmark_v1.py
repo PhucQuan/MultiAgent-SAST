@@ -69,6 +69,11 @@ def test_load_manifest_and_resolve_cases_find_three_python_v1_cases():
 
     assert manifest["schema_version"] == "aegis-reviewed-bundle-benchmark-v1"
     assert len(cases) == 3
+    assert all(case["reviewed_rule_profile"] == "semgrep-python-core4" for case in cases)
+    assert all(
+        all(path.exists() for path in case["resolved_reviewed_rules"])
+        for case in cases
+    )
     assert [case["family"] for case in cases] == [
         "COMMAND_INJECTION",
         "PATH_TRAVERSAL",
@@ -83,6 +88,8 @@ def test_load_manifest_and_resolve_cases_find_one_sqli_extension_case():
 
     assert manifest["schema_version"] == "aegis-reviewed-bundle-benchmark-v1"
     assert len(cases) == 1
+    assert cases[0]["reviewed_rule_profile"] == "semgrep-python-core4"
+    assert all(path.exists() for path in cases[0]["resolved_reviewed_rules"])
     assert cases[0]["case_id"] == "python-sql-injection-extension"
     assert cases[0]["family"] == "SQL_INJECTION"
 
@@ -94,6 +101,9 @@ def test_load_manifest_and_resolve_cases_find_one_ssrf_extension_case():
 
     assert manifest["schema_version"] == "aegis-reviewed-bundle-benchmark-v1"
     assert len(cases) == 1
+    assert cases[0]["reviewed_rule_profile"] == "semgrep-python-ssrf"
+    assert cases[0]["reviewed_rules"] is None
+    assert all(path.exists() for path in cases[0]["resolved_reviewed_rules"])
     assert cases[0]["case_id"] == "python-ssrf-extension"
     assert cases[0]["family"] == "SSRF"
 
@@ -105,6 +115,17 @@ def test_load_manifest_and_resolve_cases_find_five_python_reviewed_suite_cases()
 
     assert manifest["schema_version"] == "aegis-reviewed-bundle-benchmark-v1"
     assert len(cases) == 5
+    assert [case["reviewed_rule_profile"] for case in cases] == [
+        "semgrep-python-core4",
+        "semgrep-python-core4",
+        "semgrep-python-core4",
+        "semgrep-python-core4",
+        "semgrep-python-ssrf",
+    ]
+    assert all(
+        all(path.exists() for path in case["resolved_reviewed_rules"])
+        for case in cases
+    )
     assert [case["family"] for case in cases] == [
         "COMMAND_INJECTION",
         "PATH_TRAVERSAL",
@@ -130,7 +151,9 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
                 "reviewed_mismatches": 0,
                 "goal": "",
                 "target": "examples/vulnerable_rce.py",
+                "reviewed_rule_profile": "semgrep-python-core4",
                 "reviewed_rules": "reports/rule_review/command.legacy.yaml",
+                "resolved_reviewed_rules": ["reports/rule_review/command.legacy.yaml"],
                 "comparison_summary_path": "reports/benchmark/command.json",
                 "default_by_sink_pattern": {},
                 "reviewed_by_sink_pattern": {},
@@ -151,7 +174,9 @@ def test_aggregate_case_results_sums_case_deltas_and_families(tmp_path):
                 "reviewed_mismatches": 0,
                 "goal": "",
                 "target": "examples/vulnerable_path_traversal.py",
+                "reviewed_rule_profile": "semgrep-python-core4",
                 "reviewed_rules": "reports/rule_review/path.legacy.yaml",
+                "resolved_reviewed_rules": ["reports/rule_review/path.legacy.yaml"],
                 "comparison_summary_path": "reports/benchmark/path.json",
                 "default_by_sink_pattern": {},
                 "reviewed_by_sink_pattern": {},
@@ -189,7 +214,11 @@ def test_render_markdown_contains_aggregate_and_case_rows(tmp_path):
                 "family": "INSECURE_DESERIALIZATION",
                 "goal": "Keep sink coverage stable.",
                 "target": "examples/vulnerable_deserialization.py",
+                "reviewed_rule_profile": "semgrep-python-core4",
                 "reviewed_rules": "reports/rule_review/insecure_deserialization_seed/demo.legacy.yaml",
+                "resolved_reviewed_rules": [
+                    "reports/rule_review/insecure_deserialization_seed/demo.legacy.yaml"
+                ],
                 "comparison_summary_path": "reports/benchmark/deserialization.json",
                 "default_findings": 3,
                 "reviewed_findings": 3,
@@ -228,6 +257,7 @@ def test_render_markdown_contains_aggregate_and_case_rows(tmp_path):
     assert "`python-insecure-deserialization`" in content
     assert "Keep sink coverage stable." in content
     assert "Coverage-equivalent keys" in content
+    assert "Reviewed profile" in content
 
 
 def test_run_benchmark_case_overlays_reviewed_rules_on_top_of_default_core(tmp_path, monkeypatch):
@@ -266,7 +296,9 @@ def test_run_benchmark_case_overlays_reviewed_rules_on_top_of_default_core(tmp_p
             "case_id": "python-command-injection",
             "family": "COMMAND_INJECTION",
             "target": target,
+            "reviewed_rule_profile": None,
             "reviewed_rules": reviewed_rules,
+            "resolved_reviewed_rules": [reviewed_rules],
             "goal": "Overlay reviewed command sinks on top of the default core.",
         },
         output_root=tmp_path / "outputs",
@@ -281,6 +313,61 @@ def test_run_benchmark_case_overlays_reviewed_rules_on_top_of_default_core(tmp_p
     assert calls[0].get("append_rules_paths") is None
     assert calls[1]["custom_rules_path"] is None
     assert calls[1]["append_rules_paths"] == [reviewed_rules]
+
+
+def test_run_benchmark_case_uses_reviewed_rule_profile_when_present(tmp_path, monkeypatch):
+    module = _load_module()
+    target = tmp_path / "demo.py"
+    reviewed_rules = tmp_path / "reviewed.yaml"
+    target.write_text("print('hello')\n", encoding="utf-8")
+    reviewed_rules.write_text("sources: []\nsinks: {}\nsanitisers: []\n", encoding="utf-8")
+
+    calls = []
+
+    def fake_run_manual_scan(**kwargs):
+        calls.append(kwargs)
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "scan.json"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "scan_metadata": {
+                        "target": str(kwargs["target"]),
+                        "files_scanned": 1,
+                    },
+                    "findings": [],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return {"written_reports": [report_path]}
+
+    monkeypatch.setattr(module, "run_manual_scan", fake_run_manual_scan)
+
+    result = module.run_benchmark_case(
+        case={
+            "case_id": "python-command-injection-profile",
+            "family": "COMMAND_INJECTION",
+            "target": target,
+            "reviewed_rule_profile": "semgrep-python-core4",
+            "reviewed_rules": None,
+            "resolved_reviewed_rules": [reviewed_rules],
+            "goal": "Drive the reviewed overlay through the checked-in profile entrypoint.",
+        },
+        output_root=tmp_path / "outputs",
+        formats=["json"],
+        max_depth=5,
+        mismatch_limit=5,
+    )
+
+    assert result["case_id"] == "python-command-injection-profile"
+    assert result["reviewed_rule_profile"] == "semgrep-python-core4"
+    assert len(calls) == 2
+    assert calls[0].get("reviewed_rule_profile") is None
+    assert calls[1]["reviewed_rule_profile"] == "semgrep-python-core4"
+    assert calls[1].get("append_rules_paths") is None
 
 
 def test_owasp_score_report_computes_case_level_metrics_across_modes(tmp_path):

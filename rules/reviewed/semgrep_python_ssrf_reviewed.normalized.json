@@ -1,0 +1,130 @@
+{
+  "schema_version": "aegis-normalized-rule-set-v1",
+  "generated_by": "manual-reviewed-semgrep-python-ssrf-profile",
+  "source_path": "refs/rule_sources/semgrep-rules",
+  "source_document_count": 3,
+  "source_documents": [
+    "refs/rule_sources/semgrep-rules/python/flask/security/injection/ssrf-requests.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/ssrf/ssrf-injection-requests.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/ssrf/ssrf-injection-urllib.yaml"
+  ],
+  "rule_count": 1,
+  "rules": [
+    {
+      "rule_id": "PY-REVIEWED-SSRF-001",
+      "title": "Reviewed Semgrep SSRF coverage for requests.get and urllib.request.urlopen",
+      "language": "python",
+      "family": "SSRF",
+      "severity": "HIGH",
+      "taxonomy": {
+        "cwe": [
+          "CWE-918"
+        ],
+        "owasp": [
+          "A10:2021",
+          "A01:2025"
+        ]
+      },
+      "detection": {
+        "match_mode": "semgrep-reviewed-legacy-bridge",
+        "source_patterns": [
+          {
+            "pattern": "request.args.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.form.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.values.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.GET.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.POST.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.headers.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.data",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sink_patterns": [
+          {
+            "pattern": "requests.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "urllib.request.urlopen(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sanitizers": []
+      },
+      "triage": {
+        "knowledge_refs": [
+          "generic-ssrf",
+          "semgrep:ssrf-requests",
+          "semgrep:ssrf-injection-requests",
+          "semgrep:ssrf-injection-urllib"
+        ],
+        "fp_hints": [
+          "allowlist-hosts",
+          "internal-only-fixed-endpoint",
+          "proxy-over-trusted-config"
+        ],
+        "remediation_notes": [
+          "Restrict outbound destinations by allowlisting schemes, hosts, ports, and resolved IP ranges before making the request.",
+          "Do not proxy arbitrary user-supplied URLs directly; prefer fixed upstream services or signed server-side mappings."
+        ]
+      },
+      "provenance": {
+        "source": "semgrep-rules-reviewed-adaptation",
+        "source_rule_id": "ssrf-requests (+2 reviewed Semgrep sources)",
+        "source_path": "refs/rule_sources/semgrep-rules/python",
+        "importer": "manual-reviewed-semgrep-python-ssrf-profile",
+        "snapshot_version": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e"
+      },
+      "notes": [
+        "Adapted from official Semgrep Flask and Django SSRF rules to the current Aegis legacy callable-level sink model.",
+        "Framework route-variable tracking, formatted-string shapes, and broader requests method coverage from Semgrep were reviewed manually; the stable overlay keeps only source and sink patterns that the current Aegis runtime can execute deterministically."
+      ]
+    }
+  ],
+  "skipped_rules": []
+}

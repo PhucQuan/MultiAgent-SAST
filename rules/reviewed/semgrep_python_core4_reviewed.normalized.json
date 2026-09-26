@@ -1,0 +1,594 @@
+{
+  "schema_version": "aegis-normalized-rule-set-v1",
+  "generated_by": "manual-reviewed-semgrep-python-core4-profile",
+  "source_path": "refs/rule_sources/semgrep-rules",
+  "source_document_count": 19,
+  "source_documents": [
+    "refs/rule_sources/semgrep-rules/python/flask/security/injection/subprocess-injection.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/command/subprocess-injection.yaml",
+    "refs/rule_sources/semgrep-rules/python/flask/security/injection/os-system-injection.yaml",
+    "refs/rule_sources/semgrep-rules/python/lang/security/dangerous-subprocess-use.yaml",
+    "refs/rule_sources/semgrep-rules/python/lang/security/dangerous-system-call.yaml",
+    "refs/rule_sources/semgrep-rules/python/flask/security/injection/path-traversal-open.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/path-traversal/path-traversal-open.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/path-traversal/path-traversal-file-name.yaml",
+    "refs/rule_sources/semgrep-rules/python/aws-lambda/security/tainted-pickle-deserialization.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/audit/avoid-insecure-deserialization.yaml",
+    "refs/rule_sources/semgrep-rules/python/flask/security/insecure-deserialization.yaml",
+    "refs/rule_sources/semgrep-rules/python/lang/security/deserialization/avoid-pyyaml-load.yaml",
+    "refs/rule_sources/semgrep-rules/python/flask/security/injection/tainted-sql-string.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/tainted-sql-string.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/sql/sql-injection-using-db-cursor-execute.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/sql/sql-injection-using-raw.yaml",
+    "refs/rule_sources/semgrep-rules/python/django/security/injection/sql/sql-injection-rawsql.yaml",
+    "refs/rule_sources/semgrep-rules/python/sqlalchemy/security/audit/avoid-sqlalchemy-text.yaml",
+    "refs/rule_sources/semgrep-rules/python/sqlalchemy/security/sqlalchemy-execute-raw-query.yaml"
+  ],
+  "rule_count": 4,
+  "rules": [
+    {
+      "rule_id": "PY-REVIEWED-CORE4-CMD-001",
+      "title": "Reviewed Semgrep command injection coverage for subprocess and os system calls",
+      "language": "python",
+      "family": "COMMAND_INJECTION",
+      "severity": "CRITICAL",
+      "taxonomy": {
+        "cwe": [
+          "CWE-78"
+        ],
+        "owasp": [
+          "A05:2025"
+        ]
+      },
+      "detection": {
+        "match_mode": "semgrep-reviewed-legacy-bridge",
+        "source_patterns": [
+          {
+            "pattern": "request.args.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.form.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.values.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.headers.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.data",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sink_patterns": [
+          {
+            "pattern": "subprocess.run(..., shell=True, ...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "subprocess.call(..., shell=True, ...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "subprocess.Popen(..., shell=True, ...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.system(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.popen(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sanitizers": [
+          {
+            "pattern": "shlex.quote(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ]
+      },
+      "triage": {
+        "knowledge_refs": [
+          "generic-command-injection",
+          "semgrep:subprocess-injection",
+          "semgrep:dangerous-system-call"
+        ],
+        "fp_hints": [
+          "constant-command-string",
+          "argument-array-with-shell-false",
+          "allowlist-dispatch"
+        ],
+        "remediation_notes": [
+          "Prefer subprocess argument arrays with shell disabled.",
+          "When commands must be selectable, map user input through an allowlist instead of passing raw strings."
+        ]
+      },
+      "provenance": {
+        "source": "semgrep-rules-reviewed-adaptation",
+        "source_rule_id": "subprocess-injection (+4 reviewed Semgrep sources)",
+        "source_path": "refs/rule_sources/semgrep-rules/python",
+        "importer": "manual-reviewed-semgrep-python-core4-profile",
+        "snapshot_version": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e"
+      },
+      "notes": [
+        "Adapted from official Semgrep Python command injection rules to the Aegis legacy source/sink runtime contract.",
+        "Framework route matching, regex guards, and pattern-not branches from Semgrep were reviewed and collapsed into callable-level sinks that the current Aegis engine can execute deterministically."
+      ]
+    },
+    {
+      "rule_id": "PY-REVIEWED-CORE4-PATH-001",
+      "title": "Reviewed Semgrep path traversal coverage for real file access sinks",
+      "language": "python",
+      "family": "PATH_TRAVERSAL",
+      "severity": "HIGH",
+      "taxonomy": {
+        "cwe": [
+          "CWE-22"
+        ],
+        "owasp": [
+          "A01:2025"
+        ]
+      },
+      "detection": {
+        "match_mode": "semgrep-reviewed-legacy-bridge",
+        "source_patterns": [
+          {
+            "pattern": "request.args.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.form.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.values.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.GET.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.POST.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sink_patterns": [
+          {
+            "pattern": "open(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "send_file(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.remove(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.listdir(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sanitizers": [
+          {
+            "pattern": "os.path.basename(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.path.abspath(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.path.realpath(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "os.path.normpath(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ]
+      },
+      "triage": {
+        "knowledge_refs": [
+          "generic-path-traversal",
+          "semgrep:path-traversal-open",
+          "semgrep:path-traversal-file-name"
+        ],
+        "fp_hints": [
+          "trusted-base-dir-join",
+          "normalized-path-under-root",
+          "basename-allowlist"
+        ],
+        "remediation_notes": [
+          "Resolve the path under a trusted base directory and reject escapes before reading, deleting, or serving files.",
+          "Prefer allowlisted file identifiers over raw user-provided path fragments."
+        ]
+      },
+      "provenance": {
+        "source": "semgrep-rules-reviewed-adaptation",
+        "source_rule_id": "path-traversal-open (+2 reviewed Semgrep sources)",
+        "source_path": "refs/rule_sources/semgrep-rules/python",
+        "importer": "manual-reviewed-semgrep-python-core4-profile",
+        "snapshot_version": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e"
+      },
+      "notes": [
+        "Adapted from official Semgrep Flask and Django path traversal rules to preserve only sinks that the current Aegis legacy runtime can express directly.",
+        "Structural checks over file-name formatting and framework route variables were reviewed manually and collapsed into request-derived sources plus concrete file-access sinks."
+      ]
+    },
+    {
+      "rule_id": "PY-REVIEWED-CORE4-DESER-001",
+      "title": "Reviewed Semgrep insecure deserialization coverage for pickle, dill, and yaml loaders",
+      "language": "python",
+      "family": "INSECURE_DESERIALIZATION",
+      "severity": "CRITICAL",
+      "taxonomy": {
+        "cwe": [
+          "CWE-502"
+        ],
+        "owasp": [
+          "A08:2025"
+        ]
+      },
+      "detection": {
+        "match_mode": "semgrep-reviewed-legacy-bridge",
+        "source_patterns": [
+          {
+            "pattern": "request.args.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.form.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.data",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.GET.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.POST.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sink_patterns": [
+          {
+            "pattern": "pickle.load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "pickle.loads(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "_pickle.load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "_pickle.loads(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "cPickle.load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "cPickle.loads(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "dill.load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "dill.loads(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "yaml.load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "yaml.unsafe_load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sanitizers": [
+          {
+            "pattern": "yaml.safe_load(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ]
+      },
+      "triage": {
+        "knowledge_refs": [
+          "generic-insecure-deserialization",
+          "semgrep:avoid-insecure-deserialization",
+          "semgrep:tainted-pickle-deserialization",
+          "semgrep:avoid-pyyaml-load"
+        ],
+        "fp_hints": [
+          "safe-loader-only",
+          "trusted-static-payload",
+          "local-test-fixture"
+        ],
+        "remediation_notes": [
+          "Prefer safe loaders or structured formats such as JSON instead of unsafe object deserialization.",
+          "If YAML must be used, keep to yaml.safe_load and avoid unsafe or implicit loader variants."
+        ]
+      },
+      "provenance": {
+        "source": "semgrep-rules-reviewed-adaptation",
+        "source_rule_id": "avoid-insecure-deserialization (+3 reviewed Semgrep sources)",
+        "source_path": "refs/rule_sources/semgrep-rules/python",
+        "importer": "manual-reviewed-semgrep-python-core4-profile",
+        "snapshot_version": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e"
+      },
+      "notes": [
+        "Adapted from official Semgrep taint and audit rules for Django, Flask, AWS Lambda, and generic Python deserialization sinks.",
+        "Loader-specific safe exceptions from Semgrep were reviewed manually; the legacy Aegis bridge keeps yaml.safe_load as an explicit sanitizer and narrows sink coverage to high-signal unsafe loaders."
+      ]
+    },
+    {
+      "rule_id": "PY-REVIEWED-CORE4-SQLI-001",
+      "title": "Reviewed Semgrep SQL injection coverage for execute family and raw query helpers",
+      "language": "python",
+      "family": "SQL_INJECTION",
+      "severity": "CRITICAL",
+      "taxonomy": {
+        "cwe": [
+          "CWE-89"
+        ],
+        "owasp": [
+          "A05:2025"
+        ]
+      },
+      "detection": {
+        "match_mode": "semgrep-reviewed-legacy-bridge",
+        "source_patterns": [
+          {
+            "pattern": "request.args.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.form.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.values.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.GET.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "request.POST.get(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sink_patterns": [
+          {
+            "pattern": "execute(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "executemany(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "raw(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "sqlalchemy.text(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ],
+        "sanitizers": [
+          {
+            "pattern": "int(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          },
+          {
+            "pattern": "float(...)",
+            "pattern_mode": "pattern",
+            "exact": true,
+            "by_side_effect": false,
+            "focus_metavariable": null
+          }
+        ]
+      },
+      "triage": {
+        "knowledge_refs": [
+          "generic-sql-injection",
+          "semgrep:tainted-sql-string",
+          "semgrep:sql-injection-db-cursor-execute",
+          "semgrep:avoid-sqlalchemy-text"
+        ],
+        "fp_hints": [
+          "parameterized-query",
+          "strict-type-cast-before-query",
+          "orm-query-builder"
+        ],
+        "remediation_notes": [
+          "Use parameterized queries and avoid string-built SQL.",
+          "Prefer ORM or query-builder APIs over raw SQL helpers whenever possible."
+        ]
+      },
+      "provenance": {
+        "source": "semgrep-rules-reviewed-adaptation",
+        "source_rule_id": "tainted-sql-string (+6 reviewed Semgrep sources)",
+        "source_path": "refs/rule_sources/semgrep-rules/python",
+        "importer": "manual-reviewed-semgrep-python-core4-profile",
+        "snapshot_version": "40b8c63f75dc7c22c8a77482d73bfb864b146f7e"
+      },
+      "notes": [
+        "Adapted from official Semgrep Flask, Django, and SQLAlchemy SQL injection rules to the current Aegis callable-level sink model.",
+        "Semgrep string-construction and pattern-inside semantics were reviewed manually; the Aegis bridge preserves execute/raw/text entry points and relies on existing taint flow plus parameterized-call suppression in the detector."
+      ]
+    }
+  ],
+  "skipped_rules": []
+}

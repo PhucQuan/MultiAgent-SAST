@@ -13,6 +13,10 @@ from rich.table import Table
 from aegis_sast.core.models import ScanResult
 from aegis_sast.orchestration import ScanPipelineRequest, ScanPipelineService
 from aegis_sast.orchestration.state import RepoProfile
+from aegis_sast.rule_profiles import (
+    resolve_reviewed_rule_profile,
+    reviewed_rule_profile_choices,
+)
 
 console = Console()
 _SPINNER_PROBE_TEXT = "\u280b"
@@ -33,6 +37,14 @@ def cli():
     type=click.Path(exists=True),
     help="Additional rules file to merge on top of the built-in rule set",
 )
+@click.option(
+    "--reviewed-rule-profile",
+    type=click.Choice(reviewed_rule_profile_choices()),
+    help=(
+        "Checked-in reviewed overlay bundle to append on top of the built-in rules. "
+        "Use semgrep-python-core4 for the Semgrep-derived Python thesis scope."
+    ),
+)
 @click.option("--no-ai", is_flag=True, help="Disable AI verification")
 @click.option("--max-depth", type=int, default=5, help="Maximum analysis depth")
 @click.option(
@@ -44,7 +56,16 @@ def cli():
     help="Output formats",
 )
 @click.option("--output-dir", type=click.Path(), default="reports", help="Output directory")
-def scan(target_path, rules, append_rules, no_ai, max_depth, output, output_dir):
+def scan(
+    target_path,
+    rules,
+    append_rules,
+    reviewed_rule_profile,
+    no_ai,
+    max_depth,
+    output,
+    output_dir,
+):
     """Scan a file or directory for security vulnerabilities."""
     console.print(
         Panel.fit(
@@ -54,21 +75,28 @@ def scan(target_path, rules, append_rules, no_ai, max_depth, output, output_dir)
         )
     )
 
+    selected_profile = resolve_reviewed_rule_profile(reviewed_rule_profile)
+    resolved_append_rules = [
+        *(path.resolve() for path in (selected_profile.append_rules_paths if selected_profile else ())),
+        *(Path(path).resolve() for path in append_rules),
+    ]
+
     request = ScanPipelineRequest(
         target_path=Path(target_path),
         rules_path=Path(rules) if rules else None,
-        append_rules_paths=[Path(path) for path in append_rules],
+        append_rules_paths=resolved_append_rules,
         enable_ai_verification=not no_ai,
         max_analysis_depth=max_depth,
         output_formats=list(output),
         output_dir=Path(output_dir),
     )
 
-    if rules or append_rules:
+    if rules or append_rules or selected_profile:
         console.print(
             "[dim]Rule controls:[/dim] "
+            f"profile={selected_profile.name if selected_profile else 'none'} "
             f"replace={rules or 'none'} "
-            f"append={', '.join(append_rules) or 'none'}"
+            f"append={', '.join(str(path) for path in resolved_append_rules) or 'none'}"
         )
 
     console.print(f"\n[yellow]Scanning:[/yellow] {request.target_path}\n")

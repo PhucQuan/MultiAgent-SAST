@@ -1,0 +1,34 @@
+sources:
+- pattern: request.args.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.form.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.values.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.GET.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.POST.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.headers.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.data
+  type: HTTP_DATA
+  severity: MEDIUM
+sinks:
+  ssrf:
+  - pattern: requests.get(
+    type: SSRF
+    severity: HIGH
+    description: Reviewed Semgrep SSRF coverage for requests.get and urllib.request.urlopen
+  - pattern: urllib.request.urlopen(
+    type: SSRF
+    severity: HIGH
+    description: Reviewed Semgrep SSRF coverage for requests.get and urllib.request.urlopen
+sanitizers: []
+safe_patterns: []

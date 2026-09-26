@@ -66,3 +66,5 @@ Thumbs.db
 refs/
 AGENTS.md
 .codex/
+.tmp*
+aegis-scan-triage/

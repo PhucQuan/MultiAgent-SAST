@@ -1,0 +1,3532 @@
+{
+  "rules_seen": 53,
+  "rules_selected": 53,
+  "rules_skipped": [],
+  "exported_sources": 40,
+  "exported_sinks": 44,
+  "exported_sanitizers": 16,
+  "skipped_patterns": [
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_exec($PROG, $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_exec($PROG, [$CMD, ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_exec($PROG, $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_exec($PROG, [$CMD, ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_exec($PROG, \"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_exec($PROG, [\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", $CMD, ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_exec($PROG, \"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_exec($PROG, [\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", $CMD, ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec($PROTOCOL, $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec($PROTOCOL, [$CMD, ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec($PROTOCOL, \"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec($PROTOCOL, [\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", $CMD, ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_shell($PROTOCOL, $CMD)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_shell($CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_shell($CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $BASH, [\"-c\", $CMD,...],...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $BASH, \"-c\", $CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(..., shell=True, ...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.system($CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.popen($CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.popen2($CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.popen3($CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.popen4($CMD,...)"
+    },
+    {
+      "rule_id": "dynamodb-filter-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "dynamodb-filter-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$TABLE.scan(..., ScanFilter = $SINK, ...)"
+    },
+    {
+      "rule_id": "dynamodb-filter-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$TABLE.query(..., QueryFilter = $SINK, ...)"
+    },
+    {
+      "rule_id": "dynamodb-filter-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$TABLE = $DB.Table(...)\n...\n"
+    },
+    {
+      "rule_id": "dynamodb-filter-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$DB = boto3.resource('dynamodb', ...)\n...\n"
+    },
+    {
+      "rule_id": "dynamodb-filter-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$TABLE = boto3.client('dynamodb', ...)\n...\n"
+    },
+    {
+      "rule_id": "mysql-sqli",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "mysql-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.execute($QUERY,...)"
+    },
+    {
+      "rule_id": "mysql-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.executemany($QUERY,...)"
+    },
+    {
+      "rule_id": "psycopg-sqli",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "psycopg-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.execute($QUERY,...)"
+    },
+    {
+      "rule_id": "psycopg-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.executemany($QUERY,...)"
+    },
+    {
+      "rule_id": "psycopg-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.mogrify($QUERY,...)"
+    },
+    {
+      "rule_id": "pymssql-sqli",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "pymssql-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.execute($QUERY,...)"
+    },
+    {
+      "rule_id": "pymysql-sqli",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "pymysql-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.execute($QUERY,...)"
+    },
+    {
+      "rule_id": "sqlalchemy-sqli",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "sqlalchemy-sqli",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CURSOR.execute($QUERY,...)"
+    },
+    {
+      "rule_id": "tainted-html-response",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "tainted-html-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$BODY"
+    },
+    {
+      "rule_id": "tainted-html-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "{..., \"headers\": {..., \"Content-Type\": \"text/html\", ...}, \"body\": $BODY, ... }\n"
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\" % ..."
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\".format(...)"
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\" + ..."
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$HTMLSTR{...}...\""
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML = \"$HTMLSTR\"\n...\n"
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML % ..."
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML.format(...)"
+    },
+    {
+      "rule_id": "tainted-html-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML + ..."
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "pickle.load($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "pickle.loads($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_pickle.load($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_pickle.loads($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "cPickle.load($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "cPickle.loads($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "dill.load($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "dill.loads($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-pickle-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "shelve.open($SINK,...)"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $HANDLER(event, context):\n  ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\" + ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\" % ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\".format(...)\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$SQLSTR{...}...\"\n"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $INSIDE(..., $PARAM, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$REQFUNC(...)"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$REQFUNC.get(...)"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$REQFUNC[...]"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "pickle.$PICKLEFUNC(...)\n"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_pickle.$PICKLEFUNC(...)\n"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "cPickle.$PICKLEFUNC(...)\n"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "shelve.$PICKLEFUNC(...)\n"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "dill.$DILLFUNC(...)"
+    },
+    {
+      "rule_id": "avoid-insecure-deserialization",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "yaml.$YAMLFUNC(...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(..., $REQUEST, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"$SHELL\", \"-c\", ...], ...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"$INTERPRETER\", ...], ...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sanitizer",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$DICT[$KEY]"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$ANYTHING"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\" % ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\".format(...)"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\" + ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$HTMLSTR{...}...\""
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML = \"$HTMLSTR\"\n...\n"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML % ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML.format(...)"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML + ..."
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$ANYTHING"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\" + ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\" % ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\".format(...)\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$SQLSTR{...}...\"\n"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$ANYTHING"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$URLSTR\" % ..."
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$URLSTR\".format(...)"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$URLSTR\" + ..."
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$URLSTR{...}...\""
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$URL = \"$URLSTR\"\n...\n"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$URL += ..."
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $PARAM, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARAM"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$FUNC.get(...)\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$FUNC(...)\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$FUNC[...]"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "return $X"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = \"...\".format(...)\n...\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = \"...\" % ...\n...\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = \"...\" + ...\n...\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = ... + \"...\"\n...\n"
+    },
+    {
+      "rule_id": "directly-returned-format-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = f\"...{...}...\"\n...\n"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "flask.request.$ANYTHING"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ROUTEVAR"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\" % ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\".format(...)"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$HTMLSTR\" + ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$HTMLSTR{...}...\""
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML = \"$HTMLSTR\"\n...\n"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML % ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML.format(...)"
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$HTML + ..."
+    },
+    {
+      "rule_id": "raw-html-format",
+      "role": "sanitizer",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "flask.render_template($TPL, ...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route($ROUTE, ...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"$SHELL\", \"-c\", ...], ...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"$INTERPRETER\", ...], ...)"
+    },
+    {
+      "rule_id": "subprocess-injection",
+      "role": "sanitizer",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$DICT[$KEY]"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "flask.request.$ANYTHING"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ROUTEVAR"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\" + ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\" % ...\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$SQLSTR\".format(...)\n"
+    },
+    {
+      "rule_id": "tainted-sql-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$SQLSTR{...}...\"\n"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "flask.request.$ANYTHING"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ROUTEVAR"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$URLSTR\" % ..."
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$URLSTR\".format(...)"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\"$URLSTR\" + ..."
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "f\"$URLSTR{...}...\""
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$URL = \"$URLSTR\"\n...\n"
+    },
+    {
+      "rule_id": "tainted-url-host",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$URL += ..."
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_exec($PROG, \"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\",...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_exec($PROG, [\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_exec($PROG, \"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\",...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-create-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_exec($PROG, [\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec(...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec($PROTOCOL, \"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\",...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_exec($PROTOCOL, [\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\", \"-c\", ...], ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$LOOP.subprocess_shell($PROTOCOL, $CMD)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.subprocess.create_subprocess_shell($CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-asyncio-shell-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "asyncio.create_subprocess_shell($CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = code.InteractiveConsole(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = code.InteractiveInterpreter(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.push($PAYLOAD,...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.runsource($PAYLOAD,...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.runcode(code.compile_command($PAYLOAD),...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PL = code.compile_command($PAYLOAD,...)\n...\n$X.runcode($PL,...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PAYLOAD"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($BASH,[$PATH,\"-c\",$CMD,...],...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CMD"
+    },
+    {
+      "rule_id": "dangerous-os-exec-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($BASH, $PATH, \"-c\", $CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CMD"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $BASH, [\"-c\",$CMD,...],...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $BASH, \"-c\", $CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_xxsubinterpreters.run_string($ID, $PAYLOAD, ...)\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PAYLOAD"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC($CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\",\"-c\", $CMD)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\",\"-c\", $CMD], ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC((\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\",\"-c\", $CMD), ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(\"=~/(python)/\", $CMD)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"=~/(python)/\", $CMD],...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC((\"=~/(python)/\", $CMD),...)"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = __import__(\"os\")\n...\n$X.system(...)\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = __import__(\"os\")\n...\ngetattr($X, \"system\")(...)\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = getattr(os, \"system\")\n...\n$X(...)\n"
+    },
+    {
+      "rule_id": "dangerous-system-call-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = __import__(\"os\")\n...\n$Y = getattr($X, \"system\")\n...\n$Y(...)\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_testcapi.run_in_subinterp($PAYLOAD, ...)\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "test.support.run_in_subinterp($PAYLOAD, ...)\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp-tainted-env-args",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PAYLOAD"
+    },
+    {
+      "rule_id": "subprocess-list-passed-as-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "\" \".join($LIST)\n"
+    },
+    {
+      "rule_id": "subprocess-list-passed-as-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.run($ARGS, ...)"
+    },
+    {
+      "rule_id": "subprocess-list-passed-as-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.Popen($ARGS, ...)"
+    },
+    {
+      "rule_id": "subprocess-list-passed-as-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.call($ARGS, ...)"
+    },
+    {
+      "rule_id": "subprocess-list-passed-as-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.check_call($ARGS, ...)"
+    },
+    {
+      "rule_id": "subprocess-list-passed-as-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.check_output($ARGS, ...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = code.InteractiveConsole(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = code.InteractiveInterpreter(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.push($PAYLOAD,...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.runsource($PAYLOAD,...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.runcode(code.compile_command($PAYLOAD),...)\n"
+    },
+    {
+      "rule_id": "dangerous-interactive-code-run",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PL = code.compile_command($PAYLOAD,...)\n...\n$X.runcode($PL,...)\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD(...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($BASH,[$PATH,\"-c\",$CMD,...],...)"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CMD"
+    },
+    {
+      "rule_id": "dangerous-os-exec",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($BASH, $PATH, \"-c\", $CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ROUTEVAR"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ['$ANYTHING']"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environ.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb['$ANYTHING']"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.environb.get('$FOO', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenv('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.getenvb('$ANYTHING', ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = argparse.ArgumentParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS = $PARSER.parse_args()\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "<... $ARGS ...>"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$PARSER = optparse.OptionParser(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$OPTS, $ARGS = getopt.gnu_getopt(...)\n...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "for $O, $A in $OPTS:\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$A"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARGS"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CMD"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $BASH, [\"-c\",$CMD,...],...)"
+    },
+    {
+      "rule_id": "dangerous-spawn-process",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "os.$METHOD($MODE, $BASH, \"-c\", $CMD,...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-subinterpreters-run-string",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_xxsubinterpreters.run_string($ID, $PAYLOAD, ...)\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC($CMD, ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\",\"-c\", $CMD)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\",\"-c\", $CMD], ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC((\"=~/(sh|bash|ksh|csh|tcsh|zsh)/\",\"-c\", $CMD), ...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC(\"=~/(python)/\", $CMD)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC([\"=~/(python)/\", $CMD],...)"
+    },
+    {
+      "rule_id": "dangerous-subprocess-use",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "subprocess.$FUNC((\"=~/(python)/\", $CMD),...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = __import__(\"os\")\n...\n$X.system(...)\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = __import__(\"os\")\n...\ngetattr($X, \"system\")(...)\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = getattr(os, \"system\")\n...\n$X(...)\n"
+    },
+    {
+      "rule_id": "dangerous-system-call",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X = __import__(\"os\")\n...\n$Y = getattr($X, \"system\")\n...\n$Y(...)\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@$APP.route(...)\ndef $FUNC(..., $ROUTEVAR, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $FUNC(request, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "request.$PROPERTY[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@rest_framework.decorators.api_view(...)\ndef $FUNC($REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.views.APIView, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $VIEW(..., rest_framework.generics.GenericAPIView, ...):\n  ...                              \n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $METHOD(self, $REQ, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.POST[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.FILES[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.DATA[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.QUERY_PARAMS[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.data[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params.get(...)"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.query_params[...]"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.content_type"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.stream"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.BaseHTTPRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.StreamRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "class $SERVER(..., http.server.DatagramRequestHandler, ...):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "_testcapi.run_in_subinterp($PAYLOAD, ...)\n"
+    },
+    {
+      "rule_id": "dangerous-testcapi-run-in-subinterp",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "test.support.run_in_subinterp($PAYLOAD, ...)\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "@pyramid.view.view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "pyramid.request.Response.text($SINK)\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "pyramid.request.Response($SINK)\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.response.body = $SINK\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.response.text = $SINK\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.response.ubody = $SINK\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.response.unicode_body = $SINK\n"
+    },
+    {
+      "rule_id": "pyramid-direct-use-of-response",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$SINK"
+    },
+    {
+      "rule_id": "pyramid-sqlalchemy-sql-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "from pyramid.view import view_config\n...\n@view_config( ... )\ndef $VIEW($REQ):\n  ...\n"
+    },
+    {
+      "rule_id": "pyramid-sqlalchemy-sql-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$REQ.$ANYTHING"
+    },
+    {
+      "rule_id": "pyramid-sqlalchemy-sql-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$QUERY = $REQ.dbsession.query(...)\n...\n"
+    },
+    {
+      "rule_id": "pyramid-sqlalchemy-sql-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$QUERY.$SQLFUNC(\"...\".$FORMATFUNC(..., $SINK, ...))\n"
+    },
+    {
+      "rule_id": "pyramid-sqlalchemy-sql-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$QUERY.join(...).$SQLFUNC(\"...\".$FORMATFUNC(..., $SINK, ...))\n"
+    },
+    {
+      "rule_id": "pyramid-sqlalchemy-sql-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$SINK"
+    },
+    {
+      "rule_id": "avoid-sqlalchemy-text",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X + $Y\n"
+    },
+    {
+      "rule_id": "avoid-sqlalchemy-text",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X.format(...)\n"
+    },
+    {
+      "rule_id": "avoid-sqlalchemy-text",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$X % $Y\n"
+    },
+    {
+      "rule_id": "twiml-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$ARG"
+    },
+    {
+      "rule_id": "twiml-injection",
+      "role": "source",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "def $F(..., $ARG, ...):\n    ...\n"
+    },
+    {
+      "rule_id": "twiml-injection",
+      "role": "sink",
+      "reason": "pattern cannot be represented in the legacy rule engine",
+      "pattern": "$CLIENT.calls.create(..., twiml=$SINK, ...)\n"
+    }
+  ]
+}

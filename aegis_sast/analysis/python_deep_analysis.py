@@ -22,6 +22,14 @@ else:
     FunctionIndex = Any
     ImportResolver = Any
 
+PYTHON_PROJECT_ROOT_MARKERS = (
+    "pyproject.toml",
+    "requirements.txt",
+    "Pipfile",
+    "setup.py",
+    "manage.py",
+)
+
 
 @dataclass(frozen=True)
 class PythonProjectContext:
@@ -90,7 +98,8 @@ class PythonDeepAnalyzer:
         source_rules: Optional[list[dict]] = None,
     ) -> PythonFileAnalysis:
         """Prepare Python-only analysis state for one file."""
-        resolved_context = context or self.build_context(project_root or file_path.parent)
+        inferred_root = project_root or self._infer_project_root(file_path)
+        resolved_context = context or self.build_context(inferred_root)
         import_map = resolved_context.import_resolver.resolve_imports(file_path)
         synthetic_sources = self.extract_cross_file_sources(
             syntax_tree=syntax_tree,
@@ -104,6 +113,31 @@ class PythonDeepAnalyzer:
             function_index=resolved_context.function_index,
             import_resolver=resolved_context.import_resolver,
         )
+
+    @staticmethod
+    def _infer_project_root(file_path: Path) -> Path:
+        """Infer a wider Python scan root for single-file scans.
+
+        For nested package files, using only ``file_path.parent`` is often too
+        narrow to resolve sibling-package imports such as
+        ``from common.utils import get_command``. This helper first looks for
+        common project markers while walking upward, then falls back to the
+        parent just above the highest contiguous Python package chain.
+        """
+        file_path = Path(file_path)
+        start_directory = file_path.parent
+
+        for candidate in [start_directory, *start_directory.parents]:
+            if any((candidate / marker).exists() for marker in PYTHON_PROJECT_ROOT_MARKERS):
+                return candidate
+            if (candidate / ".git").exists():
+                return candidate
+
+        package_root = start_directory
+        while (package_root / "__init__.py").exists() and package_root.parent != package_root:
+            package_root = package_root.parent
+
+        return package_root
 
     def extract_cross_file_sources(
         self,

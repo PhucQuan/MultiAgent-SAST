@@ -6,7 +6,7 @@
       "case_id": "python-sql-injection-extension",
       "family": "SQL_INJECTION",
       "target": "examples/vulnerable_sqli.py",
-      "reviewed_rules": "reports/rule_review/sql_injection_seed/python_sql_injection_semgrep_shape.legacy.yaml",
+      "reviewed_rule_profile": "semgrep-python-core4",
       "goal": "Check whether the fixed default scanner and the reviewed SQLi bundle keep execute-family sink coverage aligned."
     }
   ]
