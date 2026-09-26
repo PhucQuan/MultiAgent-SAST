@@ -116,6 +116,8 @@ export function CodeBrowserPage({
 
           <button
             type="button"
+            aria-label="Copy file path"
+            title="Copy file path"
             onClick={() => {
               navigator.clipboard.writeText(selectedFile);
               toast.success("File path copied");
@@ -176,7 +178,7 @@ export function CodeBrowserPage({
           <div className="rounded-2xl border border-slate-800 bg-[#0F172A] p-5 font-mono text-[12px] leading-relaxed text-slate-200 shadow-xl overflow-x-auto">
             <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800 text-slate-400 text-[11px]">
               <span># Tree-sitter AST Scanned Buffer</span>
-              <span>Python 3.12</span>
+              <span>{activeFinding?.language || "Language unavailable"}</span>
             </div>
 
             {activeFinding?.taintFlowSteps && activeFinding.taintFlowSteps.length > 0 ? (
@@ -188,7 +190,7 @@ export function CodeBrowserPage({
                   >
                     <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1.5">
                       <span className="font-bold text-amber-400">
-                        // Step {step.stepNumber}: {step.label} (Line {step.line})
+                        {`// Step ${step.stepNumber}: ${step.label} (Line ${step.line})`}
                       </span>
                       <span className="text-[10px]">{step.subLabel}</span>
                     </div>

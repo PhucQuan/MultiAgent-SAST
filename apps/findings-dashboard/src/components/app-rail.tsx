@@ -167,7 +167,7 @@ export function AppRail({
                   {activeProjectName}
                 </span>
               </div>
-              <div className="mt-0.5 text-[10px] text-slate-400">Python 3.12</div>
+              <div className="mt-0.5 text-[10px] text-slate-400">Language from report</div>
             </div>
 
             {/* Footer Links & Badge */}

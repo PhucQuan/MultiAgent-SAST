@@ -11,7 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { PanelLeft, X } from "lucide-react";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { FindingDetail } from "@/components/finding-detail";
@@ -19,7 +19,6 @@ import { FindingQueue, type QueueFilters } from "@/components/finding-queue";
 import { ReportSidebar, type ReportEntry } from "@/components/report-sidebar";
 import { AppRail } from "@/components/app-rail";
 import { ScanInventory } from "@/components/scan-inventory";
-import { FindingExpandedModal } from "@/components/finding-expanded-modal";
 import { MetaTag } from "@/components/status-badge";
 import { TopBar } from "@/components/top-bar";
 import { DashboardOverviewPage } from "@/components/pages/dashboard-overview-page";
@@ -230,25 +229,6 @@ function sortFindings(
   });
 }
 
-function useMediaQuery(query: string) {
-  return useSyncExternalStore(
-    (onStoreChange) => {
-      if (typeof window === "undefined") {
-        return () => undefined;
-      }
-
-      const mediaQuery = window.matchMedia(query);
-      const handler = () => onStoreChange();
-
-      mediaQuery.addEventListener("change", handler);
-      return () => mediaQuery.removeEventListener("change", handler);
-    },
-    () =>
-      typeof window !== "undefined" ? window.matchMedia(query).matches : false,
-    () => false,
-  );
-}
-
 function useHydrated() {
   return useSyncExternalStore(
     () => () => undefined,
@@ -412,7 +392,6 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [activeAppTab, setActiveAppTab] = useState<string>("scans");
   const [selectedQuickFamily, setSelectedQuickFamily] = useState<string | null>(null);
-  const [expandedModalOpen, setExpandedModalOpen] = useState(false);
   const [scanSheetOpen, setScanSheetOpen] = useState(false);
   const [scanTargetPath, setScanTargetPath] = useState("");
   const [scanEnableAi, setScanEnableAi] = useState(false);
@@ -431,7 +410,6 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const appliedLocationStateRef = useRef<string | null>(null);
   const missingLinkedReportRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
-  const hasSidebar = useMediaQuery("(min-width: 1024px)");
   const scanRunning = scanJobStatus === "queued" || scanJobStatus === "running";
 
   useEffect(() => {
@@ -1222,13 +1200,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
       />
 
       {/* Far Left: Slim App Rail */}
-      <AppRail
-        activeTab={activeAppTab}
-        onTabChange={setActiveAppTab}
-        findingsCount={allFindings.length}
-        activeProjectName={selectedReportSummary?.shortName}
-        lastScanDuration="4.2s"
-      />
+      <div className="hidden lg:flex">
+        <AppRail
+          activeTab={activeAppTab}
+          onTabChange={setActiveAppTab}
+          findingsCount={allFindings.length}
+          activeProjectName={selectedReportSummary?.shortName}
+          lastScanDuration="n/a"
+        />
+      </div>
 
       {/* Main Workspace Area */}
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
@@ -1246,6 +1226,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           onRunScan={handleOpenScanSheet}
           copyLinkDisabled={!shareableWorkspaceReport}
           scanPending={scanRunning}
+          findings={allFindings}
+          onOpenExplorer={() => setExplorerOpen(true)}
         />
 
         {/* Dynamic Page Router based on activeAppTab */}
@@ -1262,6 +1244,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           <VulnerabilityDeepDivePage
             finding={selectedFinding}
             allFindings={filteredFindings}
+            reportTimestamp={selectedReport?.timestamp}
             onSelectFinding={handleSelectFinding}
             onBackToWorkbench={() => setActiveAppTab("scans")}
           />
@@ -1278,6 +1261,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         ) : activeAppTab === "ai" ? (
           <AiTriagePage
             findings={allFindings}
+            reviewStore={reviewStore}
             onOpenFindingDeepDive={(f) => {
               handleSelectFinding(f.key);
               setActiveAppTab("vulnerabilities");
@@ -1296,16 +1280,18 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           <IntegrationsPage />
         ) : activeAppTab === "settings" ? (
           <SettingsPage />
-        ) : (
+          ) : (
           /* Default: 3-Column Tri-Pane Workbench (Scans) */
-          <div className="flex flex-1 overflow-hidden min-h-0">
+          <div className="flex flex-1 min-h-0 overflow-hidden">
             {/* Column 1: Scan Inventory */}
-            <ScanInventory
-              reports={reportEntries}
-              selectedReportId={effectiveSelectedReportId}
-              onSelectReport={(r) => handleSelectReport(r.sourcePath)}
-              activeReport={selectedReportSummary}
-            />
+            <div className="hidden w-[260px] shrink-0 lg:flex">
+              <ScanInventory
+                reports={reportEntries}
+                selectedReportId={effectiveSelectedReportId}
+                onSelectReport={(r) => handleSelectReport(r.sourcePath)}
+                activeReport={selectedReportSummary}
+              />
+            </div>
 
             {/* Column 2: Findings Queue Table */}
             <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
@@ -1326,47 +1312,55 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
               />
             </div>
 
-            {/* Column 3: Finding Detail & Exploit Path (Persistent) */}
-            <FindingDetail
-              key={selectedFinding?.key ?? "empty-detail"}
-              finding={selectedFinding}
-              feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
-              loading={loadingSelectedReport}
-              currentIndex={currentFindingIndex}
-              totalCount={filteredFindings.length}
-              onNavigate={handleNavigateFinding}
-              onExpand={() => setActiveAppTab("vulnerabilities")}
-              onDisposition={(disposition) =>
-                selectedFinding && handleSetDisposition(selectedFinding.key, disposition)
-              }
-              onMuteToggle={() =>
-                selectedFinding &&
-                handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)
-              }
-              onSaveNote={(note) => {
-                if (!selectedFinding) return;
-                handleSaveNote(selectedFinding.key, note);
-              }}
-              onReset={() => {
-                if (!selectedFinding) return;
-                handleClearFeedback(selectedFinding.key);
-              }}
-            />
+            {/* Column 3: Persistent detail on desktop; a sheet on mobile. */}
+            <div className="hidden w-[440px] shrink-0 lg:flex">
+              <FindingDetail
+                key={selectedFinding?.key ?? "empty-detail"}
+                finding={selectedFinding}
+                feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
+                loading={loadingSelectedReport}
+                currentIndex={currentFindingIndex}
+                totalCount={filteredFindings.length}
+                onNavigate={handleNavigateFinding}
+                onExpand={() => setActiveAppTab("vulnerabilities")}
+                onDisposition={(disposition) => selectedFinding && handleSetDisposition(selectedFinding.key, disposition)}
+                onMuteToggle={() => selectedFinding && handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)}
+                onSaveNote={(note) => selectedFinding && handleSaveNote(selectedFinding.key, note)}
+                onReset={() => selectedFinding && handleClearFeedback(selectedFinding.key)}
+              />
+            </div>
           </div>
         )}
       </div>
 
       {/* Expanded Modal (Image 2) */}
-      <FindingExpandedModal
-        finding={selectedFinding}
-        isOpen={expandedModalOpen}
-        onClose={() => setExpandedModalOpen(false)}
-      />
-
       <Sheet open={explorerOpen} onOpenChange={setExplorerOpen}>
         <SheetContent side="left" className="w-[300px] p-0">
           <SheetTitle className="sr-only">Reports</SheetTitle>
           {explorer}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
+          <SheetTitle className="sr-only">Finding detail</SheetTitle>
+          <FindingDetail
+            key={selectedFinding?.key ?? "mobile-empty-detail"}
+            finding={selectedFinding}
+            feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
+            loading={loadingSelectedReport}
+            currentIndex={currentFindingIndex}
+            totalCount={filteredFindings.length}
+            onNavigate={handleNavigateFinding}
+            onExpand={() => {
+              setDetailOpen(false);
+              setActiveAppTab("vulnerabilities");
+            }}
+            onDisposition={(disposition) => selectedFinding && handleSetDisposition(selectedFinding.key, disposition)}
+            onMuteToggle={() => selectedFinding && handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)}
+            onSaveNote={(note) => selectedFinding && handleSaveNote(selectedFinding.key, note)}
+            onReset={() => selectedFinding && handleClearFeedback(selectedFinding.key)}
+          />
         </SheetContent>
       </Sheet>
 

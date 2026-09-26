@@ -83,10 +83,11 @@ export function IntegrationsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => toast.info(`Configured integration: ${item.name}`)}
+                  disabled
+                  title="Feature in preview"
                   className="h-8 rounded-lg text-[12px]"
                 >
-                  Configure
+                  Preview
                 </Button>
               </div>
             </div>

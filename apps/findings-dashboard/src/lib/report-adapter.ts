@@ -15,6 +15,7 @@ import type {
   DiffLine,
   RemediationPatch,
   MultiAgentLedger,
+  ReportMetrics,
 } from "@/lib/report-types";
 
 type JsonRecord = Record<string, unknown>;
@@ -34,6 +35,13 @@ const EMPTY_TRIAGE_SUMMARY: TriageSummary = {
   "needs-review": 0,
   suppressed: 0,
   unknown: 0,
+};
+
+const EMPTY_REPORT_METRICS: ReportMetrics = {
+  precision: null,
+  owaspScore: null,
+  filesScanned: null,
+  aiEnabled: null,
 };
 
 const AGENT_REVIEW_LABELS: Record<string, string> = {
@@ -1201,6 +1209,35 @@ function collectErrors(rawReport: JsonRecord): string[] {
     .filter((value): value is string => Boolean(value));
 }
 
+function normalizeReportMetrics(rawReport: JsonRecord): ReportMetrics {
+  const precision = firstNumber([
+    getPath(rawReport, ["metrics", "precision"]),
+    getPath(rawReport, ["benchmark", "precision"]),
+  ]);
+  const owaspScore = firstNumber([
+    getPath(rawReport, ["metrics", "owasp_score"]),
+    getPath(rawReport, ["metrics", "owaspScore"]),
+    getPath(rawReport, ["benchmark", "owasp_score"]),
+  ]);
+  const filesScanned = firstNumber([
+    getPath(rawReport, ["metrics", "files_scanned"]),
+    getPath(rawReport, ["summary", "files_scanned"]),
+  ]);
+  const aiEnabled = firstBoolean([
+    getPath(rawReport, ["metrics", "ai_enabled"]),
+    getPath(rawReport, ["ai", "enabled"]),
+    getPath(rawReport, ["summary", "ai", "enabled"]),
+  ]);
+
+  return {
+    ...EMPTY_REPORT_METRICS,
+    precision,
+    owaspScore,
+    filesScanned,
+    aiEnabled,
+  };
+}
+
 export function normalizeReport(rawReport: unknown, sourcePath: string): NormalizedReport | null {
   if (!isRecord(rawReport)) {
     return null;
@@ -1257,6 +1294,7 @@ export function normalizeReport(rawReport: unknown, sourcePath: string): Normali
     triageSummary,
     errors: collectErrors(rawReport),
     findings,
+    metrics: normalizeReportMetrics(rawReport),
   };
 }
 
@@ -1273,5 +1311,6 @@ export function summarizeReport(report: NormalizedReport): ReportSummaryCard {
     totalFindings: report.totalFindings,
     severitySummary: report.severitySummary,
     triageSummary: report.triageSummary,
+    metrics: report.metrics,
   };
 }

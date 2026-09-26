@@ -17,7 +17,7 @@ COPY rules/ rules/
 COPY README.md .
 
 # Install the application
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir .P
 
 # Create a directory for the target project to be mounted
 RUN mkdir /target

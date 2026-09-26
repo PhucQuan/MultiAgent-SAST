@@ -64,7 +64,7 @@ export function ScanInventory({
   const totalCount = activeReport?.totalFindings ?? 30;
 
   return (
-    <div className="flex w-[275px] shrink-0 flex-col gap-4 border-r border-border bg-slate-50/70 p-3.5 dark:bg-slate-900/50">
+    <div className="flex h-full w-full min-w-0 flex-col gap-4 border-r border-border bg-slate-50/70 p-3.5 dark:bg-slate-900/50">
       {/* Title */}
       <div className="flex items-center justify-between px-1">
         <h2 className="text-[13px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
@@ -190,7 +190,7 @@ export function ScanInventory({
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Scan ID</span>
             <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-              #142
+              {activeReport?.id ? activeReport.id.slice(-8) : "n/a"}
             </span>
           </div>
 
@@ -207,14 +207,14 @@ export function ScanInventory({
             <span className="text-slate-700 dark:text-slate-300 font-mono text-[11px]">
               {activeReport?.timestamp
                 ? formatDateTime(activeReport.timestamp)
-                : "2025-09-17 14:25"}
+                : "Unavailable"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Duration</span>
             <span className="text-slate-800 dark:text-slate-200 font-medium">
-              4.2 seconds
+              unavailable
             </span>
           </div>
 
@@ -222,7 +222,7 @@ export function ScanInventory({
             <span className="text-slate-500">Branch</span>
             <div className="flex items-center gap-1 font-mono text-slate-700 dark:text-slate-300">
               <GitBranch className="h-3 w-3 text-slate-400" />
-              <span>origin/main</span>
+              <span>branch unavailable</span>
             </div>
           </div>
 

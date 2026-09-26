@@ -42,6 +42,18 @@ export function DashboardOverviewPage({
   const totalConfirmed = reports.reduce((acc, r) => acc + (r.triageSummary?.confirmed ?? 0), 0);
   const totalSuppressed = reports.reduce((acc, r) => acc + (r.triageSummary?.suppressed ?? 0), 0);
   const totalLikely = reports.reduce((acc, r) => acc + (r.triageSummary?.likely ?? 0), 0);
+  const activeFindings = activeReport?.findings ?? [];
+  const owaspCategories = Array.from(
+    activeFindings.reduce((groups, finding) => {
+      const key = finding.owaspCategory || "Uncategorized";
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+      return groups;
+    }, new Map<string, number>()),
+  )
+    .sort(([, left], [, right]) => right - left)
+    .slice(0, 5)
+    .map(([name, count]) => ({ name, count }));
+  const aiReviewed = activeFindings.filter((finding) => finding.multiAgentLedger).length;
 
   const kpis = [
     {
@@ -78,20 +90,12 @@ export function DashboardOverviewPage({
     },
     {
       label: "Detection Precision",
-      value: "91.4%",
-      change: "Benchmark Suite v1",
+      value: activeReport?.metrics.precision == null ? "n/a" : `${(activeReport.metrics.precision * 100).toFixed(1)}%`,
+      change: activeReport?.metrics.precision == null ? "No benchmark metric in report" : "Report-backed precision",
       trend: "up",
       icon: Sparkles,
       color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 dark:text-indigo-400",
     },
-  ];
-
-  const owaspCategories = [
-    { id: "A01:2021", name: "Broken Access Control (CWE-22)", count: 52, status: "High Risk", color: "bg-rose-500" },
-    { id: "A03:2021", name: "Injection (CWE-89, CWE-78)", count: 18, status: "Critical", color: "bg-rose-600" },
-    { id: "A08:2021", name: "Software & Data Integrity (CWE-502)", count: 15, status: "High Risk", color: "bg-orange-500" },
-    { id: "A10:2021", name: "Server-Side Request Forgery (CWE-918)", count: 6, status: "Actionable", color: "bg-amber-500" },
-    { id: "A02:2021", name: "Cryptographic Failures", count: 4, status: "Low Risk", color: "bg-emerald-500" },
   ];
 
   return (
@@ -191,8 +195,8 @@ export function DashboardOverviewPage({
             </div>
 
             <div className="mt-4 space-y-4">
-              {owaspCategories.map((cat) => (
-                <div key={cat.id} className="space-y-1.5">
+              {owaspCategories.length ? owaspCategories.map((cat) => (
+                <div key={cat.name} className="space-y-1.5">
                   <div className="flex items-center justify-between text-[12.5px]">
                     <span className="font-semibold text-slate-800 dark:text-slate-200">
                       {cat.name}
@@ -201,19 +205,19 @@ export function DashboardOverviewPage({
                       <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
                         {cat.count}
                       </span>
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        {cat.status}
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        Observed
                       </span>
                     </div>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div
-                      className={`h-full rounded-full ${cat.color}`}
-                      style={{ width: `${Math.min(100, (cat.count / 60) * 100)}%` }}
+                      className="h-full rounded-full bg-blue-600"
+                      style={{ width: `${Math.min(100, (cat.count / Math.max(1, activeFindings.length)) * 100)}%` }}
                     />
                   </div>
                 </div>
-              ))}
+              )) : <p className="text-[12px] text-slate-500">No OWASP category data in the selected report.</p>}
             </div>
           </div>
 
@@ -227,8 +231,8 @@ export function DashboardOverviewPage({
                     AI Dual-Agent Triage Engine
                   </h3>
                 </div>
-                <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
-                  Operational (Gemini 2.5)
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {activeReport?.metrics.aiEnabled === true ? "AI enabled for report" : "AI status unavailable"}
                 </span>
               </div>
 
@@ -242,7 +246,7 @@ export function DashboardOverviewPage({
                     Attempts exploit payload generation against AST taint paths to prove reproducibility.
                   </p>
                   <div className="mt-3 font-mono text-[11px] font-bold text-rose-800 dark:text-rose-300">
-                    Attack Proofs: 85 Active
+                    Evidence records: {aiReviewed}
                   </div>
                 </div>
 
@@ -255,14 +259,14 @@ export function DashboardOverviewPage({
                     Audits sanitizers, allowlists, and early returns to filter out false positive noise.
                   </p>
                   <div className="mt-3 font-mono text-[11px] font-bold text-blue-800 dark:text-blue-300">
-                    Guards Verified: 32 Clean
+                    Evidence records: {aiReviewed}
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="mt-5 rounded-xl border border-border bg-slate-50/70 p-3.5 text-[12px] text-slate-600 dark:bg-slate-950/40 dark:text-slate-400 flex items-center justify-between">
-              <span>Dual-agent consensus rate: <strong className="text-slate-900 dark:text-slate-100 font-mono">94.8%</strong></span>
+              <span>Agent evidence available: <strong className="text-slate-900 dark:text-slate-100 font-mono">{aiReviewed}</strong></span>
               <Button
                 variant="outline"
                 size="sm"

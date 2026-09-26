@@ -5,6 +5,7 @@ import {
   ChevronRight,
   FolderGit2,
   Moon,
+  PanelLeft,
   Play,
   RefreshCw,
   Search,
@@ -14,7 +15,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/lib/theme";
-import type { ReportSummaryCard } from "@/lib/report-types";
+import type { NormalizedFinding, ReportSummaryCard } from "@/lib/report-types";
 
 interface TopBarProps {
   report: ReportSummaryCard | null;
@@ -29,6 +30,8 @@ interface TopBarProps {
   onRunScan: () => void;
   copyLinkDisabled: boolean;
   scanPending: boolean;
+  findings: NormalizedFinding[];
+  onOpenExplorer?: () => void;
 }
 
 export function TopBar({
@@ -39,6 +42,8 @@ export function TopBar({
   onRefresh,
   onRunScan,
   scanPending,
+  findings,
+  onOpenExplorer,
 }: TopBarProps) {
   const { theme, toggleTheme } = useTheme();
 
@@ -46,13 +51,18 @@ export function TopBar({
     (report?.triageSummary.confirmed ?? 0) + (report?.triageSummary.likely ?? 0);
   const suppressed = report?.triageSummary.suppressed ?? 0;
 
-  // Families filter pills
   const familyPills = [
-    { id: "CWE-89", name: "CWE-89 SQLi", count: 5 },
-    { id: "CWE-78", name: "CWE-78 Command", count: 13 },
-    { id: "CWE-22", name: "CWE-22 Path Traversal", count: 52 },
-    { id: "CWE-502", name: "CWE-502 Deser", count: 15 },
-  ];
+    { id: "CWE-89", name: "CWE-89 SQLi", family: "SQL_INJECTION" },
+    { id: "CWE-78", name: "CWE-78 Command", family: "COMMAND_INJECTION" },
+    { id: "CWE-22", name: "CWE-22 Path Traversal", family: "PATH_TRAVERSAL" },
+    { id: "CWE-502", name: "CWE-502 Deser", family: "INSECURE_DESERIALIZATION" },
+  ].map((pill) => ({
+    ...pill,
+    count: findings.filter((finding) => finding.family === pill.family).length,
+  }));
+
+  const precision = report?.metrics.precision;
+  const owaspScore = report?.metrics.owaspScore;
 
   return (
     <header className="flex h-16 w-full items-center justify-between border-b border-border bg-white px-5 select-none dark:bg-slate-900">
@@ -69,8 +79,8 @@ export function TopBar({
             {report?.shortName || "vulnerable-python-suite"}
           </span>
           <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0" />
-          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-mono font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Scan #142 (main)
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-mono font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            {report ? `${report.scanProfile} · ${report.timestamp ?? "timestamp unavailable"}` : "No report selected"}
           </span>
         </div>
 
@@ -113,27 +123,36 @@ export function TopBar({
 
       {/* Right: Metrics, Theme Switcher, Search, and Profile */}
       <div className="flex shrink-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={onOpenExplorer}
+          aria-label="Open scan explorer"
+          title="Open scan explorer"
+          className="flex h-8.5 w-8.5 items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-surface-muted hover:text-foreground lg:hidden"
+        >
+          <PanelLeft className="h-4 w-4" />
+        </button>
         {/* Precision & OWASP Score Badges */}
         <div className="hidden items-center gap-2 lg:flex">
           <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[12px] font-medium text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-400">
             <Sparkles className="h-3.5 w-3.5" />
             <span>Precision:</span>
-            <span className="font-bold">91.4%</span>
+            <span className="font-bold">{precision == null ? "n/a" : `${(precision * 100).toFixed(1)}%`}</span>
           </div>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[12px] font-medium text-blue-700 dark:border-blue-800/40 dark:bg-blue-950/40 dark:text-blue-400">
             <span>OWASP Score:</span>
-            <span className="font-bold">76.5%</span>
+            <span className="font-bold">{owaspScore == null ? "n/a" : `${(owaspScore * 100).toFixed(1)}%`}</span>
           </div>
 
           {/* Actionable / Suppressed counts */}
           <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[12px] font-medium text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-400">
-            <span className="font-bold">{actionable || 85}</span>
+            <span className="font-bold">{actionable}</span>
             <span>Actionable</span>
           </div>
 
           <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-1 text-[12px] font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
-            <span className="font-bold">{suppressed || 10}</span>
+            <span className="font-bold">{suppressed}</span>
             <span>Suppressed (FP)</span>
           </div>
         </div>

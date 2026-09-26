@@ -316,10 +316,10 @@ export function FindingDetail({
               <div className="flex flex-wrap items-center justify-between gap-1.5">
                 <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
                   <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-[12px]">{ledger?.finalVerdictStatus || "CONFIRMED EXPLOIT"}</span>
+                  <span className="text-[12px]">{ledger?.finalVerdictStatus || finding.status}</span>
                 </div>
                 <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-                  {ledger?.confidenceText || "High Confidence: 94%"}
+                  {ledger?.confidenceText || (finding.confidence == null ? "Confidence unavailable" : `${Math.round(finding.confidence * 100)}% confidence`)}
                 </span>
               </div>
               <p className="mt-1.5 text-[11.5px] leading-relaxed text-slate-700 dark:text-slate-300">
@@ -343,10 +343,12 @@ export function FindingDetail({
 
               <Button
                 size="sm"
+                disabled
+                title="Feature in preview"
                 className="h-7 gap-1.5 rounded-lg bg-blue-600 px-2.5 text-[11.5px] font-medium text-white hover:bg-blue-700"
               >
                 <GitPullRequest className="h-3.5 w-3.5" />
-                <span>Apply Patch / Open PR</span>
+                <span>Patch / PR (Preview)</span>
               </Button>
             </div>
 
@@ -354,6 +356,8 @@ export function FindingDetail({
               <span className="font-mono">{shortenPath(patch.filePath, 3)}</span>
               <button
                 type="button"
+                aria-label="Copy remediation patch"
+                title="Copy remediation patch"
                 className="flex items-center gap-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
               >
                 <Copy className="h-3 w-3" />
