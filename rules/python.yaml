@@ -1,318 +1,462 @@
-# Default Security Rules for Python Analysis
-
 sources:
-  # HTTP Request Parameters
-  - pattern: "request.args.get"
-    type: "HTTP_PARAM"
-    severity: "HIGH"
-  - pattern: "request.args.getlist"
-    type: "HTTP_PARAM"
-    severity: "HIGH"
-  - pattern: "request.form.get"
-    type: "HTTP_FORM"
-    severity: "HIGH"
-  - pattern: "request.form.getlist"
-    type: "HTTP_FORM"
-    severity: "HIGH"
-  - pattern: "request.cookies.get"
-    type: "HTTP_COOKIE"
-    severity: "HIGH"
-  - pattern: "request.headers.get"
-    type: "HTTP_HEADER"
-    severity: "HIGH"
-  - pattern: "request.headers.getlist"
-    type: "HTTP_HEADER"
-    severity: "HIGH"
-  - pattern: "request.headers.get_all"
-    type: "HTTP_HEADER"
-    severity: "HIGH"
-  - pattern: "request.values.get"
-    type: "HTTP_REQUEST"
-    severity: "HIGH"
-  - pattern: "request.args.keys"
-    type: "HTTP_PARAM"
-    severity: "HIGH"
-  - pattern: "request.form.keys"
-    type: "HTTP_FORM"
-    severity: "HIGH"
-  - pattern: "request.headers.keys"
-    type: "HTTP_HEADER"
-    severity: "HIGH"
-  - pattern: "request.json"
-    type: "HTTP_JSON"
-    severity: "HIGH"
-  - pattern: "request.data"
-    type: "HTTP_DATA"
-    severity: "HIGH"
-  - pattern: "request.query_string"
-    type: "HTTP_PARAM"
-    severity: "HIGH"
-  - pattern: ".get_form_parameter("
-    type: "HTTP_FORM"
-    severity: "HIGH"
-  - pattern: ".get_query_parameter("
-    type: "HTTP_PARAM"
-    severity: "HIGH"
-  - pattern: ".get_cookie("
-    type: "HTTP_COOKIE"
-    severity: "HIGH"
-  
-  # User Input
-  - pattern: "input("
-    type: "USER_INPUT"
-    severity: "MEDIUM"
-  
-  # System Arguments
-  - pattern: "sys.argv"
-    type: "COMMAND_LINE_ARGS"
-    severity: "MEDIUM"
-  
-  # Environment Variables
-  - pattern: "os.environ"
-    type: "ENVIRONMENT_VAR"
-    severity: "LOW"
-
+- pattern: request.args.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.form.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.values.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.headers.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.data
+  type: HTTP_DATA
+  severity: MEDIUM
+- pattern: request.GET.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.POST.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.form.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: flask.request.form[...]
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: flask.request.args.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: flask.request.args[...]
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: flask.request.values.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: flask.request.values[...]
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: flask.request.cookies.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.cookies[...]
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.stream
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.headers.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.headers[...]
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.data
+  type: HTTP_DATA
+  severity: MEDIUM
+- pattern: flask.request.full_path
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.url
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.json
+  type: HTTP_DATA
+  severity: MEDIUM
+- pattern: flask.request.get_json(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.view_args.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: flask.request.view_args[...]
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: os.environ
+  type: ENVIRONMENT_VAR
+  severity: MEDIUM
+- pattern: os.environb
+  type: ENVIRONMENT_VAR
+  severity: MEDIUM
+- pattern: sys.argv
+  type: COMMAND_LINE_ARGS
+  severity: MEDIUM
+- pattern: sys.orig_argv
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: self.requestline
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: self.path
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: self.headers[...]
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: self.headers.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: self.rfile
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: sys.argv[...]
+  type: COMMAND_LINE_ARGS
+  severity: MEDIUM
+- pattern: sys.orig_argv[...]
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: input(
+  type: USER_INPUT
+  severity: MEDIUM
+- pattern: request.args.get
+  type: HTTP_PARAM
+  severity: HIGH
+- pattern: request.form.get
+  type: HTTP_FORM
+  severity: HIGH
+- pattern: request.cookies.get
+  type: HTTP_COOKIE
+  severity: HIGH
+- pattern: request.headers.get
+  type: HTTP_HEADER
+  severity: HIGH
+- pattern: request.values.get
+  type: HTTP_PARAM
+  severity: HIGH
+- pattern: request.json
+  type: HTTP_JSON
+  severity: HIGH
 sinks:
-  sqli:
-    - pattern: ".execute("
-      type: "SQL_INJECTION"
-      severity: "CRITICAL"
-      description: "SQL query execution without parameterization"
-    
-    - pattern: ".executemany("
-      type: "SQL_INJECTION"
-      severity: "CRITICAL"
-      description: "Batch SQL execution"
-    
-    - pattern: ".raw("
-      type: "SQL_INJECTION"
-      severity: "CRITICAL"
-      description: "Raw SQL query (Django ORM)"
-  
   rce:
-    - pattern: "os.system("
-      type: "COMMAND_INJECTION"
-      severity: "CRITICAL"
-      description: "Direct system command execution"
-    
-    - pattern: "subprocess.call("
-      type: "COMMAND_INJECTION"
-      severity: "CRITICAL"
-      description: "Subprocess command execution"
-    
-    - pattern: "subprocess.run("
-      type: "COMMAND_INJECTION"
-      severity: "CRITICAL"
-      description: "Subprocess command execution"
-    
-    - pattern: "subprocess.Popen("
-      type: "COMMAND_INJECTION"
-      severity: "CRITICAL"
-      description: "Subprocess with shell access"
-    
-    - pattern: "eval("
-      type: "CODE_INJECTION"
-      severity: "CRITICAL"
-      description: "Dynamic code evaluation"
-    
-    - pattern: "exec("
-      type: "CODE_INJECTION"
-      severity: "CRITICAL"
-      description: "Dynamic code execution"
-    
-    - pattern: "__import__("
-      type: "CODE_INJECTION"
-      severity: "HIGH"
-      description: "Dynamic module import"
-  
+  - pattern: subprocess.run(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: subprocess.call(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: subprocess.Popen(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: os.system(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: os.popen(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: asyncio.create_subprocess_exec(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Detected 'create_subprocess_exec' function with user controlled data.
+      You may consider using 'shlex.escape()'.
+  - pattern: asyncio.subprocess.create_subprocess_exec(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Detected 'create_subprocess_exec' function with user controlled data.
+      You may consider using 'shlex.escape()'.
+  - pattern: os.popen2(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Found user-controlled data used in a system call. This could allow
+      a malicious actor to execute commands. Use the 'subprocess' module instead,
+      which is easier to use without accidentally exposing a command injection vulnerability.
+  - pattern: os.popen3(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Found user-controlled data used in a system call. This could allow
+      a malicious actor to execute commands. Use the 'subprocess' module instead,
+      which is easier to use without accidentally exposing a command injection vulnerability.
+  - pattern: os.popen4(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Found user-controlled data used in a system call. This could allow
+      a malicious actor to execute commands. Use the 'subprocess' module instead,
+      which is easier to use without accidentally exposing a command injection vulnerability.
+  - pattern: getattr(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Found user-controlled data used in a system call. This could allow
+      a malicious actor to execute commands. Use the 'subprocess' module instead,
+      which is easier to use without accidentally exposing a command injection vulnerability.
+  - pattern: __import__(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Found user-controlled data used in a system call. This could allow
+      a malicious actor to execute commands. Use the 'subprocess' module instead,
+      which is easier to use without accidentally exposing a command injection vulnerability.
   path_traversal:
-    - pattern: "open("
-      type: "PATH_TRAVERSAL"
-      severity: "HIGH"
-      description: "File access with potentially malicious path"
-    
-    - pattern: "pathlib.Path("
-      type: "PATH_TRAVERSAL"
-      severity: "MEDIUM"
-      description: "Path construction - check for directory traversal"
-
-    - pattern: ".exists("
-      type: "PATH_TRAVERSAL"
-      severity: "MEDIUM"
-      description: "Path existence check with potentially malicious path"
-
-    - pattern: ".read_text("
-      type: "PATH_TRAVERSAL"
-      severity: "HIGH"
-      description: "Path read using potentially malicious file path"
-
-    - pattern: ".write_text("
-      type: "PATH_TRAVERSAL"
-      severity: "HIGH"
-      description: "Path write using potentially malicious file path"
-
-    - pattern: ".read_bytes("
-      type: "PATH_TRAVERSAL"
-      severity: "HIGH"
-      description: "Binary path read using potentially malicious file path"
-
-    - pattern: ".write_bytes("
-      type: "PATH_TRAVERSAL"
-      severity: "HIGH"
-      description: "Binary path write using potentially malicious file path"
-
-  xss:
-    - pattern: "render_template_string("
-      type: "XSS"
-      severity: "HIGH"
-      description: "Reflected Cross-Site Scripting via template rendering"
-    
-    - pattern: "Markup("
-      type: "XSS"
-      severity: "HIGH"
-      description: "Bypassing HTML escaping with Markup"
-
-  ssrf:
-    - pattern: "requests.get("
-      type: "SSRF"
-      severity: "HIGH"
-      description: "Server-Side Request Forgery via HTTP GET"
-      
-    - pattern: "urllib.request.urlopen("
-      type: "SSRF"
-      severity: "HIGH"
-      description: "Server-Side Request Forgery via urlopen"
-
-  nosqli:
-    - pattern: "collection.find("
-      type: "NOSQL_INJECTION"
-      severity: "CRITICAL"
-      description: "NoSQL DB Query without sanitization"
-      
-    - pattern: "db.users.find("
-      type: "NOSQL_INJECTION"
-      severity: "CRITICAL"
-      description: "NoSQL DB Query without sanitization"
-      
-    - pattern: "db.find("
-      type: "NOSQL_INJECTION"
-      severity: "CRITICAL"
-      description: "NoSQL DB Query without sanitization"
-
-  xxe:
-    - pattern: "ElementTree.parse("
-      type: "XXE"
-      severity: "HIGH"
-      description: "XML External Entity parsing"
-      
-    - pattern: "etree.fromstring("
-      type: "XXE"
-      severity: "HIGH"
-      description: "XML External Entity parsing via lxml"
-
-  idor:
-    - pattern: "User.query.get("
-      type: "IDOR"
-      severity: "MEDIUM"
-      description: "Insecure Direct Object Reference via explicit DB get"
-      
-    - pattern: "session.query("
-      type: "IDOR"
-      severity: "MEDIUM"
-      description: "Query execution without ownership check"
-
-  ssti:
-    - pattern: "Template("
-      type: "SSTI"
-      severity: "CRITICAL"
-      description: "Server-Side Template Injection via Jinja2 Template"
-      
+  - pattern: open(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: send_file(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: os.remove(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: os.listdir(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
   deserialization:
-    - pattern: "pickle.loads("
-      type: "INSECURE_DESERIALIZATION"
-      severity: "CRITICAL"
-      description: "Untrusted data deserialization via pickle"
-      
-    - pattern: "yaml.unsafe_load("
-      type: "INSECURE_DESERIALIZATION"
-      severity: "CRITICAL"
-      description: "Untrusted data deserialization via yaml"
-      
-    - pattern: "yaml.load("
-      type: "INSECURE_DESERIALIZATION"
-      severity: "HIGH"
-      description: "Potentially unsafe yaml load depending on Loader"
+  - pattern: pickle.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: pickle.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: _pickle.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: _pickle.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: cPickle.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: cPickle.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: dill.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: dill.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: yaml.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: yaml.unsafe_load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  sqli:
+  - pattern: execute(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: executemany(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: raw(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: sqlalchemy.text(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: 'import mysql
 
-  mass_assignment:
-    - pattern: ".update(**"
-      type: "MASS_ASSIGNMENT"
-      severity: "HIGH"
-      description: "Unfiltered mass assignment updating attributes"
-      
-    - pattern: ".create(**"
-      type: "MASS_ASSIGNMENT"
-      severity: "HIGH"
-      description: "Unfiltered mass assignment creating models"
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = %s'', (''active''))`'
+  - pattern: 'import mysql.cursors
 
-  open_redirect:
-    - pattern: "redirect("
-      type: "OPEN_REDIRECT"
-      severity: "MEDIUM"
-      description: "Unvalidated URL redirection"
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = %s'', (''active''))`'
+  - pattern: 'import psycopg2
 
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = %s'', ''active'')`'
+  - pattern: 'import pymssql
+
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = %s'', ''active'')`'
+  - pattern: 'import pymysql
+
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = %s'', (''active''))`'
+  - pattern: 'import pymysql.cursors
+
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = %s'', (''active''))`'
+  - pattern: 'import sqlalchemy
+
+      ...'
+    type: SQL_INJECTION
+    severity: HIGH
+    description: 'Detected SQL statement that is tainted by `event` object. This could
+      lead to SQL injection if the variable is user-controlled and not properly sanitized.
+      In order to prevent SQL injection, use parameterized queries or prepared statements
+      instead. You can use parameterized statements like so: `cursor.execute(''SELECT
+      * FROM projects WHERE status = ?'', ''active'')`'
+  ssrf:
+  - pattern: requests.get(
+    type: SSRF
+    severity: HIGH
+    description: Reviewed Semgrep SSRF coverage for requests.get and urllib.request.urlopen
+  - pattern: urllib.request.urlopen(
+    type: SSRF
+    severity: HIGH
+    description: Reviewed Semgrep SSRF coverage for requests.get and urllib.request.urlopen
+  xss:
+  - pattern: return "...".format(...)
+    type: XSS
+    severity: HIGH
+    description: Detected Flask route directly returning a formatted string. This
+      is subject to cross-site scripting if user input can reach the string. Consider
+      using the template engine instead and rendering pages with 'render_template()'.
+  - pattern: return "..." % ...
+    type: XSS
+    severity: HIGH
+    description: Detected Flask route directly returning a formatted string. This
+      is subject to cross-site scripting if user input can reach the string. Consider
+      using the template engine instead and rendering pages with 'render_template()'.
+  - pattern: return "..." + ...
+    type: XSS
+    severity: HIGH
+    description: Detected Flask route directly returning a formatted string. This
+      is subject to cross-site scripting if user input can reach the string. Consider
+      using the template engine instead and rendering pages with 'render_template()'.
+  - pattern: return ... + "..."
+    type: XSS
+    severity: HIGH
+    description: Detected Flask route directly returning a formatted string. This
+      is subject to cross-site scripting if user input can reach the string. Consider
+      using the template engine instead and rendering pages with 'render_template()'.
+  - pattern: return f"...{...}..."
+    type: XSS
+    severity: HIGH
+    description: Detected Flask route directly returning a formatted string. This
+      is subject to cross-site scripting if user input can reach the string. Consider
+      using the template engine instead and rendering pages with 'render_template()'.
 sanitizers:
-  # SQL Sanitization
-  - pattern: "escape_string("
-    mitigates: ["SQL_INJECTION"]
-    description: "MySQL string escaping"
-  
-  - pattern: "quote("
-    mitigates: ["SQL_INJECTION"]
-    description: "SQL identifier quoting"
-  
-  # Command Injection Sanitization
-  - pattern: "shlex.quote("
-    mitigates: ["COMMAND_INJECTION"]
-    description: "Shell argument escaping"
-  
-  - pattern: "shlex.split("
-    mitigates: ["COMMAND_INJECTION"]
-    description: "Safe shell argument parsing"
-  
-  # Path Traversal Sanitization
-  - pattern: "os.path.abspath("
-    mitigates: ["PATH_TRAVERSAL"]
-    description: "Convert to absolute path"
-  
-  - pattern: "os.path.realpath("
-    mitigates: ["PATH_TRAVERSAL"]
-    description: "Resolve symbolic links and normalize"
-  
-  - pattern: "os.path.normpath("
-    mitigates: ["PATH_TRAVERSAL"]
-    description: "Normalize path"
-  
-  # General Sanitization
-  - pattern: "html.escape("
-    mitigates: ["XSS"]
-    description: "HTML entity escaping for untrusted output"
-
-  - pattern: "markupsafe.escape("
-    mitigates: ["XSS"]
-    description: "MarkupSafe HTML escaping"
-
-  - pattern: "flask.escape("
-    mitigates: ["XSS"]
-    description: "Flask HTML escaping helper"
-  
-  - pattern: "re.escape("
-    mitigates: []
-    description: "Regex special character escaping"
-
-# Safe Patterns (functions that return sanitized data)
-safe_patterns:
-  - "str.isalnum()"
-  - "str.isdigit()"
-  - "int("
-  - "float("
-  - "bool("
+- pattern: shlex.quote(
+  mitigates:
+  - COMMAND_INJECTION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-CMD-001
+- pattern: os.path.basename(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: os.path.abspath(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: os.path.realpath(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: os.path.normpath(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: yaml.safe_load(
+  mitigates:
+  - INSECURE_DESERIALIZATION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-DESER-001
+- pattern: int(
+  mitigates:
+  - SQL_INJECTION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-SQLI-001
+- pattern: float(
+  mitigates:
+  - SQL_INJECTION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-SQLI-001
+- pattern: shlex.split(
+  mitigates:
+  - COMMAND_INJECTION
+  description: Imported sanitizer from dangerous-subprocess-use
+- pattern: pipes.quote(
+  mitigates:
+  - COMMAND_INJECTION
+  description: Imported sanitizer from dangerous-subprocess-use
+- pattern: '{...}'
+  mitigates:
+  - SQL_INJECTION
+  description: Imported sanitizer from dynamodb-filter-injection
+- pattern: django.utils.html.escape(
+  mitigates:
+  - XSS
+  description: Imported sanitizer from raw-html-format
+- pattern: jinja2.escape(
+  mitigates:
+  - XSS
+  description: Imported sanitizer from raw-html-format
+- pattern: flask.escape(
+  mitigates:
+  - XSS
+  description: Imported sanitizer from raw-html-format
+- pattern: xml.sax.saxutils.escape(
+  mitigates:
+  - COMMAND_INJECTION
+  description: Imported sanitizer from twiml-injection
+- pattern: html.escape(
+  mitigates:
+  - COMMAND_INJECTION
+  description: Imported sanitizer from twiml-injection
+safe_patterns: []

@@ -20,9 +20,6 @@ sources:
 - pattern: request.POST.get(
   type: UNTRUSTED_INPUT
   severity: MEDIUM
-- pattern: event
-  type: UNTRUSTED_INPUT
-  severity: MEDIUM
 - pattern: flask.request.form.get(
   type: HTTP_PARAM
   severity: MEDIUM
@@ -110,15 +107,27 @@ sources:
 - pattern: sys.orig_argv[...]
   type: UNTRUSTED_INPUT
   severity: MEDIUM
-- pattern: f"..."
-  type: UNTRUSTED_INPUT
+- pattern: input(
+  type: USER_INPUT
   severity: MEDIUM
-- pattern: '"..." % ...'
-  type: UNTRUSTED_INPUT
-  severity: MEDIUM
-- pattern: '"...".format(...)'
-  type: UNTRUSTED_INPUT
-  severity: MEDIUM
+- pattern: request.args.get
+  type: HTTP_PARAM
+  severity: HIGH
+- pattern: request.form.get
+  type: HTTP_FORM
+  severity: HIGH
+- pattern: request.cookies.get
+  type: HTTP_COOKIE
+  severity: HIGH
+- pattern: request.headers.get
+  type: HTTP_HEADER
+  severity: HIGH
+- pattern: request.values.get
+  type: HTTP_PARAM
+  severity: HIGH
+- pattern: request.json
+  type: HTTP_JSON
+  severity: HIGH
 sinks:
   rce:
   - pattern: subprocess.run(

@@ -111,8 +111,39 @@ def build_semgrep_oss_baseline(
 
     # 7. Export legacy format for detector engine
     legacy_doc, export_report = service.export_legacy_rules(merged)
+
+    # Filter out pseudo-sources like f-strings or format strings that are syntax operations, not inputs
+    pseudo_sources = {'f"..."', '"..." % ...', '"...".format(...)', 'event'}
+    if "sources" in legacy_doc:
+        legacy_doc["sources"] = [
+            s for s in legacy_doc["sources"]
+            if s.get("pattern") not in pseudo_sources
+        ]
+
+    # Include basic input() and parameter sources if not present
+    existing_patterns = {s.get("pattern") for s in legacy_doc.get("sources", [])}
+    baseline_essentials = [
+        {"pattern": "input(", "type": "USER_INPUT", "severity": "MEDIUM"},
+        {"pattern": "request.args.get", "type": "HTTP_PARAM", "severity": "HIGH"},
+        {"pattern": "request.form.get", "type": "HTTP_FORM", "severity": "HIGH"},
+        {"pattern": "request.cookies.get", "type": "HTTP_COOKIE", "severity": "HIGH"},
+        {"pattern": "request.headers.get", "type": "HTTP_HEADER", "severity": "HIGH"},
+        {"pattern": "request.values.get", "type": "HTTP_PARAM", "severity": "HIGH"},
+        {"pattern": "request.data", "type": "HTTP_DATA", "severity": "HIGH"},
+        {"pattern": "request.json", "type": "HTTP_JSON", "severity": "HIGH"},
+    ]
+    for ess in baseline_essentials:
+        if ess["pattern"] not in existing_patterns:
+            legacy_doc["sources"].append(ess)
+            existing_patterns.add(ess["pattern"])
+
     service.write_legacy_document(legacy_doc, legacy_out, "yaml")
     service.write_report(export_report, rep_out)
+
+    # Also sync to default rules/python.yaml so the tool uses Semgrep rules by default
+    default_python_rules_path = repo_root / "rules" / "python.yaml"
+    service.write_legacy_document(legacy_doc, default_python_rules_path, "yaml")
+    print(f"[+] Synced official Semgrep OSS rules to default: {default_python_rules_path.relative_to(repo_root)}")
 
     sinks_count = sum(len(items) for items in legacy_doc.get("sinks", {}).values())
     sources_count = len(legacy_doc.get("sources", []))
