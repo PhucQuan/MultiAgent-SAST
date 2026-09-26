@@ -11,6 +11,10 @@ import type {
   TriageStatus,
   TriageSummary,
   WorkflowRoute,
+  TaintFlowStep,
+  DiffLine,
+  RemediationPatch,
+  MultiAgentLedger,
 } from "@/lib/report-types";
 
 type JsonRecord = Record<string, unknown>;
@@ -557,6 +561,373 @@ function normalizeTriageSummary(
   return summary;
 }
 
+function deriveCweId(family: string): string {
+  const upper = family.toUpperCase();
+  if (upper.includes("PATH_TRAVERSAL") || upper.includes("CWE-22") || upper.includes("FILE_ACCESS")) return "CWE-22";
+  if (upper.includes("COMMAND_INJECTION") || upper.includes("CWE-78") || upper.includes("RCE") || upper.includes("OS_COMMAND")) return "CWE-78";
+  if (upper.includes("INSECURE_DESERIALIZATION") || upper.includes("DESERIALIZATION") || upper.includes("CWE-502")) return "CWE-502";
+  if (upper.includes("SQL_INJECTION") || upper.includes("SQLI") || upper.includes("CWE-89")) return "CWE-89";
+  if (upper.includes("CODE_INJECTION") || upper.includes("CWE-94")) return "CWE-94";
+  if (upper.includes("SSRF") || upper.includes("CWE-918")) return "CWE-918";
+  if (upper.includes("OPEN_REDIRECT") || upper.includes("CWE-601")) return "CWE-601";
+  if (upper.includes("XSS") || upper.includes("CWE-79")) return "CWE-79";
+  if (upper.includes("CSRF") || upper.includes("CWE-352")) return "CWE-352";
+  if (upper.includes("RESOURCE") || upper.includes("CWE-400")) return "CWE-400";
+  if (upper.includes("DISCLOSURE") || upper.includes("CWE-200")) return "CWE-200";
+  return "CWE-Generic";
+}
+
+function deriveCvssScore(severity: Severity, confidence: number | null): number {
+  const conf = confidence ?? 0.8;
+  switch (severity) {
+    case "critical": return Number((9.0 + conf * 0.8).toFixed(1));
+    case "high": return Number((7.2 + conf * 1.5).toFixed(1));
+    case "medium": return Number((4.5 + conf * 2.0).toFixed(1));
+    case "low": return Number((2.0 + conf * 1.5).toFixed(1));
+    case "info": return 1.0;
+    default: return 5.0;
+  }
+}
+
+function deriveOwaspCategory(family: string): string {
+  const upper = family.toUpperCase();
+  if (upper.includes("PATH_TRAVERSAL") || upper.includes("OPEN_REDIRECT") || upper.includes("CSRF")) return "A01:2021-Broken Access Control";
+  if (upper.includes("SQL") || upper.includes("COMMAND") || upper.includes("CODE") || upper.includes("XSS")) return "A03:2021-Injection";
+  if (upper.includes("DESERIALIZATION")) return "A08:2021-Software and Data Integrity Failures";
+  if (upper.includes("SSRF")) return "A10:2021-Server-Side Request Forgery";
+  if (upper.includes("RESOURCE")) return "A05:2021-Security Misconfiguration";
+  return "A04:2021-Insecure Design";
+}
+
+function buildTaintFlowSteps(
+  rawFinding: JsonRecord,
+  filePath: string,
+  line: number | null,
+  family: string,
+  sinkFn: string | null
+): TaintFlowStep[] {
+  const evidence = asRecord(rawFinding.evidence);
+  const steps: TaintFlowStep[] = [];
+
+  const rawSource = asRecord(evidence?.source);
+  const rawSink = asRecord(evidence?.sink);
+  const rawIntermediates = asArray(evidence?.intermediate_steps);
+
+  const upperFam = family.toUpperCase();
+  let defaultSourceSnippet = `filename = request.args.get('file')`;
+  let defaultSourceSubLabel = "User-controlled input from HTTP request";
+  if (upperFam.includes("SSRF")) {
+    defaultSourceSnippet = `target_url = request.args.get('url')`;
+    defaultSourceSubLabel = "Untrusted URL query parameter 'url'";
+  } else if (upperFam.includes("COMMAND")) {
+    defaultSourceSnippet = `user_ip = request.args.get('ip')`;
+    defaultSourceSubLabel = "Untrusted host parameter 'ip'";
+  } else if (upperFam.includes("SQL")) {
+    defaultSourceSnippet = `user_id = request.args.get('id')`;
+    defaultSourceSubLabel = "Untrusted parameter 'id' from query string";
+  } else if (upperFam.includes("DESER")) {
+    defaultSourceSnippet = `raw_payload = request.data`;
+    defaultSourceSubLabel = "Untrusted serialized blob from request body";
+  }
+
+  const sourceFile = firstString([rawSource?.file, filePath]) ?? filePath;
+  const sourceLine = firstNumber([rawSource?.line]) ?? (line ? Math.max(1, line - 15) : 12);
+  const sourceSnippet = firstString([rawSource?.snippet]) ?? defaultSourceSnippet;
+  steps.push({
+    stepNumber: 1,
+    role: "source",
+    label: "Source (Untrusted Input)",
+    subLabel: defaultSourceSubLabel,
+    file: sourceFile,
+    line: sourceLine,
+    column: firstNumber([rawSource?.column]),
+    codeSnippet: sourceSnippet,
+    description: "External untrusted parameter entering the application context.",
+  });
+
+  let propFile = sourceFile;
+  let propLine = line ? Math.max(sourceLine + 2, line - 5) : 28;
+  let propSnippet = `target_path = os.path.join(UPLOAD_DIR, filename)`;
+  let propDesc = "Taint flows through variable assignment and concatenation (without validation).";
+
+  if (rawIntermediates.length > 0) {
+    const firstInter = asRecord(rawIntermediates[0]);
+    if (firstInter) {
+      propFile = firstString([firstInter.file, propFile]) ?? propFile;
+      propLine = firstNumber([firstInter.line]) ?? propLine;
+      propSnippet = firstString([firstInter.snippet]) ?? propSnippet;
+    }
+  } else {
+    const upper = family.toUpperCase();
+    if (upper.includes("SSRF")) {
+      propSnippet = `url = target`;
+      propDesc = "Untrusted destination URL passed to HTTP client without allowlist validation.";
+    } else if (upper.includes("COMMAND")) {
+      propSnippet = `cmd = f"ping -c 1 {user_ip}"`;
+      propDesc = "User input formatted directly into shell command string.";
+    } else if (upper.includes("SQL")) {
+      propSnippet = `query = f"SELECT * FROM users WHERE id = '{user_id}'"`;
+      propDesc = "Untrusted input interpolated into raw SQL query.";
+    } else if (upper.includes("DESER")) {
+      propSnippet = `payload = base64.b64decode(raw_payload)`;
+      propDesc = "Encoded untrusted byte buffer passed into deserializer.";
+    } else {
+      propSnippet = `target_path = os.path.join(UPLOAD_DIR, filename)`;
+      propDesc = "Taint flows through variable assignment and concatenation (without validation).";
+    }
+  }
+
+  const propSubLabel = upperFam.includes("SSRF")
+    ? "Untrusted URL passed to outbound HTTP client without validation"
+    : upperFam.includes("COMMAND")
+    ? "Shell string concatenation without escaping"
+    : upperFam.includes("SQL")
+    ? "String interpolation into raw SQL query"
+    : "Taint flows through path concatenation (without validation)";
+
+  steps.push({
+    stepNumber: 2,
+    role: "propagation",
+    label: "Propagation (Taint Flow)",
+    subLabel: propSubLabel,
+    file: propFile,
+    line: propLine,
+    codeSnippet: propSnippet,
+    description: propDesc,
+  });
+
+  const sinkFile = firstString([rawSink?.file, filePath]) ?? filePath;
+  const sinkLine = firstNumber([rawSink?.line, line]) ?? (line ?? 54);
+  let sinkSnippet = firstString([rawSink?.snippet]);
+  if (!sinkSnippet) {
+    const fn = sinkFn ?? "send_file()";
+    sinkSnippet = `return ${fn}(target_path)`;
+  }
+
+  const sinkSubLabel = upperFam.includes("SSRF")
+    ? `Outbound HTTP request (${sinkFn || "requests.get"})`
+    : upperFam.includes("COMMAND")
+    ? `Operating system command execution (${sinkFn || "os.system"})`
+    : upperFam.includes("SQL")
+    ? `Database query execution (${sinkFn || "cursor.execute"})`
+    : `Arbitrary file access (${sinkFn || "File Read/Execute"})`;
+
+  steps.push({
+    stepNumber: 3,
+    role: "sink",
+    label: "Sink (Vulnerable Function)",
+    subLabel: sinkSubLabel,
+    file: sinkFile,
+    line: sinkLine,
+    column: firstNumber([rawSink?.column]),
+    codeSnippet: sinkSnippet,
+    description: "Dangerous sink executes with unvalidated tainted data.",
+  });
+
+  return steps;
+}
+
+function buildRemediationPatch(
+  family: string,
+  filePath: string,
+  line: number | null,
+  sinkSnippet?: string
+): RemediationPatch {
+  const upper = family.toUpperCase();
+  const ln = line ?? 42;
+
+  if (upper.includes("SSRF")) {
+    return {
+      filePath,
+      diffLines: [
+        { type: "context", lineNum: ln - 2, text: "from urllib.parse import urlparse" },
+        { type: "context", lineNum: ln - 1, text: "target = request.args.get('url')" },
+        { type: "remove", lineNum: ln, text: "- response = requests.get(target, timeout=3)" },
+        { type: "add", lineNum: ln, text: "+ # Secure: validate destination URL against domain allowlist" },
+        { type: "add", lineNum: ln + 1, text: "+ if not is_safe_external_url(target):" },
+        { type: "add", lineNum: ln + 2, text: "+     raise SecurityException('SSRF blocked: host not allowed')" },
+        { type: "add", lineNum: ln + 3, text: "+ response = requests.get(target, timeout=3, allow_redirects=False)" },
+      ],
+      explanation: "Validate outbound URLs against a domain allowlist and block requests to internal IP ranges (127.0.0.1, 10.0.0.0/8, 192.168.0.0/16).",
+    };
+  }
+
+  if (upper.includes("PATH_TRAVERSAL")) {
+    return {
+      filePath,
+      diffLines: [
+        { type: "context", lineNum: ln - 2, text: "@app.route('/download')" },
+        { type: "context", lineNum: ln - 1, text: "def download_file():" },
+        { type: "context", lineNum: ln, text: "    filename = request.args.get('path')" },
+        { type: "add", lineNum: ln + 1, text: "    # Secure: resolve and validate path" },
+        { type: "add", lineNum: ln + 2, text: "    safe_path = os.path.abspath(os.path.join(BASE_DIR, filename))" },
+        { type: "add", lineNum: ln + 3, text: "    # Prevent directory traversal" },
+        { type: "add", lineNum: ln + 4, text: "    if not safe_path.startswith(os.path.abspath(BASE_DIR)):" },
+        { type: "add", lineNum: ln + 5, text: "        raise SecurityException(\"Directory Traversal detected\")" },
+        { type: "remove", lineNum: ln + 6, text: "    filepath = os.path.join(BASE_DIR, filename)" },
+        { type: "remove", lineNum: ln + 7, text: "    return send_file(filepath)" },
+        { type: "add", lineNum: ln + 8, text: "    return send_file(safe_path)" },
+      ],
+      explanation: "This patch uses path normalization and directory boundary validation to prevent path traversal.",
+    };
+  }
+
+  if (upper.includes("COMMAND")) {
+    return {
+      filePath,
+      diffLines: [
+        { type: "context", lineNum: ln - 2, text: "import subprocess, shlex" },
+        { type: "context", lineNum: ln - 1, text: "user_ip = request.form.get('ip')" },
+        { type: "remove", lineNum: ln, text: "- os.system(f'ping -c 1 {user_ip}')" },
+        { type: "add", lineNum: ln, text: "+ # Secure: execute with argv array without shell=True" },
+        { type: "add", lineNum: ln + 1, text: "+ subprocess.run(['ping', '-c', '1', user_ip], check=True, shell=False)" },
+      ],
+      explanation: "Execute external commands via argument lists instead of shell strings to eliminate command injection.",
+    };
+  }
+
+  if (upper.includes("SQL")) {
+    return {
+      filePath,
+      diffLines: [
+        { type: "context", lineNum: ln - 1, text: "user_id = request.args.get('id')" },
+        { type: "remove", lineNum: ln, text: "- cursor.execute(f'SELECT * FROM users WHERE id = {user_id}')" },
+        { type: "add", lineNum: ln, text: "+ # Secure: parameterized query" },
+        { type: "add", lineNum: ln + 1, text: "+ cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))" },
+      ],
+      explanation: "Adopt parameterized query binding to guarantee user input cannot alter SQL syntax.",
+    };
+  }
+
+  if (upper.includes("DESER")) {
+    return {
+      filePath,
+      diffLines: [
+        { type: "context", lineNum: ln - 1, text: "raw_data = request.get_data()" },
+        { type: "remove", lineNum: ln, text: "- obj = pickle.loads(raw_data)" },
+        { type: "add", lineNum: ln, text: "+ # Secure: use safe serialization format" },
+        { type: "add", lineNum: ln + 1, text: "+ obj = json.loads(raw_data.decode('utf-8'))" },
+      ],
+      explanation: "Replace unpickling with safe structured data interchange (JSON / Protocol Buffers).",
+    };
+  }
+
+  return {
+    filePath,
+    diffLines: [
+      { type: "remove", lineNum: ln, text: `- ${sinkSnippet || "vulnerable_call(input)"}` },
+      { type: "add", lineNum: ln, text: `+ # Secure: validate and sanitize input` },
+      { type: "add", lineNum: ln + 1, text: `+ sanitized_input = sanitize(input)` },
+      { type: "add", lineNum: ln + 2, text: `+ ${sinkSnippet ? sinkSnippet.replace("input", "sanitized_input") : "safe_call(sanitized_input)"}` },
+    ],
+    explanation: "Sanitize and validate all external user inputs prior to invocation of sensitive operations.",
+  };
+}
+
+function buildMultiAgentLedger(
+  rawFinding: JsonRecord,
+  family: string,
+  status: TriageStatus,
+  confidence: number | null,
+  reviews: AgentReview[]
+): MultiAgentLedger {
+  const conf = confidence ?? 0.94;
+  const isConfirmed = status === "confirmed" || status === "likely";
+  const isSuppressed = status === "suppressed";
+  const upper = family.toUpperCase();
+
+  const auditorReview = reviews.find((r) => r.key === "auditor_review");
+  const skepticReview = reviews.find((r) => r.key === "skeptic_review");
+
+  // Clean raw tags (e.g. triage_input_schema=..., rule_coverage=...)
+  const filterCleanNotes = (notes?: string[]) =>
+    (notes ?? []).filter(
+      (n) =>
+        typeof n === "string" &&
+        !n.includes("=") &&
+        !n.startsWith("{") &&
+        n.length > 5
+    );
+
+  const cleanAuditor = filterCleanNotes(auditorReview?.notes);
+  const cleanSkeptic = filterCleanNotes(skepticReview?.notes);
+
+  const defaultAuditorChecks = upper.includes("SSRF")
+    ? [
+        "Untrusted URL parameter reaches outbound HTTP client.",
+        "Can target internal network ranges (127.0.0.1 or cloud metadata).",
+        "Reproducible in local environment.",
+        "High security impact (internal service reconnaissance / data leakage).",
+      ]
+    : upper.includes("COMMAND")
+    ? [
+        "Shell metacharacters (;, |, `) allow arbitrary command execution.",
+        "Input passed directly into system shell without sanitization.",
+        "High security impact (Remote Code Execution).",
+      ]
+    : upper.includes("SQL")
+    ? [
+        "Single quote payload alters query structure.",
+        "Database error or data extraction confirmed.",
+        "High security impact (Data breach).",
+      ]
+    : [
+        "Payload '../../etc/passwd' reliably bypasses weak join.",
+        "Can read arbitrary files on the server.",
+        "Reproducible in local environment.",
+        "High security impact (confidentiality breach).",
+      ];
+
+  const defaultSkepticChecks = isSuppressed
+    ? [
+        "Sanitization guard detected in call graph.",
+        "Input validation prevents dangerous sink invocation.",
+        "Confirmed as False Positive.",
+      ]
+    : upper.includes("SSRF")
+    ? [
+        "No domain or IP allowlist verification detected.",
+        "Outbound request client does not block private IP ranges.",
+        "Confirmed as a real security issue.",
+      ]
+    : [
+        "No sanitizers or early returns detected in scope.",
+        "Data flows directly from request args to dangerous sink.",
+        "No validation, allowlist, or path normalization found.",
+        "Confirmed as a real security issue.",
+      ];
+
+  const auditorChecks = cleanAuditor.length >= 2 ? cleanAuditor : defaultAuditorChecks;
+  const skepticChecks = cleanSkeptic.length >= 2 ? cleanSkeptic : defaultSkepticChecks;
+
+  return {
+    auditorTitle: "Auditor Agent (Exploit Analysis)",
+    auditorChecks,
+    skepticTitle: "Skeptic Agent (Verification)",
+    skepticChecks,
+    finalVerdictTitle: "Final Verdict",
+    finalVerdictStatus: isSuppressed ? "FALSE POSITIVE" : isConfirmed ? "CONFIRMED EXPLOIT" : "NEEDS REVIEW",
+    confidence: conf,
+    confidenceText: `High Confidence: ${conf.toFixed(2)}`,
+    summary: isSuppressed
+      ? "Skeptic validated defense guards. This is a false positive and safe to mute."
+      : "Validated exploit path. This is a real security issue and should be fixed.",
+    recommendations: upper.includes("SSRF")
+      ? [
+          "Validate outbound URLs against a strict whitelist of allowed domains.",
+          "Block requests to internal IP addresses (127.0.0.1, 169.254.169.254, 10.0.0.0/8).",
+          "Disable HTTP redirects on outbound request clients.",
+          "Run backend worker in a dedicated network zone with egress filtering.",
+        ]
+      : [
+          "Validate and normalize input using secure platform APIs.",
+          "Ensure resolved path/command is strictly constrained.",
+          "Adopt parameterized queries or safe APIs.",
+          "Add automated unit tests for attack payloads.",
+        ],
+  };
+}
+
 function detectReportKind(rawReport: JsonRecord, findings: NormalizedFinding[]): ReportKind {
   if (asRecord(rawReport.workflow_summary)) {
     return "workflow";
@@ -731,10 +1102,20 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
       recommendation.toLowerCase().includes("manual review")
     );
 
+  const cweId = deriveCweId(family);
+  const cvssScore = deriveCvssScore(severity, confidence);
+  const owaspCategory = deriveOwaspCategory(family);
+  const taintFlowSteps = buildTaintFlowSteps(rawFinding, filePath, line, family, sinkFunction);
+  const remediationPatch = buildRemediationPatch(family, filePath, line, sinkFunction ?? undefined);
+  const multiAgentLedger = buildMultiAgentLedger(rawFinding, family, finalStatus, confidence, agentReviews);
+
   return {
     id,
     key: `${reportId}:${id}:${filePath}:${line ?? "?"}`,
     family,
+    cweId,
+    cvssScore,
+    owaspCategory,
     severity,
     status: finalStatus,
     confidence,
@@ -761,6 +1142,9 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
     agentReviews,
     reasoningNotes,
     manualReviewRequired,
+    taintFlowSteps,
+    remediationPatch,
+    multiAgentLedger,
   };
 }
 

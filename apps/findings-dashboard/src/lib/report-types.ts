@@ -75,10 +75,53 @@ export interface AgentReview {
   metadata: Record<string, unknown>;
 }
 
+export interface TaintFlowStep {
+  stepNumber: number;
+  role: "source" | "propagation" | "sink";
+  label: string;
+  subLabel: string;
+  file: string;
+  line: number | null;
+  column?: number | null;
+  codeSnippet: string;
+  description: string;
+}
+
+export interface DiffLine {
+  type: "context" | "remove" | "add";
+  lineNum?: number;
+  text: string;
+}
+
+export interface RemediationPatch {
+  filePath: string;
+  vulnerableSnippet?: string;
+  secureSnippet?: string;
+  hunkHeader?: string;
+  diffLines: DiffLine[];
+  explanation: string;
+}
+
+export interface MultiAgentLedger {
+  auditorTitle?: string;
+  auditorChecks: string[];
+  skepticTitle?: string;
+  skepticChecks: string[];
+  finalVerdictTitle: string;
+  finalVerdictStatus: string;
+  confidence: number;
+  confidenceText: string;
+  summary: string;
+  recommendations: string[];
+}
+
 export interface NormalizedFinding {
   id: string;
   key: string;
   family: string;
+  cweId: string;
+  cvssScore: number;
+  owaspCategory: string;
   severity: Severity;
   status: TriageStatus;
   confidence: number | null;
@@ -105,6 +148,9 @@ export interface NormalizedFinding {
   agentReviews: AgentReview[];
   reasoningNotes: string[];
   manualReviewRequired: boolean;
+  taintFlowSteps: TaintFlowStep[];
+  remediationPatch: RemediationPatch | null;
+  multiAgentLedger: MultiAgentLedger | null;
 }
 
 export interface NormalizedReport {

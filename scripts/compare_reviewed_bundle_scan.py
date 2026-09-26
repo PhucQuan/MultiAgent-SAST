@@ -2,6 +2,7 @@
 
 Examples:
   python scripts/compare_reviewed_bundle_scan.py examples/vulnerable_rce.py --reviewed-rules reports/rule_review/command_injection_seed/python_command_injection_semgrep_shape.legacy.yaml
+  python scripts/compare_reviewed_bundle_scan.py examples/vulnerable_rce.py --reviewed-rule-profile semgrep-python-core4
   python scripts/compare_reviewed_bundle_scan.py examples/vulnerable_rce.py --reviewed-rules reports/rule_review/command_injection_seed/python_command_injection_semgrep_shape.legacy.yaml --format json --format markdown
 """
 
@@ -22,6 +23,10 @@ if str(REPO_ROOT) not in sys.path:
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from aegis_sast.rule_profiles import (  # noqa: E402
+    resolve_reviewed_rule_profile,
+    reviewed_rule_profile_choices,
+)
 from analyze_scan_report import (  # noqa: E402
     compare_summaries,
     find_source_pattern_mismatches,
@@ -37,11 +42,19 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run default and reviewed-bundle scans side by side on one target.",
     )
     parser.add_argument("target", type=Path, help="File or directory to scan")
-    parser.add_argument(
+    reviewed_group = parser.add_mutually_exclusive_group(required=True)
+    reviewed_group.add_argument(
         "--reviewed-rules",
         type=Path,
-        required=True,
         help="Legacy bridge YAML/JSON rules file exported from a reviewed bundle",
+    )
+    reviewed_group.add_argument(
+        "--reviewed-rule-profile",
+        choices=reviewed_rule_profile_choices(),
+        help=(
+            "Checked-in reviewed overlay bundle to append on top of the built-in rules. "
+            "Use semgrep-python-core4 for the Semgrep-derived Python thesis scope."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -125,10 +138,57 @@ def select_report_path(paths: list[Path], suffix: str) -> Path:
     raise FileNotFoundError(f"Could not find a {suffix} report in the written artifacts.")
 
 
+def resolve_reviewed_rule_inputs(
+    *,
+    reviewed_rules: Path | None,
+    reviewed_rule_profile: str | None,
+) -> tuple[str | None, list[Path]]:
+    """Resolve either one explicit reviewed bundle path or one checked-in profile."""
+    if reviewed_rules is not None and reviewed_rule_profile is not None:
+        raise ValueError(
+            "Choose either --reviewed-rules or --reviewed-rule-profile, not both."
+        )
+    if reviewed_rules is None and reviewed_rule_profile is None:
+        raise ValueError(
+            "Missing reviewed bundle input. Provide --reviewed-rules or --reviewed-rule-profile."
+        )
+
+    if reviewed_rules is not None:
+        resolved_path = reviewed_rules.resolve()
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Reviewed rules file does not exist: {resolved_path}")
+        return None, [resolved_path]
+
+    selected_profile = resolve_reviewed_rule_profile(reviewed_rule_profile)
+    if selected_profile is None:
+        raise ValueError(
+            "Missing reviewed bundle input. Provide --reviewed-rules or --reviewed-rule-profile."
+        )
+
+    resolved_paths: list[Path] = []
+    for overlay_path in selected_profile.append_rules_paths:
+        resolved_path = overlay_path.resolve()
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Reviewed rules file does not exist: {resolved_path}")
+        resolved_paths.append(resolved_path)
+
+    return selected_profile.name, resolved_paths
+
+
+def render_reviewed_rules_label(resolved_reviewed_rules: list[Path]) -> str:
+    """Render the resolved reviewed overlays in one readable field."""
+    if not resolved_reviewed_rules:
+        return "none"
+    if len(resolved_reviewed_rules) == 1:
+        return str(resolved_reviewed_rules[0])
+    return ", ".join(str(path) for path in resolved_reviewed_rules)
+
+
 def build_comparison_summary(
     *,
     target: Path,
-    reviewed_rules: Path,
+    reviewed_rule_profile: str | None,
+    resolved_reviewed_rules: list[Path],
     output_dir: Path,
     default_report_path: Path,
     reviewed_report_path: Path,
@@ -144,10 +204,13 @@ def build_comparison_summary(
 
     default_mismatches = find_source_pattern_mismatches(default_report, limit=mismatch_limit)
     reviewed_mismatches = find_source_pattern_mismatches(reviewed_report, limit=mismatch_limit)
+    resolved_reviewed_rule_strings = [str(path) for path in resolved_reviewed_rules]
 
     return {
         "target": str(target),
-        "reviewed_rules": str(reviewed_rules),
+        "reviewed_rule_profile": reviewed_rule_profile,
+        "reviewed_rules": render_reviewed_rules_label(resolved_reviewed_rules),
+        "resolved_reviewed_rules": resolved_reviewed_rule_strings,
         "output_dir": str(output_dir),
         "artifacts": {
             "default_report": str(default_report_path),
@@ -198,6 +261,8 @@ def print_summary(summary: dict[str, Any], output_path: Path) -> None:
 
     print("Reviewed Bundle Comparison:")
     print(f"  - target: {summary['target']}")
+    if summary.get("reviewed_rule_profile"):
+        print(f"  - reviewed profile: {summary['reviewed_rule_profile']}")
     print(f"  - reviewed rules: {summary['reviewed_rules']}")
     print(f"  - default findings: {default_summary['total_findings']}")
     print(f"  - reviewed findings: {reviewed_summary['total_findings']}")
@@ -268,12 +333,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     target = args.target.resolve()
-    reviewed_rules = args.reviewed_rules.resolve()
 
     if not target.exists():
         raise SystemExit(f"Target does not exist: {target}")
-    if not reviewed_rules.exists():
-        raise SystemExit(f"Reviewed rules file does not exist: {reviewed_rules}")
 
     output_dir = (args.output_dir or default_output_dir(target)).resolve()
     formats = ensure_report_formats(args.format or ["markdown"])
@@ -294,6 +356,11 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     try:
+        reviewed_rule_profile, resolved_reviewed_rules = resolve_reviewed_rule_inputs(
+            reviewed_rules=args.reviewed_rules,
+            reviewed_rule_profile=args.reviewed_rule_profile,
+        )
+
         print("Running default scan...")
         default_result = run_manual_scan(
             custom_rules_path=None,
@@ -302,13 +369,23 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         print("Running reviewed bundle overlay scan...")
-        reviewed_result = run_manual_scan(
-            custom_rules_path=None,
-            append_rules_paths=[reviewed_rules],
-            output_dir=reviewed_scan_dir,
-            **common_kwargs,
-        )
+        if reviewed_rule_profile:
+            reviewed_result = run_manual_scan(
+                custom_rules_path=None,
+                reviewed_rule_profile=reviewed_rule_profile,
+                output_dir=reviewed_scan_dir,
+                **common_kwargs,
+            )
+        else:
+            reviewed_result = run_manual_scan(
+                custom_rules_path=None,
+                append_rules_paths=resolved_reviewed_rules,
+                output_dir=reviewed_scan_dir,
+                **common_kwargs,
+            )
     except FileNotFoundError as exc:
+        parser.error(str(exc))
+    except ValueError as exc:
         parser.error(str(exc))
     except RuntimeError as exc:
         print(f"[error] {exc}")
@@ -319,7 +396,8 @@ def main(argv: list[str] | None = None) -> int:
     reviewed_report_path = select_report_path(reviewed_result["written_reports"], ".json")
     summary = build_comparison_summary(
         target=target,
-        reviewed_rules=reviewed_rules,
+        reviewed_rule_profile=reviewed_rule_profile,
+        resolved_reviewed_rules=resolved_reviewed_rules,
         output_dir=output_dir,
         default_report_path=default_report_path,
         reviewed_report_path=reviewed_report_path,

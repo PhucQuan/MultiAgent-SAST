@@ -65,11 +65,26 @@ SUPPORTED_FAMILIES = {
 }
 SUPPORTED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}
 SUPPORTED_PATTERN_MODES = {"pattern", "pattern-regex", "literal"}
-SUPPORTED_PROFILES = {"generic", "python-rule-workbench-v1"}
+SUPPORTED_PROFILES = {
+    "generic",
+    "python-reviewed-core4-v1",
+    "python-reviewed-ssrf-v1",
+    "python-rule-workbench-v1",
+}
 WORKBENCH_V1_FAMILIES = {
     "COMMAND_INJECTION",
     "PATH_TRAVERSAL",
     "INSECURE_DESERIALIZATION",
+}
+PYTHON_CORE4_FAMILIES = {
+    *WORKBENCH_V1_FAMILIES,
+    "SQL_INJECTION",
+}
+PYTHON_SSRF_FAMILIES = {"SSRF"}
+PROFILE_FAMILY_SCOPES = {
+    "python-rule-workbench-v1": WORKBENCH_V1_FAMILIES,
+    "python-reviewed-core4-v1": PYTHON_CORE4_FAMILIES,
+    "python-reviewed-ssrf-v1": PYTHON_SSRF_FAMILIES,
 }
 LANGUAGE_PREFIXES = {
     "python": "PY",
@@ -1657,7 +1672,8 @@ def _validate_profile_scope(
     path_prefix: str,
 ) -> None:
     """Validate profile-specific scope constraints."""
-    if profile != "python-rule-workbench-v1":
+    scoped_families = PROFILE_FAMILY_SCOPES.get(profile)
+    if scoped_families is None:
         return
 
     language = rule.get("language")
@@ -1668,18 +1684,18 @@ def _validate_profile_scope(
             rule_id=rule_id,
             path=f"{path_prefix}language".rstrip("."),
             code="out_of_scope_language",
-            message="python-rule-workbench-v1 only accepts language='python'.",
+            message=f"{profile} only accepts language='python'.",
         )
 
     family = rule.get("family")
-    if isinstance(family, str) and family not in WORKBENCH_V1_FAMILIES:
+    if isinstance(family, str) and family not in scoped_families:
         _record_issue(
             errors,
             level="error",
             rule_id=rule_id,
             path=f"{path_prefix}family".rstrip("."),
             code="out_of_scope_family",
-            message=f"python-rule-workbench-v1 only accepts families {sorted(WORKBENCH_V1_FAMILIES)}.",
+            message=f"{profile} only accepts families {sorted(scoped_families)}.",
         )
 
 

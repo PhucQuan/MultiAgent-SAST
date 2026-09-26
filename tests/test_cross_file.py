@@ -280,3 +280,49 @@ class TestCrossFileDetection:
             "sources from unrelated functions in the same module"
         )
 
+    def test_single_file_scan_infers_repo_root_for_nested_package_imports(self):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "pyproject.toml").write_text("[tool.poetry]\nname = 'demo'\n", encoding="utf-8")
+
+        common_dir = tmp / "common"
+        common_dir.mkdir()
+        (common_dir / "__init__.py").write_text("", encoding="utf-8")
+        (common_dir / "utils.py").write_text(
+            textwrap.dedent(
+                """\
+                from flask import request
+
+                def get_command():
+                    return request.args.get("cmd")
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        app_dir = tmp / "app"
+        app_dir.mkdir()
+        (app_dir / "__init__.py").write_text("", encoding="utf-8")
+        handler = app_dir / "handler.py"
+        handler.write_text(
+            textwrap.dedent(
+                """\
+                import os
+                from common.utils import get_command
+
+                def run():
+                    cmd = get_command()
+                    os.system(cmd)
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        detector = make_detector()
+        vulnerabilities = detector.analyze_file(handler)
+
+        types = [v.vuln_type.value for v in vulnerabilities]
+        assert any("COMMAND" in vuln_type or "CODE" in vuln_type for vuln_type in types), (
+            "Single-file scans should still infer the surrounding repo root for "
+            "nested package imports"
+        )
+

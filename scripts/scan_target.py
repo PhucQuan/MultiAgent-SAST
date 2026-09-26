@@ -9,6 +9,7 @@ Examples:
   python scripts/scan_target.py C:\\path\\to\\repo --with-ai --output-dir reports/manual/custom
   python scripts/scan_target.py D:\\repo --exclude-dir test --exclude-dir third_party --progress-every 50
   python scripts/scan_target.py D:\\repo --exclude-profile focus --progress-every 50
+  python scripts/scan_target.py examples/vulnerable_rce.py --reviewed-rule-profile semgrep-python-core4
   python scripts/scan_target.py examples/vulnerable_rce.py --append-rules reports/rule_review/command_injection_seed/python_command_injection_semgrep_shape.legacy.yaml
   python scripts/scan_target.py examples/vulnerable_rce.py --view --keep-last 2
   python scripts/scan_target.py examples/vulnerable_rce.py --view --no-save
@@ -39,6 +40,11 @@ except ModuleNotFoundError:  # pragma: no cover - runtime environment dependent
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from aegis_sast.rule_profiles import (  # noqa: E402
+    resolve_reviewed_rule_profile,
+    reviewed_rule_profile_choices,
+)
 
 
 if Console is None:  # pragma: no cover - fallback only used in thin environments
@@ -188,6 +194,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Optional YAML/JSON rules file to merge on top of the built-in rule set. "
             "Use this for reviewed/imported coverage bundles."
+        ),
+    )
+    parser.add_argument(
+        "--reviewed-rule-profile",
+        choices=reviewed_rule_profile_choices(),
+        help=(
+            "Checked-in reviewed overlay bundle to append on top of the built-in rules. "
+            "Use semgrep-python-core4 for the Semgrep-derived Python thesis scope."
         ),
     )
     parser.add_argument(
@@ -434,9 +448,11 @@ def print_scan_controls(
 def print_rule_controls(
     custom_rules_path: Path | None,
     append_rules_paths: list[Path],
+    reviewed_rule_profile: str | None,
 ) -> None:
     """Display how the current scan will source its rule set."""
     print("Rule controls:")
+    print(f"  - reviewed profile: {reviewed_rule_profile or 'none'}")
     print(f"  - replace rules: {custom_rules_path or 'none'}")
     print(
         "  - append rules: "
@@ -725,6 +741,7 @@ def run_manual_scan(
     target: Path,
     custom_rules_path: Path | None = None,
     append_rules_paths: list[Path] | None = None,
+    reviewed_rule_profile: str | None = None,
     output_dir: Path | None = None,
     formats: list[str] | None = None,
     artifact_profile: str = "full",
@@ -752,7 +769,14 @@ def run_manual_scan(
         custom_rules_path = custom_rules_path.resolve()
         if not custom_rules_path.exists():
             raise FileNotFoundError(f"Rules file does not exist: {custom_rules_path}")
+
+    selected_profile = resolve_reviewed_rule_profile(reviewed_rule_profile)
     resolved_append_rules: list[Path] = []
+    for profile_path in selected_profile.append_rules_paths if selected_profile else ():
+        resolved_path = profile_path.resolve()
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Rules file does not exist: {resolved_path}")
+        resolved_append_rules.append(resolved_path)
     for append_path in append_rules_paths or []:
         resolved_path = append_path.resolve()
         if not resolved_path.exists():
@@ -810,7 +834,11 @@ def run_manual_scan(
                 resolved_exclude_globs,
                 progress_every,
             )
-            print_rule_controls(custom_rules_path, resolved_append_rules)
+            print_rule_controls(
+                custom_rules_path,
+                resolved_append_rules,
+                selected_profile.name if selected_profile else None,
+            )
             print_artifact_controls(
                 config.output_formats,
                 keep_last,
@@ -945,6 +973,7 @@ def run_manual_scan(
             "active_profiles": active_profiles,
             "exclude_dirs": resolved_exclude_dirs,
             "exclude_globs": resolved_exclude_globs,
+            "reviewed_rule_profile": selected_profile.name if selected_profile else None,
             "append_rules_paths": resolved_append_rules,
             "scan_result": scan_result,
             "triage_records": triage_records,
@@ -968,6 +997,7 @@ def main() -> int:
             target=args.target,
             custom_rules_path=args.rules,
             append_rules_paths=args.append_rules,
+            reviewed_rule_profile=args.reviewed_rule_profile,
             output_dir=args.output_dir,
             formats=args.format,
             artifact_profile=args.artifact_profile,

@@ -160,6 +160,56 @@ class TestSingleFileTaint:
             f"Expected PATH_TRAVERSAL from request.headers.keys(), got: {types}"
         )
 
+    def test_detects_path_traversal_from_request_query_string_manual_parse(self):
+        code = """\
+            from flask import request
+            import urllib.parse
+
+            def read_file():
+                query_string = request.query_string.decode('utf-8')
+                param_loc = query_string.find('file=')
+                if param_loc == -1:
+                    return 'missing'
+                name = query_string[param_loc + len('file='):]
+                amp_loc = name.find('&')
+                if amp_loc != -1:
+                    name = name[:amp_loc]
+                name = urllib.parse.unquote_plus(name)
+                open(name, 'rb')
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Expected PATH_TRAVERSAL from request.query_string manual parse, got: {types}"
+        )
+
+    def test_detects_nested_path_read_text_inside_multiline_statement(self):
+        code = """\
+            from flask import request
+            import pathlib
+
+            def read_file():
+                name = request.args.get('file')
+                base = pathlib.Path('/tmp')
+                target = base / name
+                response = (
+                    f"Preview: "
+                    f"{target.read_text()[:100]}"
+                )
+                return response
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("PATH" in t for t in types), (
+            f"Expected nested Path.read_text() sink to be detected, got: {types}"
+        )
+
     def test_detects_path_traversal_across_match_case_assignment(self):
         code = """\
             from flask import request
@@ -284,6 +334,221 @@ class TestSingleFileTaint:
         vulns = detector.analyze_file(path)
         assert all("PATH" not in v.vuln_type.value for v in vulns), (
             f"Constant match safe branch should not be reported: {vulns}"
+        )
+
+    def test_suppresses_deserialization_when_constant_ifexp_resolves_safe_branch(self):
+        code = """\
+            from flask import request
+            import yaml
+
+            def load_payload():
+                param = request.args.get('payload')
+                num = 106
+                bar = 'safe-text' if 7 * 18 + num > 200 else param
+                yaml.load(bar, Loader=yaml.Loader)
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("DESERIALIZATION" not in v.vuln_type.value for v in vulns), (
+            f"Constant-safe ifexp branch should not be reported as deserialization: {vulns}"
+        )
+
+    def test_keeps_deserialization_when_constant_ifexp_resolves_tainted_branch(self):
+        code = """\
+            from flask import request
+            import base64
+            import pickle
+
+            def load_payload():
+                param = request.headers.get('payload')
+                num = 106
+                bar = 'never-used' if 7 * 18 - num > 200 else param
+                pickle.loads(base64.urlsafe_b64decode(bar))
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("DESERIALIZATION" in t for t in types), (
+            f"Tainted ifexp branch should still be reported as deserialization, got: {types}"
+        )
+
+    def test_suppresses_deserialization_when_constant_match_selects_safe_case(self):
+        code = """\
+            from flask import request
+            import yaml
+
+            def load_payload():
+                param = request.headers.get('payload')
+                possible = 'ABC'
+                guess = possible[1]
+                match guess:
+                    case 'A':
+                        bar = param
+                    case 'B':
+                        bar = 'bob'
+                    case 'C' | 'D':
+                        bar = param
+                    case _:
+                        bar = 'fallback'
+                yaml.load(bar, Loader=yaml.Loader)
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("DESERIALIZATION" not in v.vuln_type.value for v in vulns), (
+            f"Constant match safe branch should not be reported as deserialization: {vulns}"
+        )
+
+    def test_suppresses_deserialization_when_safe_dict_lookup_overwrites_bar(self):
+        code = """\
+            from flask import request
+            import base64
+            import pickle
+
+            def load_payload():
+                param = request.form.get('payload')
+                mapping = {}
+                mapping['keyA-demo'] = 'safe-value'
+                mapping['keyB-demo'] = param
+                bar = mapping['keyB-demo']
+                bar = mapping['keyA-demo']
+                pickle.loads(base64.urlsafe_b64decode(bar))
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("DESERIALIZATION" not in v.vuln_type.value for v in vulns), (
+            f"Safe dict overwrite should not be reported as deserialization: {vulns}"
+        )
+
+    def test_suppresses_deserialization_when_safe_list_slot_is_selected(self):
+        code = """\
+            from flask import request
+            import base64
+            import pickle
+
+            def load_payload():
+                param = request.args.get('payload')
+                bar = 'fallback'
+                if param:
+                    items = []
+                    items.append('safe')
+                    items.append(param)
+                    items.append('moresafe')
+                    items.pop(0)
+                    bar = items[1]
+                pickle.loads(base64.urlsafe_b64decode(bar))
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("DESERIALIZATION" not in v.vuln_type.value for v in vulns), (
+            f"Safe list selection should not be reported as deserialization: {vulns}"
+        )
+
+    def test_suppresses_deserialization_when_constant_if_branch_selects_safe_value(self):
+        code = """\
+            from flask import request
+            import yaml
+
+            def load_payload():
+                param = request.headers.get('payload')
+                num = 86
+                if 7 * 42 - num > 200:
+                    bar = 'This_should_always_happen'
+                else:
+                    bar = param
+                yaml.load(bar, Loader=yaml.Loader)
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("DESERIALIZATION" not in v.vuln_type.value for v in vulns), (
+            f"Constant if safe branch should not be reported as deserialization: {vulns}"
+        )
+
+    def test_suppresses_command_injection_when_safe_dict_lookup_overwrites_bar(self):
+        code = """\
+            from flask import request
+            import subprocess
+
+            def run_command():
+                param = request.form.get('cmd')
+                mapping = {}
+                mapping['keyA-demo'] = 'a-Value'
+                mapping['keyB-demo'] = param
+                bar = 'safe!'
+                bar = mapping['keyB-demo']
+                bar = mapping['keyA-demo']
+                arg_str = 'sh -c '
+                arg_str += f"echo {bar}"
+                subprocess.run(arg_str, shell=True)
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("COMMAND" not in v.vuln_type.value for v in vulns), (
+            f"Safe dict overwrite should not be reported as command injection: {vulns}"
+        )
+
+    def test_suppresses_command_injection_when_config_reads_safe_option(self):
+        code = """\
+            import configparser
+            from flask import request
+            import subprocess
+
+            def run_command():
+                param = request.headers.get('cmd')
+                conf = configparser.ConfigParser()
+                conf.add_section('demo')
+                conf.set('demo', 'safe', 'a_Value')
+                conf.set('demo', 'user', param)
+                bar = conf.get('demo', 'safe')
+                arg_str = 'sh -c '
+                arg_str += f"echo {bar}"
+                subprocess.run(arg_str, shell=True)
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        assert all("COMMAND" not in v.vuln_type.value for v in vulns), (
+            f"Safe ConfigParser option should not be reported as command injection: {vulns}"
+        )
+
+    def test_keeps_command_injection_when_config_reads_tainted_option(self):
+        code = """\
+            import configparser
+            from flask import request
+            import subprocess
+
+            def run_command():
+                param = request.args.get('cmd')
+                conf = configparser.ConfigParser()
+                conf.add_section('demo')
+                conf.set('demo', 'safe', 'a_Value')
+                conf.set('demo', 'user', param)
+                bar = conf.get('demo', 'user')
+                arg_str = 'sh -c '
+                arg_str += f"echo {bar}"
+                subprocess.run(arg_str, shell=True)
+        """
+        tmp_dir = write_temp_dir({"app.py": code})
+        path = tmp_dir / "app.py"
+        detector = make_detector()
+        vulns = detector.analyze_file(path, project_root=tmp_dir)
+        types = [v.vuln_type.value for v in vulns]
+        assert any("COMMAND" in t for t in types), (
+            f"Tainted ConfigParser option should still be reported as command injection, got: {types}"
         )
 
     def test_keeps_path_traversal_when_config_reads_tainted_option(self):
