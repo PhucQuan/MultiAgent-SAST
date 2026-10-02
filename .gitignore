@@ -60,6 +60,11 @@ datasets/generated/
 .pytest_cache/
 htmlcov/
 
+# Node.js
+node_modules/
+.next/
+
+
 # OS
 .DS_Store
 Thumbs.db

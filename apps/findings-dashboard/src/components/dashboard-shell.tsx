@@ -950,7 +950,9 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     startTransition(() => {
       setSelectedFindingKey(findingKey);
     });
-    setDetailOpen(true);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setDetailOpen(true);
+    }
   }
 
   function handleImportRequest() {
@@ -1412,7 +1414,12 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
       </Sheet>
 
       {scanSheetOpen ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/45">
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/45"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setScanSheetOpen(false);
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
