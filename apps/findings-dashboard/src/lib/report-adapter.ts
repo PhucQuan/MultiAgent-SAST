@@ -1298,6 +1298,65 @@ export function normalizeReport(rawReport: unknown, sourcePath: string): Normali
   };
 }
 
+export function normalizeBackendScanResult(
+  result: {
+    scan_id: string;
+    summary: {
+      target: string;
+      files_scanned: number;
+      total_vulnerabilities: number;
+      by_severity: Record<string, number>;
+      errors: string[];
+    };
+    findings: unknown[];
+    evidence_bundles?: unknown[];
+    triage_records: unknown[];
+    repo_profile: Record<string, unknown>;
+    workflow_metadata: Record<string, unknown>;
+    ai: { enabled: boolean };
+  },
+): NormalizedReport {
+  const findings = result.findings.length
+    ? result.findings
+    : result.triage_records
+        .map((record) => (isRecord(record) ? record.finding : null))
+        .filter((finding): finding is JsonRecord => isRecord(finding));
+  const rawReport = {
+    id: result.scan_id,
+    target: result.summary.target,
+    findings,
+    errors: result.summary.errors,
+    workflow_summary: {
+      ...(result.workflow_metadata ?? {}),
+      ...(result.repo_profile ?? {}),
+    },
+    metrics: {
+      files_scanned: result.summary.files_scanned,
+      ai_enabled: result.ai.enabled,
+    },
+  };
+  return normalizeReport(rawReport, `api:${result.scan_id}`) ?? {
+    id: result.scan_id,
+    sourcePath: `api:${result.scan_id}`,
+    shortName: result.summary.target.split(/[\\/]/).pop() || "API scan",
+    target: result.summary.target,
+    timestamp: new Date().toISOString(),
+    scanProfile: "api",
+    frameworkHints: [],
+    reportKind: "workflow",
+    totalFindings: 0,
+    severitySummary: { ...EMPTY_SEVERITY_SUMMARY },
+    triageSummary: { ...EMPTY_TRIAGE_SUMMARY },
+    errors: result.summary.errors,
+    findings: [],
+    metrics: {
+      ...EMPTY_REPORT_METRICS,
+      filesScanned: result.summary.files_scanned,
+      aiEnabled: result.ai.enabled,
+    },
+  };
+}
+
 export function summarizeReport(report: NormalizedReport): ReportSummaryCard {
   return {
     id: report.id,
