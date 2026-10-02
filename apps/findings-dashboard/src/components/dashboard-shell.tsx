@@ -41,7 +41,17 @@ import {
   shortenPath,
   triageRank,
 } from "@/lib/dashboard-ui";
-import { normalizeReport, summarizeReport } from "@/lib/report-adapter";
+import {
+  normalizeBackendScanResult,
+  normalizeReport,
+  summarizeReport,
+} from "@/lib/report-adapter";
+import {
+  getBackendScanResults,
+  getBackendScanStatus,
+  startBackendScan,
+  type BackendScanJob,
+} from "@/lib/aegis-api";
 import {
   clearReviewEntry,
   readReviewStore,
@@ -155,6 +165,54 @@ const emptyScanJobProgress: ScanJobProgress = {
   indexedFunctions: null,
   durationSeconds: null,
 };
+
+function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["job"]> {
+  const latest = job.progress.at(-1) ?? {};
+  const numberValue = (key: string): number | null =>
+    typeof latest[key] === "number" ? latest[key] as number : null;
+  const stringValue = (key: string): string | null =>
+    typeof latest[key] === "string" ? latest[key] as string : null;
+
+  return {
+    id: job.scan_id,
+    status: job.status,
+    targetPath: String(job.result?.summary.target ?? ""),
+    enableAi: job.result?.ai.enabled ?? false,
+    maxDepth: 5,
+    progressEvery: 1,
+    startedAt: job.started_at,
+    updatedAt: job.finished_at ?? job.started_at,
+    finishedAt: job.finished_at,
+    progress: {
+      ...emptyScanJobProgress,
+      stage: stringValue("stage") ?? (job.status === "completed" ? "completed" : job.status),
+      message: stringValue("message"),
+      totalFiles: numberValue("total_files"),
+      filesScanned: numberValue("files_scanned"),
+      filesProcessed: numberValue("files_processed"),
+      findings: numberValue("findings"),
+      errors: numberValue("errors"),
+      currentFile: stringValue("current_file"),
+      indexedFunctions: numberValue("indexed_functions"),
+      durationSeconds: numberValue("duration_seconds"),
+    },
+    logs: job.progress
+      .map((event) => stringValueForEvent(event))
+      .filter((message): message is string => Boolean(message)),
+    result: null,
+    error: job.error,
+  };
+}
+
+function stringValueForEvent(event: Record<string, unknown>): string | null {
+  if (typeof event.message === "string" && event.message.trim()) {
+    return event.message;
+  }
+  if (typeof event.event === "string") {
+    return event.event;
+  }
+  return null;
+}
 
 function sortByTimestamp<
   T extends { timestamp: string | null; totalFindings: number; id?: string; sourcePath?: string },
@@ -624,9 +682,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
       handledScanJobRef.current = job.id;
 
-      const nextReports = await refreshWorkspaceReports(false);
-      const selectedReportPath = job.result?.selectedReportPath;
-      const nextSelectedReportId = selectedReportPath ?? nextReports[0]?.id ?? null;
+      const result = await getBackendScanResults(job.id);
+      const apiReport = normalizeBackendScanResult(result);
+      setImportedReports((current) =>
+        sortByTimestamp([
+          apiReport,
+          ...current.filter((report) => report.id !== apiReport.id),
+        ]),
+      );
+      const nextSelectedReportId = apiReport.id;
 
       if (nextSelectedReportId) {
         startTransition(() => {
@@ -638,15 +702,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         setReportError(null);
       }
 
-      const filesScanned = job.result?.summary?.files_scanned ?? 0;
-      const findings = job.result?.summary?.total_vulnerabilities ?? 0;
-      const aiRequested = job.result?.ai?.requested === true;
-      const aiEnabled = job.result?.ai?.enabled === true;
+      const filesScanned = result.summary.files_scanned;
+      const findings = result.summary.total_vulnerabilities;
+      const aiRequested = result.ai.requested === true;
+      const aiEnabled = result.ai.enabled === true;
       const aiDetail = aiRequested
         ? aiEnabled
           ? "AI triage overlay applied."
-          : job.result?.ai?.error
-            ? `AI unavailable: ${job.result.ai.error}`
+          : result.ai.error
+            ? `AI unavailable: ${result.ai.error}`
             : "AI triage unavailable for this run."
         : "Deterministic triage only.";
 
@@ -689,26 +753,19 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
     const pollJob = async () => {
       try {
-        const response = await fetch(
-          `/api/scan?jobId=${encodeURIComponent(scanJobId)}`,
-          { cache: "no-store" },
-        );
-        const data = (await response.json()) as ScanJobResponse;
-
-        if (!response.ok || !data.job) {
-          throw new Error(data.error ?? "Unable to load scan status.");
-        }
+        const backendJob = await getBackendScanStatus(scanJobId);
+        const data = backendJobToUiJob(backendJob);
 
         if (cancelled) {
           return;
         }
 
-        applyScanJob(data.job);
+        applyScanJob(data);
 
-        if (data.job.status === "completed") {
-          await finalizeCompletedScan(data.job);
-        } else if (data.job.status === "failed") {
-          finalizeFailedScan(data.job);
+        if (data.status === "completed") {
+          await finalizeCompletedScan(data);
+        } else if (data.status === "failed") {
+          finalizeFailedScan(data);
         }
       } catch (error) {
         if (cancelled) {
@@ -961,25 +1018,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     handledScanJobRef.current = null;
 
     try {
-      const response = await fetch("/api/scan", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const backendJob = await startBackendScan({
+        path: targetPath,
+        config: {
+          enable_ai_verification: scanEnableAi,
+          max_analysis_depth: maxDepth,
         },
-        body: JSON.stringify({
-          targetPath,
-          enableAi: scanEnableAi,
-          maxDepth,
-        }),
       });
-      const data = (await response.json()) as ScanJobResponse;
-
-      if (!response.ok || !data.job) {
-        throw new Error(data.error ?? "Unable to start the local scan.");
-      }
-
-      applyScanJob(data.job);
-      toast("Local scan started", {
+      applyScanJob(backendJobToUiJob(backendJob));
+      toast("Backend scan started", {
         description: "Progress and logs will update live in this panel.",
       });
     } catch (error) {

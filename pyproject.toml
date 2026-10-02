@@ -25,6 +25,8 @@ tqdm = "^4.66.0"
 rich = "^13.7.0"
 pyyaml = "^6.0"
 tenacity = "^8.2.0"
+fastapi = ">=0.115.0"
+uvicorn = {version = ">=0.30.0", extras = ["standard"]}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

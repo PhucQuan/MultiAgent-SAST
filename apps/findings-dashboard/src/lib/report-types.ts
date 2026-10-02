@@ -153,6 +153,19 @@ export interface NormalizedFinding {
   multiAgentLedger: MultiAgentLedger | null;
 }
 
+export interface BackendEvidenceBundle {
+  source: { file: string; line: number; column: number; snippet: string };
+  sink: { file: string; line: number; column: number; snippet: string };
+  intermediate_steps: Array<{
+    file: string;
+    line: number;
+    column: number;
+    snippet: string;
+  }>;
+  sanitizers: Array<Record<string, unknown>>;
+  metadata: Record<string, unknown>;
+}
+
 export interface NormalizedReport {
   id: string;
   sourcePath: string;
