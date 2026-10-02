@@ -175,14 +175,14 @@ function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["jo
 
   return {
     id: job.scan_id,
-    status: job.status,
+    status: (job.status as ScanJobStatus) || "queued",
     targetPath: String(job.result?.summary.target ?? ""),
     enableAi: job.result?.ai.enabled ?? false,
     maxDepth: 5,
     progressEvery: 1,
     startedAt: job.started_at,
     updatedAt: job.finished_at ?? job.started_at,
-    finishedAt: job.finished_at,
+    finishedAt: job.finished_at ?? null,
     progress: {
       ...emptyScanJobProgress,
       stage: stringValue("stage") ?? (job.status === "completed" ? "completed" : job.status),
@@ -200,7 +200,7 @@ function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["jo
       .map((event) => stringValueForEvent(event))
       .filter((message): message is string => Boolean(message)),
     result: null,
-    error: job.error,
+    error: job.error ?? null,
   };
 }
 
