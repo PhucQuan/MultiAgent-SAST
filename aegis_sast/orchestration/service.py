@@ -37,6 +37,7 @@ class ScanPipelineRequest:
     output_formats: list[str] = field(default_factory=lambda: ["json", "markdown"])
     output_dir: Path = field(default_factory=lambda: Path("reports"))
     export_reports: bool = True
+    scan_engine: str = "semgrep"
 
     def __post_init__(self) -> None:
         """Normalize filesystem inputs and list values."""
@@ -55,6 +56,7 @@ class ScanPipelineRequest:
         ]
         self.output_dir = Path(self.output_dir)
         self.output_formats = [value.lower() for value in self.output_formats]
+        self.scan_engine = (self.scan_engine or "semgrep").strip().lower()
 
 
 @dataclass
@@ -143,13 +145,21 @@ class ScanPipelineService:
                 "supported_file_count": repo_profile.metadata.get("supported_file_count"),
             },
         )
-        detector = self._build_detector(request, config)
-        scan_result = self._run_scan_with_progress(
-            detector,
-            request,
-            progress_callback=progress_callback,
-            progress_every=progress_every,
-        )
+        scan_result = None
+        if request.scan_engine == "semgrep":
+            scan_result = self._run_semgrep_bridge_scan(
+                request,
+                progress_callback=progress_callback,
+            )
+
+        if scan_result is None:
+            detector = self._build_detector(request, config)
+            scan_result = self._run_scan_with_progress(
+                detector,
+                request,
+                progress_callback=progress_callback,
+                progress_every=progress_every,
+            )
         repo_profile.files_scanned = scan_result.files_scanned or repo_profile.files_scanned
         repo_profile.metadata.setdefault("actual_files_scanned", scan_result.files_scanned)
         self._emit_progress(
@@ -356,6 +366,78 @@ class ScanPipelineService:
             },
         )
         return scan_result
+
+    def _run_semgrep_bridge_scan(
+        self,
+        request: ScanPipelineRequest,
+        *,
+        progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+    ) -> Optional[ScanResult]:
+        """Execute Semgrep OSS rules and bridge findings with Tree-sitter DFG."""
+        try:
+            from aegis_sast.integrations.semgrep_adapter import (
+                ImportedNormalizedVulnerability,
+            )
+            from aegis_sast.integrations.semgrep_runner import SemgrepRunner
+            from aegis_sast.integrations.taint_bridge import TaintBridge
+
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "stage",
+                    "stage": "semgrep-oss",
+                    "message": "Executing Semgrep OSS community ruleset.",
+                },
+            )
+
+            start_time = datetime.now()
+            runner = SemgrepRunner(
+                rules_path=str(request.rules_path) if request.rules_path else None
+            )
+            matches = runner.run(str(request.target_path))
+
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "stage",
+                    "stage": "taint-bridge",
+                    "message": f"Bridging {len(matches)} Semgrep matches with Tree-sitter DFG taint engine.",
+                },
+            )
+
+            project_root = (
+                request.target_path
+                if request.target_path.is_dir()
+                else request.target_path.parent
+            )
+            bridge = TaintBridge()
+            findings = bridge.bridge_matches(matches, project_root=project_root)
+
+            vulnerabilities = [
+                ImportedNormalizedVulnerability(finding=f) for f in findings
+            ]
+
+            files_scanned = 1
+            if request.target_path.is_dir():
+                files_scanned = len({m.file_path for m in matches}) or 1
+
+            end_time = datetime.now()
+            return ScanResult(
+                target_path=str(request.target_path),
+                start_time=start_time,
+                end_time=end_time,
+                vulnerabilities=vulnerabilities,
+                files_scanned=files_scanned,
+            )
+        except Exception as exc:
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "semgrep-fallback",
+                    "message": f"Semgrep bridge notice: {exc}. Falling back to deterministic detector.",
+                },
+            )
+            return None
 
     @staticmethod
     def _prepare_config(request: ScanPipelineRequest) -> AegisConfig:

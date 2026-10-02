@@ -24,6 +24,7 @@ class ScanPipelineConfig(BaseModel):
     rules_path: str | None = None
     exclude_dir_names: list[str] = Field(default_factory=list)
     exclude_globs: list[str] = Field(default_factory=list)
+    scan_engine: str = "semgrep"
 
 
 class ScanPipelineRequestModel(BaseModel):
@@ -101,6 +102,7 @@ class ScanJobStore:
                 exclude_globs=config.exclude_globs,
                 output_formats=[],
                 export_reports=False,
+                scan_engine=config.scan_engine,
             )
             service = ScanPipelineService()
             result = service.run(

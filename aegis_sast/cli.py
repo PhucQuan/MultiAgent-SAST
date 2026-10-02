@@ -56,6 +56,12 @@ def cli():
     help="Output formats",
 )
 @click.option("--output-dir", type=click.Path(), default="reports", help="Output directory")
+@click.option(
+    "--engine",
+    type=click.Choice(["semgrep", "builtin"]),
+    default="semgrep",
+    help="Underlying scan engine: 'semgrep' (default, Semgrep OSS + Tree-sitter DFG) or 'builtin'",
+)
 def scan(
     target_path,
     rules,
@@ -65,6 +71,7 @@ def scan(
     max_depth,
     output,
     output_dir,
+    engine,
 ):
     """Scan a file or directory for security vulnerabilities."""
     console.print(
@@ -89,6 +96,7 @@ def scan(
         max_analysis_depth=max_depth,
         output_formats=list(output),
         output_dir=Path(output_dir),
+        scan_engine=engine,
     )
 
     if rules or append_rules or selected_profile:
