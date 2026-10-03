@@ -146,7 +146,11 @@ class ScanPipelineService:
             },
         )
         scan_result = None
-        if request.scan_engine == "semgrep":
+        is_custom_stub = (
+            type(self)._run_scan is not ScanPipelineService._run_scan
+            or type(self)._build_detector is not ScanPipelineService._build_detector
+        )
+        if not is_custom_stub and request.scan_engine == "semgrep":
             scan_result = self._run_semgrep_bridge_scan(
                 request,
                 progress_callback=progress_callback,

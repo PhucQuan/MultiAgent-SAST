@@ -135,13 +135,14 @@ def run_benchmark(
         findings_count = len(findings)
         total_findings += findings_count
 
+        triage_records = pipeline_result.triage_records
         confirmed_count = sum(
-            1 for f in findings
-            if getattr(f, "triage_status", None) and getattr(f.triage_status, "value", str(f.triage_status)) == "confirmed"
+            1 for r in triage_records
+            if getattr(r.decision.status, "value", str(r.decision.status)) in ("confirmed", "likely")
         )
         suppressed_count = sum(
-            1 for f in findings
-            if getattr(f, "triage_status", None) and getattr(f.triage_status, "value", str(f.triage_status)) == "suppressed"
+            1 for r in triage_records
+            if getattr(r.decision.status, "value", str(r.decision.status)) == "suppressed"
         )
         total_confirmed += confirmed_count
         total_suppressed += suppressed_count

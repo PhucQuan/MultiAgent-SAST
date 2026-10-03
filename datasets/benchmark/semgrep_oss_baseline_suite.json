@@ -47,6 +47,15 @@
       "reviewed_rule_profile": "semgrep-oss-full",
       "expected_vulnerable": true,
       "goal": "Verify detection of server-side request forgery via requests.get and urllib.request.urlopen sinks."
+    },
+    {
+      "case_id": "cwe-78-cross-file-rce",
+      "cwe": "CWE-78",
+      "family": "COMMAND_INJECTION",
+      "target": "examples/cross_file_rce",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of inter-procedural cross-file command injection across 3 separate modules (app.py -> service.py -> executor.py)."
     }
   ]
 }

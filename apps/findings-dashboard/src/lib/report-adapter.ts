@@ -908,6 +908,17 @@ function buildMultiAgentLedger(
   const auditorChecks = cleanAuditor.length >= 2 ? cleanAuditor : defaultAuditorChecks;
   const skepticChecks = cleanSkeptic.length >= 2 ? cleanSkeptic : defaultSkepticChecks;
 
+  const judgeReview = reviews.find((r) => r.key === "judge_review");
+  const verdictSummary =
+    firstString([
+      judgeReview?.summary,
+      rawFinding.explanation,
+      rawFinding.message,
+    ]) ||
+    (isSuppressed
+      ? "Skeptic validated defense guards. This is a false positive and safe to mute."
+      : "Validated exploit path. This is a real security issue and should be fixed.");
+
   return {
     auditorTitle: "Auditor Agent (Exploit Analysis)",
     auditorChecks,
@@ -917,9 +928,7 @@ function buildMultiAgentLedger(
     finalVerdictStatus: isSuppressed ? "FALSE POSITIVE" : isConfirmed ? "CONFIRMED EXPLOIT" : "NEEDS REVIEW",
     confidence: conf,
     confidenceText: `High Confidence: ${conf.toFixed(2)}`,
-    summary: isSuppressed
-      ? "Skeptic validated defense guards. This is a false positive and safe to mute."
-      : "Validated exploit path. This is a real security issue and should be fixed.",
+    summary: verdictSummary,
     recommendations: upper.includes("SSRF")
       ? [
           "Validate outbound URLs against a strict whitelist of allowed domains.",
@@ -1114,7 +1123,38 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
   const cvssScore = deriveCvssScore(severity, confidence);
   const owaspCategory = deriveOwaspCategory(family);
   const taintFlowSteps = buildTaintFlowSteps(rawFinding, filePath, line, family, sinkFunction);
-  const remediationPatch = buildRemediationPatch(family, filePath, line, sinkFunction ?? undefined);
+  const rawPatch = (
+    rawFinding.remediation_patch ||
+    getPath(rawFinding, ["metadata", "remediation_patch"]) ||
+    getPath(rawFinding, ["metadata", "triage", "remediation_patch"]) ||
+    getPath(rawFinding, ["agent_reviews", "judge_review", "remediation_patch"]) ||
+    getPath(rawFinding, ["metadata", "judge_review", "remediation_patch"])
+  ) as JsonRecord | undefined;
+
+  let remediationPatch: RemediationPatch | null = null;
+  const rawDiffLines = asArray(rawPatch?.diff_lines ?? rawPatch?.diffLines);
+  if (rawPatch && rawDiffLines.length > 0) {
+    remediationPatch = {
+      filePath: asString(rawPatch.file_path ?? rawPatch.filePath) || filePath,
+      vulnerableSnippet: asString(rawPatch.vulnerable_snippet ?? rawPatch.vulnerableSnippet) || undefined,
+      secureSnippet: asString(rawPatch.secure_snippet ?? rawPatch.secureSnippet) || undefined,
+      hunkHeader: asString(rawPatch.hunk_header ?? rawPatch.hunkHeader) || undefined,
+      diffLines: rawDiffLines.map((dl) => {
+        const item = asRecord(dl) ?? {};
+        const rawType = asString(item.type) || "context";
+        const type: "context" | "remove" | "add" =
+          rawType === "remove" ? "remove" : rawType === "add" ? "add" : "context";
+        return {
+          type,
+          lineNum: firstNumber([item.line_num, item.lineNum, item.line]) ?? undefined,
+          text: asString(item.text) || "",
+        };
+      }),
+      explanation: asString(rawPatch.explanation) || "AI-generated remediation patch.",
+    };
+  } else {
+    remediationPatch = buildRemediationPatch(family, filePath, line, sinkFunction ?? undefined);
+  }
   const multiAgentLedger = buildMultiAgentLedger(rawFinding, family, finalStatus, confidence, agentReviews);
 
   return {

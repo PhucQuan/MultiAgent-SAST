@@ -192,3 +192,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+
+
+@app.get("/api/health")
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": "aegis-sast", "version": "1.0.0"}

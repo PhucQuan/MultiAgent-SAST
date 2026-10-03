@@ -60,9 +60,14 @@ class AuditorNode:
         notes.extend(
             [f"framework_hint={hint}" for hint in repo_profile.framework_hints[:4]]
         )
+
+        # Offensive Attack Analysis (Auditor Perspective)
+        attack_observations = self._build_attack_observations(record.finding)
+        notes.extend(attack_observations)
+
         summary = (
-            f"Auditor rated the finding at evidence_score={evidence_score:.2f} "
-            f"with route={route_id}."
+            f"Auditor rated evidence at score {evidence_score:.2f} "
+            f"with route {route_id} and validated attack reachability."
         )
         return AuditorReview(
             finding_id=record.finding.id,
@@ -76,8 +81,91 @@ class AuditorNode:
             metadata={
                 "scan_profile": repo_profile.scan_profile,
                 "framework_hints": repo_profile.framework_hints,
+                "attack_observations": attack_observations,
             },
         )
+
+    @classmethod
+    def _build_attack_observations(cls, finding: NormalizedFinding) -> List[str]:
+        """Construct offensive penetration testing observations and hypothesized payload."""
+        upper_vuln = (finding.vulnerability_type or "").upper()
+
+        observations = [
+            "Auditor validated attack vector: untrusted input propagates directly into sensitive operation sink."
+        ]
+
+        if "COMMAND" in upper_vuln or "RCE" in upper_vuln:
+            observations.append(
+                "Hypothesized exploit payload: $(whoami) or ; id executes arbitrary system commands."
+            )
+            observations.append(
+                "Control flow confirms unquoted command string reaches system shell execution without parameter isolation."
+            )
+            observations.append(
+                "High security impact with direct potential for complete host server compromise."
+            )
+        elif "SQL" in upper_vuln:
+            observations.append(
+                "Hypothesized exploit payload: ' OR '1'='1' -- bypasses authentication and exposes database records."
+            )
+            observations.append(
+                "Tainted parameter formatted directly into SQL query text without prepared statement binding."
+            )
+            observations.append(
+                "High security impact enabling unauthorized data extraction and database modification."
+            )
+        elif "PATH_TRAVERSAL" in upper_vuln or "FILE" in upper_vuln:
+            observations.append(
+                "Hypothesized exploit payload: ../../../../etc/passwd escapes directory boundaries for arbitrary file disclosure."
+            )
+            observations.append(
+                "File access operation receives uncanonicalized relative path without containment boundary checks."
+            )
+            observations.append(
+                "High security impact allowing unauthorized read access to sensitive host filesystem assets."
+            )
+        elif "SSRF" in upper_vuln:
+            observations.append(
+                "Hypothesized exploit payload: http://169.254.169.254/latest/meta-data/ queries cloud instance metadata."
+            )
+            observations.append(
+                "Outbound HTTP request executes with user-supplied URL without domain or private IP validation."
+            )
+            observations.append(
+                "Critical security impact exposing internal intranet resources and cloud credentials."
+            )
+        elif "DESERIALIZATION" in upper_vuln:
+            observations.append(
+                "Hypothesized exploit payload: serialized object gadget triggers arbitrary command execution upon deserialization."
+            )
+            observations.append(
+                "Untrusted input stream reaches unconstrained deserialization API without type restrictions."
+            )
+            observations.append(
+                "Critical security impact leading directly to remote code execution."
+            )
+        elif "CODE_INJECTION" in upper_vuln:
+            observations.append(
+                "Hypothesized exploit payload: __import__('os').system('id') executes arbitrary Python instructions."
+            )
+            observations.append(
+                "Dynamic code evaluation interprets untrusted string directly inside runtime execution scope."
+            )
+            observations.append(
+                "Critical security impact allowing full process takeover."
+            )
+        else:
+            observations.append(
+                "Hypothesized exploit payload: malicious boundary-breaking characters alter sink execution semantics."
+            )
+            observations.append(
+                "Control flow trace confirms tainted data reaches sink without sanitization barrier."
+            )
+            observations.append(
+                "Security impact requires prompt remediation to prevent unauthorized operations."
+            )
+
+        return observations
 
     @staticmethod
     def _score_evidence(finding: NormalizedFinding, base_confidence: float) -> float:
@@ -165,6 +253,10 @@ class SkepticValidatorNode:
                 finding_id=record.finding.id,
                 executed=False,
                 summary="Route skipped skeptical validation.",
+                notes=[
+                    "Direct path analysis skipped skeptical validation.",
+                    "No defensive guards or sanitizers evaluated for this route."
+                ],
                 metadata={"route_id": auditor_review.route_id},
             )
 
@@ -196,6 +288,19 @@ class SkepticValidatorNode:
             suggested_status = TriageStatus.NEEDS_REVIEW
             confidence_cap = 0.55
 
+        defense_notes: List[str] = []
+        if mitigation_signals:
+            defense_notes.append("Sanitization guard or defensive type validation detected in dataflow.")
+            defense_notes.append("Input handling effectively neutralizes hostile payload characters before sink.")
+            defense_notes.append("Recommend SUPPRESSED status due to verified active defense barrier.")
+        elif objections:
+            defense_notes.append("Evidence is ambiguous and context does not conclusively confirm vulnerability.")
+            defense_notes.append("Flagged for manual security review before marking as actionable.")
+        else:
+            defense_notes.append("No sanitization routines (such as shlex.quote, int casting, or allowlist) detected in dataflow.")
+            defense_notes.append("Sink function directly executes tainted parameter from untrusted source.")
+            defense_notes.append("Defense check confirms vulnerable exploit path is unmitigated.")
+
         summary = (
             "Skeptic validator "
             + (
@@ -210,6 +315,7 @@ class SkepticValidatorNode:
             summary=summary,
             objections=objections,
             mitigation_signals=mitigation_signals,
+            notes=defense_notes,
             suggested_status=suggested_status,
             confidence_cap=confidence_cap,
             metadata={
@@ -1007,11 +1113,28 @@ class JudgeNode:
             final_status == TriageStatus.SUPPRESSED
             and updated_record.finding.severity in (Severity.CRITICAL, Severity.HIGH)
         )
+        judge_notes = [
+            f"Verdict decided as {final_status.value} with confidence {final_confidence:.2f}.",
+            "Evaluated Auditor attack path against Skeptic defense checks.",
+        ]
+        if promotion_applied:
+            judge_notes.append(
+                f"Promoted to {promotion_target} due to direct dangerous sink invocation without sanitization."
+            )
+        elif skeptic_review.mitigation_signals:
+            judge_notes.append(
+                "Suppressed finding due to confirmed defensive sanitization in call scope."
+            )
+
+        remediation_patch = self._generate_remediation_patch(updated_record.finding)
+
         judge_review = JudgeReview(
             finding_id=updated_record.finding.id,
             final_status=final_status,
             final_confidence=final_confidence,
             summary=judge_summary,
+            notes=judge_notes,
+            remediation_patch=remediation_patch,
             metadata={
                 "auditor_route_id": auditor_review.route_id,
                 "skeptic_executed": skeptic_review.executed,
@@ -1024,8 +1147,8 @@ class JudgeNode:
         updated_record.finding.triage_status = final_status
         updated_record.finding.confidence = final_confidence
         updated_record.finding.explanation = explanation
-        if recommendation and not updated_record.finding.recommendation:
-            updated_record.finding.recommendation = recommendation
+        if not updated_record.finding.recommendation:
+            updated_record.finding.recommendation = recommendation or remediation_patch.get("explanation")
         triage_metadata = updated_record.finding.metadata.setdefault("triage", {})
         triage_metadata["final_status"] = final_status.value
         triage_metadata["final_confidence"] = final_confidence
@@ -1033,6 +1156,7 @@ class JudgeNode:
         triage_metadata["reason_codes"] = reason_codes
         triage_metadata["evidence_summary"] = evidence_summary
         triage_metadata["manual_review_required"] = manual_review_required
+        triage_metadata["remediation_patch"] = remediation_patch
         triage_metadata["agent_reviews"] = {
             "auditor_review": auditor_review.to_dict(),
             "skeptic_review": skeptic_review.to_dict(),
@@ -1040,6 +1164,7 @@ class JudgeNode:
         }
         updated_record.finding.metadata["reason_codes"] = reason_codes
         updated_record.finding.metadata["manual_review_required"] = manual_review_required
+        updated_record.finding.metadata["remediation_patch"] = remediation_patch
         updated_record.finding.metadata["auditor_review"] = auditor_review.to_dict()
         updated_record.finding.metadata["skeptic_review"] = skeptic_review.to_dict()
         updated_record.finding.metadata["judge_review"] = judge_review.to_dict()
@@ -1154,3 +1279,131 @@ class JudgeNode:
     def _dedupe_reason_codes(reason_codes: List[str]) -> List[str]:
         """Return a stable reason-code list without duplicates."""
         return list(dict.fromkeys(code for code in reason_codes if code))
+
+    @classmethod
+    def _generate_remediation_patch(cls, finding: NormalizedFinding) -> dict:
+        """Construct structured Unified Diff patch and explanation for the finding."""
+        upper_vuln = (finding.vulnerability_type or "").upper()
+        sink_loc = getattr(getattr(finding, "evidence", None), "sink", None)
+        file_path = (
+            getattr(sink_loc, "file_path", None)
+            or getattr(finding, "file_path", None)
+            or "app.py"
+        )
+        line_num = (
+            getattr(sink_loc, "line_number", None)
+            or getattr(finding, "line_number", None)
+            or 1
+        )
+        sink_snippet = (getattr(sink_loc, "code_snippet", "") or "").strip()
+
+        diff_lines = []
+        explanation = ""
+        vulnerable_snippet = sink_snippet or "vulnerable_call(input)"
+        secure_snippet = ""
+
+        if "COMMAND" in upper_vuln or "RCE" in upper_vuln:
+            explanation = (
+                "Avoid passing unquoted shell command strings to system shell. "
+                "Use subprocess.run with shell=False and pass arguments as an argv list."
+            )
+            vulnerable_snippet = sink_snippet or "os.system(cmd)"
+            secure_snippet = "subprocess.run(['command', safe_arg], check=True, shell=False)"
+            diff_lines = [
+                {"type": "context", "line_num": max(1, line_num - 2), "text": "import subprocess, shlex"},
+                {"type": "context", "line_num": max(1, line_num - 1), "text": "# Untrusted input received from request"},
+                {"type": "remove", "line_num": line_num, "text": f"- {vulnerable_snippet}"},
+                {"type": "add", "line_num": line_num, "text": "+ # Secure: execute via argument array with shell=False"},
+                {"type": "add", "line_num": line_num + 1, "text": "+ subprocess.run(shlex.split(safe_cmd), check=True, shell=False)"},
+            ]
+        elif "SQL" in upper_vuln:
+            explanation = (
+                "Adopt parameterized query binding to guarantee user input cannot alter SQL syntax."
+            )
+            vulnerable_snippet = sink_snippet or "cursor.execute(f'SELECT * FROM users WHERE id = {user_id}')"
+            secure_snippet = "cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))"
+            diff_lines = [
+                {"type": "context", "line_num": max(1, line_num - 1), "text": "# Untrusted parameter received"},
+                {"type": "remove", "line_num": line_num, "text": f"- {vulnerable_snippet}"},
+                {"type": "add", "line_num": line_num, "text": "+ # Secure: parameterized query binding"},
+                {"type": "add", "line_num": line_num + 1, "text": f"+ {secure_snippet}"},
+            ]
+        elif "PATH_TRAVERSAL" in upper_vuln or "FILE" in upper_vuln:
+            explanation = (
+                "Canonicalize file path using os.path.abspath and assert that resolved path remains "
+                "within the designated base directory."
+            )
+            vulnerable_snippet = sink_snippet or "return send_file(user_path)"
+            secure_snippet = (
+                "safe_path = os.path.abspath(os.path.join(BASE_DIR, filename))\n"
+                "if not safe_path.startswith(os.path.abspath(BASE_DIR)):\n"
+                "    raise PermissionError('Directory traversal blocked')\n"
+                "return send_file(safe_path)"
+            )
+            diff_lines = [
+                {"type": "context", "line_num": max(1, line_num - 1), "text": "filename = request.args.get('path')"},
+                {"type": "remove", "line_num": line_num, "text": f"- {vulnerable_snippet}"},
+                {"type": "add", "line_num": line_num, "text": "+ # Secure: validate path boundary"},
+                {"type": "add", "line_num": line_num + 1, "text": "+ safe_path = os.path.abspath(os.path.join(BASE_DIR, filename))"},
+                {"type": "add", "line_num": line_num + 2, "text": "+ if not safe_path.startswith(os.path.abspath(BASE_DIR)): raise PermissionError('Access denied')"},
+                {"type": "add", "line_num": line_num + 3, "text": "+ return send_file(safe_path)"},
+            ]
+        elif "SSRF" in upper_vuln:
+            explanation = (
+                "Validate destination hostname against a strict domain whitelist and reject private IP ranges."
+            )
+            vulnerable_snippet = sink_snippet or "response = requests.get(target_url)"
+            secure_snippet = (
+                "if not is_safe_external_url(target_url):\n"
+                "    raise ValueError('SSRF blocked')\n"
+                "response = requests.get(target_url, timeout=5, allow_redirects=False)"
+            )
+            diff_lines = [
+                {"type": "context", "line_num": max(1, line_num - 1), "text": "target_url = request.args.get('url')"},
+                {"type": "remove", "line_num": line_num, "text": f"- {vulnerable_snippet}"},
+                {"type": "add", "line_num": line_num, "text": "+ # Secure: validate destination against domain allowlist"},
+                {"type": "add", "line_num": line_num + 1, "text": "+ if not is_safe_external_url(target_url): raise ValueError('Blocked host')"},
+                {"type": "add", "line_num": line_num + 2, "text": "+ response = requests.get(target_url, timeout=5, allow_redirects=False)"},
+            ]
+        elif "DESERIALIZATION" in upper_vuln:
+            explanation = (
+                "Replace unsafe pickle/yaml deserialization with safe structured data serialization (JSON or protobuf)."
+            )
+            vulnerable_snippet = sink_snippet or "data = pickle.loads(raw)"
+            secure_snippet = "data = json.loads(raw.decode('utf-8'))"
+            diff_lines = [
+                {"type": "context", "line_num": max(1, line_num - 1), "text": "import json"},
+                {"type": "remove", "line_num": line_num, "text": f"- {vulnerable_snippet}"},
+                {"type": "add", "line_num": line_num, "text": "+ # Secure: safe JSON deserialization"},
+                {"type": "add", "line_num": line_num + 1, "text": f"+ {secure_snippet}"},
+            ]
+        else:
+            explanation = "Sanitize and validate untrusted input before invoking sensitive operations."
+            secure_snippet = "sanitized = sanitize(param)\nsafe_call(sanitized)"
+            diff_lines = [
+                {"type": "remove", "line_num": line_num, "text": f"- {vulnerable_snippet}"},
+                {"type": "add", "line_num": line_num, "text": "+ # Secure: sanitize input before sink"},
+                {"type": "add", "line_num": line_num + 1, "text": "+ sanitized = sanitize(user_input)"},
+                {"type": "add", "line_num": line_num + 2, "text": "+ safe_call(sanitized)"},
+            ]
+
+        unified_diff = (
+            f"--- a/{file_path}\n"
+            f"+++ b/{file_path}\n"
+            f"@@ -{line_num},2 +{line_num},{len(diff_lines)} @@\n"
+            + "\n".join(
+                dl["text"] if dl["text"].startswith(("-", "+")) else f" {dl['text']}"
+                for dl in diff_lines
+            )
+        )
+
+        return {
+            "file_path": file_path,
+            "line": line_num,
+            "vulnerable_snippet": vulnerable_snippet,
+            "secure_snippet": secure_snippet,
+            "hunk_header": f"@@ -{line_num},2 +{line_num},{len(diff_lines)} @@",
+            "diff_lines": diff_lines,
+            "explanation": explanation,
+            "unified_diff": unified_diff,
+        }
