@@ -413,13 +413,42 @@ class ScanPipelineService:
             bridge = TaintBridge()
             findings = bridge.bridge_matches(matches, project_root=project_root)
 
+            # Pha 2: Inter-procedural Cross-File Taint Engine
+            if request.target_path.is_dir() or project_root.exists():
+                try:
+                    from aegis_sast.analysis.cross_file_taint import CrossFileTaintEngine
+
+                    self._emit_progress(
+                        progress_callback,
+                        {
+                            "event": "stage",
+                            "stage": "cross-file-dfg",
+                            "message": "Analyzing inter-procedural cross-file call graph & dataflow.",
+                        },
+                    )
+                    cross_engine = CrossFileTaintEngine(project_root)
+                    cross_findings = cross_engine.analyze_project()
+                    if cross_findings:
+                        self._emit_progress(
+                            progress_callback,
+                            {
+                                "event": "stage",
+                                "stage": "cross-file-findings",
+                                "message": f"Discovered {len(cross_findings)} inter-procedural vulnerability chains.",
+                            },
+                        )
+                        findings = bridge._deduplicate_findings(cross_findings + findings)
+                except Exception as cross_err:
+                    pass
+
             vulnerabilities = [
                 ImportedNormalizedVulnerability(finding=f) for f in findings
             ]
 
             files_scanned = 1
             if request.target_path.is_dir():
-                files_scanned = len({m.file_path for m in matches}) or 1
+                py_count = len(list(request.target_path.rglob("*.py")))
+                files_scanned = py_count or len({m.file_path for m in matches}) or 1
 
             end_time = datetime.now()
             return ScanResult(
