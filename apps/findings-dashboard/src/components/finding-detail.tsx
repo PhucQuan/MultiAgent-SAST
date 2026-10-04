@@ -132,7 +132,7 @@ export function FindingDetail({
           </span>
           <div>
             <h1 className="text-[16px] font-bold text-slate-900 dark:text-slate-100">
-              {finding.cweId}: {formatLabel(finding.family)} in {finding.sinkFunction || "send_file()"}
+              {finding.ruleId} · {finding.cweId}: {finding.title} in {finding.sinkFunction || "send_file()"}
             </h1>
             <p className="mt-1 text-[12px] leading-5 text-slate-600 dark:text-slate-400">
               {finding.message ||

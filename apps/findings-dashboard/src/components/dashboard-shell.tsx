@@ -18,7 +18,7 @@ import { FindingDetail } from "@/components/finding-detail";
 import { FindingQueue, type QueueFilters } from "@/components/finding-queue";
 import { ReportSidebar, type ReportEntry } from "@/components/report-sidebar";
 import { AppRail } from "@/components/app-rail";
-import { ScanInventory } from "@/components/scan-inventory";
+import { ScanInventory, type ScannedTarget } from "@/components/scan-inventory";
 import { MetaTag } from "@/components/status-badge";
 import { TopBar } from "@/components/top-bar";
 import { DashboardOverviewPage } from "@/components/pages/dashboard-overview-page";
@@ -92,6 +92,8 @@ type ScanApiResponse = {
     summary?: {
       files_scanned?: number;
       total_vulnerabilities?: number;
+      duration_seconds?: number;
+      errors?: string[];
     };
     ai?: {
       requested?: boolean;
@@ -166,6 +168,40 @@ const emptyScanJobProgress: ScanJobProgress = {
   durationSeconds: null,
 };
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+}
+
+function matchesSelectedPath(filePath: string, selectedPath: string): boolean {
+  const normalizedFilePath = normalizePath(filePath).replace(/\/+$/, "");
+  const normalizedSelectedPath = normalizePath(selectedPath).replace(/\/+$/, "");
+
+  if (!normalizedFilePath || !normalizedSelectedPath) {
+    return false;
+  }
+
+  if (
+    normalizedFilePath === normalizedSelectedPath ||
+    normalizedFilePath.startsWith(`${normalizedSelectedPath}/`)
+  ) {
+    return true;
+  }
+
+  // A report may contain paths relative to the scanned root while the
+  // inventory stores the absolute target path.
+  const selectedSegments = normalizedSelectedPath.split("/").filter(Boolean);
+  const selectedName = selectedSegments.at(-1);
+  if (!selectedName) {
+    return false;
+  }
+
+  return (
+    normalizedFilePath === selectedName ||
+    normalizedFilePath.startsWith(`${selectedName}/`) ||
+    normalizedFilePath.includes(`/${selectedName}/`)
+  );
+}
+
 function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["job"]> {
   const latest = job.progress.at(-1) ?? {};
   const numberValue = (key: string): number | null =>
@@ -173,6 +209,7 @@ function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["jo
   const stringValue = (key: string): string | null =>
     typeof latest[key] === "string" ? latest[key] as string : null;
 
+  const summary = job.result?.summary;
   return {
     id: job.scan_id,
     status: (job.status as ScanJobStatus) || "queued",
@@ -188,13 +225,17 @@ function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["jo
       stage: stringValue("stage") ?? (job.status === "completed" ? "completed" : job.status),
       message: stringValue("message"),
       totalFiles: numberValue("total_files"),
-      filesScanned: numberValue("files_scanned"),
-      filesProcessed: numberValue("files_processed"),
-      findings: numberValue("findings"),
-      errors: numberValue("errors"),
+      filesScanned: numberValue("files_scanned") ?? summary?.files_scanned ?? null,
+      filesProcessed: numberValue("files_processed") ?? summary?.files_scanned ?? null,
+      findings:
+        numberValue("findings") ?? summary?.total_vulnerabilities ?? null,
+      errors:
+        numberValue("errors") ??
+        (summary?.errors ? summary.errors.length : null),
       currentFile: stringValue("current_file"),
       indexedFunctions: numberValue("indexed_functions"),
-      durationSeconds: numberValue("duration_seconds"),
+      durationSeconds:
+        numberValue("duration_seconds") ?? summary?.duration_seconds ?? null,
     },
     logs: job.progress
       .map((event) => stringValueForEvent(event))
@@ -435,6 +476,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [loadedWorkspaceReport, setLoadedWorkspaceReport] =
     useState<NormalizedReport | null>(null);
   const [selectedFindingKey, setSelectedFindingKey] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loadingWorkspaceReports, setLoadingWorkspaceReports] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -462,6 +504,16 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [scanJobResult, setScanJobResult] =
     useState<ScanApiResponse["scan"] | null>(null);
   const [scanJobError, setScanJobError] = useState<string | null>(null);
+  const [scannedTargets, setScannedTargets] = useState<ScannedTarget[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = window.localStorage.getItem("aegis-scan-inventory");
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? (parsed as ScannedTarget[]) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const handledScanJobRef = useRef<string | null>(null);
@@ -477,6 +529,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
     writeReviewStore(reviewStore);
   }, [hydrated, reviewStore]);
+
+  useEffect(() => {
+    if (hydrated) {
+      window.localStorage.setItem(
+        "aegis-scan-inventory",
+        JSON.stringify(scannedTargets),
+      );
+    }
+  }, [hydrated, scannedTargets]);
 
   useEffect(() => {
     const nextLocationKey = `${requestedReportId ?? ""}|${
@@ -683,7 +744,35 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
       handledScanJobRef.current = job.id;
 
       const result = await getBackendScanResults(job.id);
+      const finalErrors = result.summary.errors ?? [];
+      const finalProgress: ScanJobProgress = {
+        ...scanJobProgress,
+        stage: "completed",
+        message: "Scan completed.",
+        totalFiles: result.summary.files_scanned,
+        filesScanned: result.summary.files_scanned,
+        filesProcessed: result.summary.files_scanned,
+        findings: result.summary.total_vulnerabilities,
+        errors: finalErrors.length,
+        durationSeconds: result.summary.duration_seconds ?? scanJobProgress.durationSeconds,
+      };
+      setScanJobProgress(finalProgress);
+      setScanJobResult({ ...job.result, summary: result.summary });
       const apiReport = normalizeBackendScanResult(result);
+      const targetPath = result.summary.target;
+      const targetName = targetPath.split(/[\\/]/).filter(Boolean).pop() || targetPath;
+      setScannedTargets((current) => [
+        {
+          path: targetPath,
+          reportId: apiReport.id,
+          name: targetName,
+          findings: result.summary.total_vulnerabilities,
+          filesScanned: result.summary.files_scanned,
+          errors: finalErrors.length,
+          scannedAt: new Date().toISOString(),
+        },
+        ...current.filter((target) => target.path !== targetPath),
+      ]);
       setImportedReports((current) =>
         sortByTimestamp([
           apiReport,
@@ -701,6 +790,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         setLoadedWorkspaceReport(null);
         setReportError(null);
       }
+      await refreshWorkspaceReports(false);
 
       const filesScanned = result.summary.files_scanned;
       const findings = result.summary.total_vulnerabilities;
@@ -878,8 +968,24 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   ).sort((left, right) => left.localeCompare(right));
 
   const searchNeedle = deferredSearch.trim().toLowerCase();
+  const pathFilteredFindings = selectedPath
+    ? allFindings.filter((finding) => {
+        const matched = matchesSelectedPath(finding.filePath, selectedPath);
+        if (process.env.NODE_ENV !== "production") {
+          console.log({
+            selectedFolder: selectedPath,
+            sampleFindingPath: finding.filePath,
+            normalizedSelected: normalizePath(selectedPath),
+            normalizedFinding: normalizePath(finding.filePath),
+            matched,
+          });
+        }
+        return matched;
+      })
+    : allFindings;
+
   const filteredFindings = sortFindings(
-    allFindings.filter((finding) => {
+    pathFilteredFindings.filter((finding) => {
       const feedback = reviewStore[finding.key];
 
       if (!filters.includeMuted && feedback?.muted) {
@@ -940,10 +1046,26 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     startTransition(() => {
       setSelectedReportId(reportId);
       setSelectedFindingKey(null);
+      setSelectedPath(null);
       setFilters(emptyFilters);
     });
     setReportError(null);
     setExplorerOpen(false);
+  }
+
+  function handleSelectPath(path: string) {
+    const target = scannedTargets.find((item) => item.path === path);
+    if (target?.reportId) {
+      setSelectedReportId(target.reportId);
+    }
+    setSelectedPath((current) => (current === path ? null : path));
+    setSelectedFindingKey(null);
+    setFilters(emptyFilters);
+  }
+
+  function handleOpenPath(path: string) {
+    handleSelectPath(path);
+    setActiveAppTab("code");
   }
 
   function handleSelectFinding(findingKey: string) {
@@ -1022,9 +1144,12 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     try {
       const backendJob = await startBackendScan({
         path: targetPath,
+        language: "auto",
         config: {
           enable_ai_verification: scanEnableAi,
           max_analysis_depth: maxDepth,
+          scan_engine: "deterministic",
+          rules_path: null,
         },
       });
       applyScanJob(backendJobToUiJob(backendJob));
@@ -1299,8 +1424,13 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           />
         ) : activeAppTab === "code" ? (
           <CodeBrowserPage
-            findings={allFindings}
+            findings={pathFilteredFindings}
             activeProjectName={selectedReportSummary?.shortName}
+            selectedFilePath={
+              selectedPath && !selectedPath.includes(".")
+                ? pathFilteredFindings[0]?.filePath ?? null
+                : selectedPath
+            }
             onSelectFinding={handleSelectFinding}
             onOpenFindingDeepDive={(f) => {
               handleSelectFinding(f.key);
@@ -1339,6 +1469,10 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
                 selectedReportId={effectiveSelectedReportId}
                 onSelectReport={(r) => handleSelectReport(r.sourcePath)}
                 activeReport={selectedReportSummary}
+                scannedTargets={scannedTargets}
+                selectedPath={selectedPath}
+                onSelectPath={handleSelectPath}
+                onOpenPath={handleOpenPath}
               />
             </div>
 

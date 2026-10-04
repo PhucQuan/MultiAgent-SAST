@@ -8,6 +8,8 @@ propagation analysis.
 from __future__ import annotations
 
 import ast
+import fnmatch
+import os
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -115,9 +117,23 @@ class CallSiteInfo:
 class CrossFileTaintEngine:
     """Inter-procedural taint propagation engine across multiple Python files."""
 
-    def __init__(self, project_root: Path, max_depth: int = 5) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        max_depth: int = 5,
+        exclude_dir_names: Optional[Set[str]] = None,
+        exclude_globs: Optional[List[str]] = None,
+    ) -> None:
         self.project_root = Path(project_root).resolve()
         self.max_depth = max_depth
+        self.exclude_dir_names = {
+            value.strip().casefold()
+            for value in (exclude_dir_names or set())
+            if value and value.strip()
+        }
+        self.exclude_globs = [
+            value.strip() for value in (exclude_globs or []) if value and value.strip()
+        ]
         self.function_index = FunctionIndex()
         self.import_resolver = ImportResolver(self.project_root)
         self.call_sites: List[CallSiteInfo] = []
@@ -129,7 +145,11 @@ class CrossFileTaintEngine:
         if self._initialized:
             return
 
-        self.function_index.build(self.project_root)
+        self.function_index.build(
+            self.project_root,
+            exclude_dir_names=self.exclude_dir_names,
+            exclude_globs=self.exclude_globs,
+        )
         py_files = self._get_python_files()
 
         for file_path in py_files:
@@ -139,11 +159,33 @@ class CrossFileTaintEngine:
 
     def _get_python_files(self) -> List[Path]:
         """Collect all relevant Python files while ignoring hidden and virtualenv directories."""
-        skip_dirs = {".git", ".next", "node_modules", "venv", ".venv", "__pycache__", "build", "dist"}
+        skip_dirs = {
+            ".git",
+            ".next",
+            "node_modules",
+            "venv",
+            ".venv",
+            "__pycache__",
+            "build",
+            "dist",
+            *self.exclude_dir_names,
+        }
         files: List[Path] = []
-        for p in self.project_root.rglob("*.py"):
-            if not any(part in skip_dirs for part in p.parts):
-                files.append(p)
+        for root, dirnames, filenames in os.walk(self.project_root, topdown=True):
+            root_path = Path(root)
+            dirnames[:] = sorted(
+                dirname
+                for dirname in dirnames
+                if dirname.casefold() not in skip_dirs
+            )
+            for filename in sorted(filenames):
+                if not filename.endswith(".py"):
+                    continue
+                path = root_path / filename
+                relative = path.relative_to(self.project_root).as_posix()
+                if any(fnmatch.fnmatch(relative, pattern) for pattern in self.exclude_globs):
+                    continue
+                files.append(path)
         return sorted(files)
 
     def _index_file_call_sites(self, file_path: Path) -> None:

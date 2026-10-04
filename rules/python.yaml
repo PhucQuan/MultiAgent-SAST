@@ -5,11 +5,23 @@ sources:
 - pattern: request.form.get(
   type: HTTP_PARAM
   severity: MEDIUM
+- pattern: request.form.getlist(
+  type: HTTP_PARAM
+  severity: MEDIUM
 - pattern: request.values.get(
   type: HTTP_PARAM
   severity: MEDIUM
 - pattern: request.headers.get(
   type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.headers.keys
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.query_string
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: get_form_parameter(
+  type: HTTP_PARAM
   severity: MEDIUM
 - pattern: request.data
   type: HTTP_DATA
@@ -212,6 +224,14 @@ sinks:
     type: PATH_TRAVERSAL
     severity: HIGH
     description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: .exists(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Filesystem existence checks using user-controlled paths require validation.
+  - pattern: .read_text(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reading text from user-controlled paths requires containment validation.
   deserialization:
   - pattern: pickle.load(
     type: INSECURE_DESERIALIZATION
@@ -364,6 +384,14 @@ sinks:
     severity: HIGH
     description: Reviewed Semgrep SSRF coverage for requests.get and urllib.request.urlopen
   xss:
+  - pattern: render_template_string(
+    type: XSS
+    severity: HIGH
+    description: Rendering user-controlled template content can execute unsafe HTML.
+  - pattern: Markup(
+    type: XSS
+    severity: HIGH
+    description: Marking user-controlled content as trusted HTML can enable XSS.
   - pattern: return "...".format(...)
     type: XSS
     severity: HIGH
@@ -394,6 +422,11 @@ sinks:
     description: Detected Flask route directly returning a formatted string. This
       is subject to cross-site scripting if user input can reach the string. Consider
       using the template engine instead and rendering pages with 'render_template()'.
+  mass_assignment:
+  - pattern: .update(**)
+    type: MASS_ASSIGNMENT
+    severity: HIGH
+    description: Merging arbitrary user-controlled keyword fields can overwrite protected attributes.
 sanitizers:
 - pattern: shlex.quote(
   mitigates:
@@ -435,6 +468,14 @@ sanitizers:
   mitigates:
   - COMMAND_INJECTION
   description: Imported sanitizer from dangerous-subprocess-use
+- pattern: html.escape(
+  mitigates:
+  - XSS
+  description: HTML-escapes untrusted content before rendering.
+- pattern: markupsafe.escape(
+  mitigates:
+  - XSS
+  description: HTML-escapes untrusted content before rendering.
 - pattern: '{...}'
   mitigates:
   - SQL_INJECTION

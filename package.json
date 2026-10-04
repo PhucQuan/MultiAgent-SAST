@@ -2,9 +2,11 @@
   "name": "aegis-sast",
   "private": true,
   "scripts": {
-    "test:ui": "node scripts/test_ui_playwright.mjs"
+    "test:ui": "node scripts/test_ui_playwright.mjs",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "playwright": "^1.63.0"
   }
 }

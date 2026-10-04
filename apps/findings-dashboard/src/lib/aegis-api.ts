@@ -6,14 +6,18 @@ export interface BackendScanConfig {
   enable_ai_verification?: boolean;
   max_analysis_depth?: number;
   rules_path?: string | null;
+  append_rules_paths?: string[];
   exclude_dir_names?: string[];
   exclude_globs?: string[];
+  scan_engine?: "deterministic" | "semgrep";
 }
 
 export type BackendScanStatus = "queued" | "running" | "completed" | "failed";
 
 export interface StartBackendScanRequest {
   path: string;
+  repo_path?: string;
+  language?: string;
   config?: BackendScanConfig;
 }
 
@@ -30,6 +34,7 @@ export interface BackendScanJob {
       total_vulnerabilities: number;
       by_severity: Record<string, number>;
       errors: string[];
+      duration_seconds?: number;
     };
     ai: {
       requested?: boolean;
@@ -48,6 +53,7 @@ export interface BackendScanResult {
     total_vulnerabilities: number;
     by_severity: Record<string, number>;
     errors: string[];
+    duration_seconds?: number;
   };
   findings: unknown[];
   evidence_bundles?: unknown[];

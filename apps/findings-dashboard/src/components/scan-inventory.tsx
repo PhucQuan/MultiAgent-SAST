@@ -21,6 +21,20 @@ interface ScanInventoryProps {
   selectedReportId?: string | null;
   onSelectReport?: (report: ReportSummaryCard) => void;
   activeReport?: ReportSummaryCard | null;
+  scannedTargets?: ScannedTarget[];
+  selectedPath?: string | null;
+  onSelectPath?: (path: string) => void;
+  onOpenPath?: (path: string) => void;
+}
+
+export interface ScannedTarget {
+  path: string;
+  reportId?: string;
+  name: string;
+  findings: number;
+  filesScanned: number;
+  errors: number;
+  scannedAt: string;
 }
 
 export function ScanInventory({
@@ -28,6 +42,10 @@ export function ScanInventory({
   selectedReportId,
   onSelectReport,
   activeReport,
+  scannedTargets = [],
+  selectedPath,
+  onSelectPath,
+  onOpenPath,
 }: ScanInventoryProps) {
   // Built-in targets for the workbench view
   const defaultTargets = [
@@ -71,7 +89,7 @@ export function ScanInventory({
           Scan Inventory
         </h2>
         <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          {reports.length || 3}
+          {reports.length + scannedTargets.length || 3}
         </span>
       </div>
 
@@ -90,6 +108,34 @@ export function ScanInventory({
 
       {/* Repository List Cards */}
       <div className="flex flex-col gap-1.5">
+        {scannedTargets.map((target) => (
+          <button
+            key={target.path}
+            type="button"
+            onClick={() => onSelectPath?.(target.path)}
+            onDoubleClick={() => onOpenPath?.(target.path)}
+            className="rounded-xl border border-blue-200 bg-blue-50/70 p-2.5 dark:border-blue-900 dark:bg-blue-950/30"
+            aria-pressed={selectedPath === target.path}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+                {target.name.includes(".") ? (
+                  <FileCode2 className="h-4 w-4" />
+                ) : (
+                  <FolderGit2 className="h-4 w-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-[12.5px] font-semibold text-slate-900 dark:text-slate-100">
+                  {target.name}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {target.findings} findings | {target.filesScanned} files
+                </div>
+              </div>
+            </div>
+            </button>
+        ))}
         {/* Render loaded reports if available */}
         {reports.length > 0 ? (
           reports.slice(0, 4).map((report, idx) => {

@@ -195,6 +195,7 @@ def build_request(payload: dict[str, Any]) -> ScanPipelineRequest:
         output_formats=_normalize_output_formats(payload.get("outputFormats")),
         output_dir=output_dir,
         export_reports=True,
+        scan_engine=str(payload.get("scanEngine", "deterministic") or "deterministic"),
     )
 
 

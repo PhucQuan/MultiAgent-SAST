@@ -47,7 +47,13 @@ class SemgrepRunner:
             return Severity.LOW
         return Severity.UNKNOWN
         
-    def run(self, target_path: str) -> List[SemgrepMatch]:
+    def run(
+        self,
+        target_path: str,
+        *,
+        exclude_dir_names: Optional[List[str]] = None,
+        exclude_globs: Optional[List[str]] = None,
+    ) -> List[SemgrepMatch]:
         """Runs semgrep and returns a list of SemgrepMatch objects."""
         cmd = [
             "semgrep",
@@ -57,9 +63,18 @@ class SemgrepRunner:
             "--json",
             target_path
         ]
+        for excluded in [*(exclude_dir_names or []), *(exclude_globs or [])]:
+            if excluded.strip():
+                cmd.extend(["--exclude", excluded.strip()])
         
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
             if not result.stdout:
                 return []
                 

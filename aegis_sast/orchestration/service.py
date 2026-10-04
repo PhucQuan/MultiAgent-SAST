@@ -335,7 +335,7 @@ class ScanPipelineService:
                 "errors": 0,
             },
         )
-        vulnerabilities = detector.analyze_file(target)
+        vulnerabilities = detector.analyze_file(target, project_root=target.parent)
         end_time = datetime.now()
 
         scan_result = ScanResult(
@@ -398,7 +398,29 @@ class ScanPipelineService:
             runner = SemgrepRunner(
                 rules_path=str(request.rules_path) if request.rules_path else None
             )
-            matches = runner.run(str(request.target_path))
+            matches = runner.run(
+                str(request.target_path),
+                exclude_dir_names=request.exclude_dir_names,
+                exclude_globs=request.exclude_globs,
+            )
+
+            # An unavailable Semgrep binary, an unavailable registry ruleset, or
+            # an empty Semgrep result must not hide findings from the built-in
+            # YAML/Tree-sitter engine. Returning None selects that deterministic
+            # fallback and keeps the API result contract non-empty when a local
+            # rule can prove a source-to-sink path.
+            if not matches:
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "semgrep-fallback",
+                        "message": (
+                            "Semgrep returned no matches; using the deterministic "
+                            "YAML/Tree-sitter detector."
+                        ),
+                    },
+                )
+                return None
 
             self._emit_progress(
                 progress_callback,
@@ -430,7 +452,12 @@ class ScanPipelineService:
                             "message": "Analyzing inter-procedural cross-file call graph & dataflow.",
                         },
                     )
-                    cross_engine = CrossFileTaintEngine(project_root)
+                    cross_engine = CrossFileTaintEngine(
+                        project_root,
+                        max_depth=request.max_analysis_depth,
+                        exclude_dir_names=set(request.exclude_dir_names),
+                        exclude_globs=request.exclude_globs,
+                    )
                     cross_findings = cross_engine.analyze_project()
                     if cross_findings:
                         self._emit_progress(
@@ -578,7 +605,7 @@ class ScanPipelineService:
             )
 
         start_time = datetime.now()
-        vulnerabilities = detector.analyze_file(target)
+        vulnerabilities = detector.analyze_file(target, project_root=target.parent)
         end_time = datetime.now()
         return ScanResult(
             target_path=str(target),
