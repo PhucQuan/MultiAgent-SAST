@@ -91,7 +91,8 @@ class TaintBridge:
                     graph=graph,
                     source_lines=source_lines,
                 )
-                raw_findings.append(finding)
+                if finding is not None:
+                    raw_findings.append(finding)
 
         # Deduplicate redundant rules on the exact same sink line
         return self._deduplicate_findings(raw_findings)
@@ -145,9 +146,11 @@ class TaintBridge:
         match: SemgrepMatch,
         graph: Optional[PythonFlowGraph],
         source_lines: List[str],
-    ) -> NormalizedFinding:
+    ) -> Optional[NormalizedFinding]:
         """Process one Semgrep match and attach DFG taint evidence."""
         vuln_type = self._map_cwe_to_vuln_type(match.metadata.get("cwe", []), match.check_id)
+        if vuln_type is None:
+            return None
         sink_loc = CodeLocation(
             file_path=match.file_path,
             line_number=match.line,
@@ -344,26 +347,32 @@ class TaintBridge:
             return source_lines[line - 1].strip()
         return default.strip() if default else ""
 
-    def _map_cwe_to_vuln_type(self, cwe_list: List[str], check_id: str) -> VulnerabilityType:
+    def _map_cwe_to_vuln_type(self, cwe_list: List[str], check_id: str) -> Optional[VulnerabilityType]:
         """Map CWE identifier or rule name to VulnerabilityType enum."""
         combined = f"{cwe_list} {check_id}".upper()
         if "CWE-89" in combined or "SQL" in combined:
             return VulnerabilityType.SQL_INJECTION
-        if "CWE-78" in combined or "COMMAND" in combined or "SHELL" in combined or "SYSTEM-CALL" in combined:
+        if "CWE-78" in combined or "COMMAND" in combined or "SHELL" in combined or "SYSTEM-CALL" in combined or "SUBPROCESS" in combined:
             return VulnerabilityType.COMMAND_INJECTION
-        if "CWE-94" in combined or "EVAL" in combined or "EXEC" in combined or "CODE-INJECTION" in combined:
+        if "CWE-94" in combined or "CWE-95" in combined or "EVAL" in combined or "EXEC" in combined or "CODE-INJECTION" in combined:
             return VulnerabilityType.CODE_INJECTION
-        if "CWE-22" in combined or "TRAVERSAL" in combined or "PATH" in combined:
+        if "CWE-22" in combined or "TRAVERSAL" in combined or "PATH-TRAVERSAL" in combined:
             return VulnerabilityType.PATH_TRAVERSAL
+        if "CWE-611" in combined or "XXE" in combined or "DEFUSED-XML" in combined:
+            return VulnerabilityType.XXE
+        if "CWE-643" in combined or "XPATH" in combined:
+            return VulnerabilityType.XPATH_INJECTION
+        if "CWE-90" in combined or "LDAP" in combined:
+            return VulnerabilityType.LDAP_INJECTION
         if "CWE-918" in combined or "SSRF" in combined:
             return VulnerabilityType.SSRF
         if "CWE-79" in combined or "XSS" in combined:
             return VulnerabilityType.XSS
         if "CWE-502" in combined or "DESERIALIZATION" in combined or "PICKLE" in combined:
             return VulnerabilityType.INSECURE_DESERIALIZATION
-        if "OPEN_REDIRECT" in combined or "REDIRECT" in combined:
+        if "CWE-601" in combined or "OPEN_REDIRECT" in combined or "OPEN-REDIRECT" in combined or "REDIRECT" in combined:
             return VulnerabilityType.OPEN_REDIRECT
-        return VulnerabilityType.CODE_INJECTION
+        return None
 
     def _deduplicate_findings(
         self,

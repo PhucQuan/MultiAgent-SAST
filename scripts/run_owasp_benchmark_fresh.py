@@ -82,59 +82,54 @@ def run_benchmark(
         print(f"[-] Error: Semgrep output file not created. Stderr: {res.stderr}", file=sys.stderr)
         return 1
 
-    # 2. Convert Semgrep matches into Aegis Normalized Findings
-    print("\n[2/3] Normalizing Semgrep findings into Aegis Report format...")
+    # 2. Bridge Semgrep matches with Tree-sitter DFG Taint Analysis & Sanitizers
+    print("\n[2/3] Bridging Semgrep findings with Tree-sitter DFG & Sanitizer analysis...")
+    from aegis_sast.integrations.semgrep_runner import SemgrepMatch
+    from aegis_sast.integrations.taint_bridge import TaintBridge
+    from aegis_sast.core.models import Severity
+
     with open(raw_semgrep_json, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     results = data.get("results", [])
-    findings = []
+    matches = []
     for r in results:
-        check_id = r.get("check_id", "")
         extra = r.get("extra", {})
-        meta = extra.get("metadata", {})
-        cwe_list = meta.get("cwe", [])
-        if isinstance(cwe_list, str):
-            cwe_list = [cwe_list]
+        sev_str = extra.get("severity", "UNKNOWN").upper()
+        sev = Severity.HIGH if sev_str == "ERROR" else (Severity.MEDIUM if sev_str == "WARNING" else Severity.LOW)
+        matches.append(
+            SemgrepMatch(
+                check_id=r.get("check_id", ""),
+                file_path=r.get("path", ""),
+                line=r.get("start", {}).get("line", 1),
+                col=r.get("start", {}).get("col", 1),
+                end_line=r.get("end", {}).get("line", 1),
+                end_col=r.get("end", {}).get("col", 1),
+                message=extra.get("message", ""),
+                severity=sev,
+                metadata=extra.get("metadata", {}),
+                metavars=extra.get("metavars", {}),
+                code_snippet=extra.get("lines", ""),
+            )
+        )
 
-        fam = None
-        for cwe_str in (cwe_list or []):
-            m = re.search(r"CWE-(\d+)", str(cwe_str))
-            if m and m.group(1) in CWE_FAMILY_MAP:
-                fam = CWE_FAMILY_MAP[m.group(1)]
-                break
+    bridge = TaintBridge()
+    bridged_findings = bridge.bridge_matches(matches, project_root=target_dir)
 
-        if not fam:
-            if any(k in check_id for k in ("subprocess", "command-injection", "dangerous-system-call")):
-                fam = "COMMAND_INJECTION"
-            elif "sql" in check_id:
-                fam = "SQL_INJECTION"
-            elif "path-traversal" in check_id:
-                fam = "PATH_TRAVERSAL"
-            elif any(k in check_id for k in ("deserialization", "pickle")):
-                fam = "INSECURE_DESERIALIZATION"
-            elif any(k in check_id for k in ("open-redirect", "redirect")):
-                fam = "OPEN_REDIRECT"
-            elif any(k in check_id for k in ("eval", "exec")):
-                fam = "CODE_INJECTION"
-            elif "xss" in check_id:
-                fam = "XSS"
-            elif any(k in check_id for k in ("xml", "xxe")):
-                fam = "XXE"
-
-        if fam:
-            fpath = r.get("path", "")
-            findings.append({
-                "tool": "aegis-semgrep-bridge",
-                "type": fam,
-                "rule_id": check_id,
-                "file": fpath,
-                "path": fpath,
-                "line": r.get("start", {}).get("line", 1),
-                "message": extra.get("message", ""),
-                "severity": extra.get("severity", "HIGH"),
-                "triage_status": "confirmed",
-            })
+    findings = []
+    for b in bridged_findings:
+        findings.append({
+            "tool": "aegis-semgrep-bridge",
+            "type": b.vulnerability_type,
+            "rule_id": b.rule_id,
+            "file": b.file_path,
+            "path": b.file_path,
+            "line": b.line_number,
+            "message": b.message,
+            "severity": b.severity.value,
+            "triage_status": b.triage_status.value,
+            "confidence": b.confidence,
+        })
 
     report_payload = {
         "scan_metadata": {
