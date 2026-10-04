@@ -395,8 +395,15 @@ class ScanPipelineService:
             )
 
             start_time = datetime.now()
+            # Build the full set of rule paths: explicit override + profile append rules.
+            # This is the key fix: append_rules_paths (from reviewed rule profiles used
+            # by the benchmark runner) were previously silently ignored here.
+            append_rule_strs = [
+                str(p) for p in request.append_rules_paths if p
+            ]
             runner = SemgrepRunner(
-                rules_path=str(request.rules_path) if request.rules_path else None
+                rules_path=str(request.rules_path) if request.rules_path else None,
+                append_rules_paths=append_rule_strs if append_rule_strs else None,
             )
             matches = runner.run(str(request.target_path))
 
@@ -462,6 +469,26 @@ class ScanPipelineService:
                 vulnerabilities=vulnerabilities,
                 files_scanned=files_scanned,
             )
+        except RuntimeError as exc:
+            # RuntimeError from SemgrepRunner means semgrep binary is missing or
+            # a rule file path does not exist.  These are actionable setup errors –
+            # fall back with a loud warning so the user knows to fix the environment.
+            import warnings
+            warnings.warn(
+                f"[ScanPipelineService] Semgrep bridge failed: {exc}\n"
+                f"  Falling back to deterministic detector.  "
+                f"Fix the issue above to get full Semgrep OSS coverage.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "semgrep-fallback",
+                    "message": f"Semgrep bridge failed: {exc}. Falling back to deterministic detector.",
+                },
+            )
+            return None
         except Exception as exc:
             self._emit_progress(
                 progress_callback,

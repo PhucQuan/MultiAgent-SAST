@@ -20,6 +20,14 @@ class ReviewedRuleProfile:
     append_rules_paths: tuple[Path, ...]
 
 
+_SEMGREP_OSS_FULL_DIR = REPO_ROOT / "rules" / "semgrep-oss-full"
+_SEMGREP_PYTHON_RULES = REPO_ROOT / "rules" / "semgrep" / "python_security.yaml"
+
+def _resolve_default_rules() -> tuple[Path, ...]:
+    if _SEMGREP_OSS_FULL_DIR.exists() and _SEMGREP_OSS_FULL_DIR.is_dir():
+        return (_SEMGREP_OSS_FULL_DIR,)
+    return (_SEMGREP_PYTHON_RULES,)
+
 _REVIEWED_RULE_PROFILES = {
     "semgrep-python-core4": ReviewedRuleProfile(
         name="semgrep-python-core4",
@@ -34,9 +42,7 @@ _REVIEWED_RULE_PROFILES = {
             "INSECURE_DESERIALIZATION",
             "SQL_INJECTION",
         ),
-        append_rules_paths=(
-            REPO_ROOT / "rules" / "reviewed" / "semgrep_python_core4_reviewed.legacy.yaml",
-        ),
+        append_rules_paths=_resolve_default_rules(),
     ),
     "semgrep-python-ssrf": ReviewedRuleProfile(
         name="semgrep-python-ssrf",
@@ -46,15 +52,13 @@ _REVIEWED_RULE_PROFILES = {
         ),
         language_scope=("python",),
         family_scope=("SSRF",),
-        append_rules_paths=(
-            REPO_ROOT / "rules" / "reviewed" / "semgrep_python_ssrf_reviewed.legacy.yaml",
-        ),
+        append_rules_paths=_resolve_default_rules(),
     ),
     "semgrep-oss-full": ReviewedRuleProfile(
         name="semgrep-oss-full",
         description=(
             "Unified Semgrep OSS Community Baseline covering OWASP Top 10 and CWE Top 25 "
-            "(COMMAND_INJECTION, PATH_TRAVERSAL, SQL_INJECTION, INSECURE_DESERIALIZATION, SSRF, XSS)."
+            "(COMMAND_INJECTION, PATH_TRAVERSAL, SQL_INJECTION, INSECURE_DESERIALIZATION, SSRF, CODE_INJECTION)."
         ),
         language_scope=("python",),
         family_scope=(
@@ -63,11 +67,9 @@ _REVIEWED_RULE_PROFILES = {
             "SQL_INJECTION",
             "INSECURE_DESERIALIZATION",
             "SSRF",
-            "XSS",
+            "CODE_INJECTION",
         ),
-        append_rules_paths=(
-            REPO_ROOT / "rules" / "reviewed" / "semgrep_oss_python_baseline.legacy.yaml",
-        ),
+        append_rules_paths=_resolve_default_rules(),
     ),
     "semgrep-community-python": ReviewedRuleProfile(
         name="semgrep-community-python",
@@ -79,11 +81,9 @@ _REVIEWED_RULE_PROFILES = {
             "SQL_INJECTION",
             "INSECURE_DESERIALIZATION",
             "SSRF",
-            "XSS",
+            "CODE_INJECTION",
         ),
-        append_rules_paths=(
-            REPO_ROOT / "rules" / "reviewed" / "semgrep_oss_python_baseline.legacy.yaml",
-        ),
+        append_rules_paths=_resolve_default_rules(),
     ),
 }
 
