@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from threading import Lock
 from typing import Any, Optional
 
 from aegis_sast.ai.contracts import (
@@ -81,10 +82,32 @@ class AITriageService:
         # Đếm ngân sách ở phạm vi cả lần quét, không phải từng finding.
         self._scan_llm_used = 0
         self._per_file_used: dict[str, int] = {}
+        # Benchmark chạy nhiều worker song song trên cùng một service. Không có
+        # khoá thì hai luồng cùng đọc `_scan_llm_used` rồi cùng tăng, và trần
+        # `max_llm_findings_per_scan` bị vượt đúng bằng số worker — tức là
+        # ngân sách quota trở thành con số gợi ý chứ không phải trần thật.
+        self._lock = Lock()
 
     # ------------------------------------------------------------------
     def triage(self, request: TriageRequest) -> TriageVerdict:
         """Triage một finding. Luôn trả verdict, không bao giờ raise ra ngoài."""
+        verdict, _state = self.triage_detailed(request)
+        return verdict
+
+    def triage_detailed(
+        self, request: TriageRequest
+    ) -> tuple[TriageVerdict, Any | None]:
+        """Như `triage()`, nhưng trả kèm GraphState thô.
+
+        Benchmark cần đọc phần bên trong — verdict của Auditor, của Skeptic,
+        số vòng tranh luận, tool đã gọi — mà `TriageVerdict` cố tình không
+        mang theo: đó là contract cho báo cáo, không phải chỗ đổ trạng thái
+        nội bộ. Trả state qua một hàm riêng giữ được cả hai: contract vẫn gọn,
+        còn benchmark không phải đi vòng qua `run_triage` và bỏ qua gate.
+
+        State là `None` khi finding bị gate loại hoặc khi graph lỗi — hai ca
+        đó không có state để đọc.
+        """
         (
             get_settings,
             run_triage,
@@ -101,24 +124,33 @@ class AITriageService:
         except Exception as exc:
             # Finding không hợp contract là lỗi tích hợp, nhưng nó không được
             # phép làm hỏng cả lần quét — trả verdict "chưa đủ dữ liệu".
-            return self._insufficient(
-                request, settings, f"finding không hợp schema: {exc}"
+            return (
+                self._insufficient(
+                    request, settings, f"finding không hợp schema: {exc}"
+                ),
+                None,
             )
 
         from collections import Counter
 
-        decision = check_eligibility(
-            finding,
-            settings,
-            per_file_counter=Counter(self._per_file_used),
-            scan_budget_used=self._scan_llm_used,
-        )
-        if not decision.eligible:
-            return self._skipped(request, settings, decision)
+        # Kiểm tra ngân sách và tiêu ngân sách phải nằm trong cùng một vùng
+        # khoá: tách ra là mở đúng khe cho hai worker cùng lọt qua trần.
+        with self._lock:
+            decision = check_eligibility(
+                finding,
+                settings,
+                per_file_counter=Counter(self._per_file_used),
+                scan_budget_used=self._scan_llm_used,
+            )
+            if decision.eligible:
+                self._scan_llm_used += 1
+                sink_file = finding.evidence.sink.file
+                self._per_file_used[sink_file] = (
+                    self._per_file_used.get(sink_file, 0) + 1
+                )
 
-        self._scan_llm_used += 1
-        sink_file = finding.evidence.sink.file
-        self._per_file_used[sink_file] = self._per_file_used.get(sink_file, 0) + 1
+        if not decision.eligible:
+            return self._skipped(request, settings, decision), None
 
         try:
             state = run_triage(
@@ -130,12 +162,12 @@ class AITriageService:
                 repo_profile=request.repo_profile,
             )
         except Exception as exc:
-            return self._insufficient(request, settings, f"graph lỗi: {exc}")
+            return self._insufficient(request, settings, f"graph lỗi: {exc}"), None
 
         verdict = self._to_verdict(request, state, settings)
         verdict.usage.latency_ms = int((time.perf_counter() - started) * 1000)
         self._record_trajectory(state)
-        return verdict
+        return verdict, state
 
     # ------------------------------------------------------------------
     def _to_verdict(self, request, state, settings) -> TriageVerdict:
@@ -238,5 +270,6 @@ class AITriageService:
 
     def reset_budget(self) -> None:
         """Bắt đầu một lần quét mới."""
-        self._scan_llm_used = 0
-        self._per_file_used = {}
+        with self._lock:
+            self._scan_llm_used = 0
+            self._per_file_used = {}

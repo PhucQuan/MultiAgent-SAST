@@ -1,9 +1,9 @@
 """API công khai của tầng AI.
 
 Core, orchestration, CLI và script benchmark chỉ được import từ đây. Import
-thẳng `ai.graph`, `ai.llm.nvidia_client` hay `aegis_sast.ai.gemini_client` từ
-bên ngoài tầng AI là đi vòng qua eligibility gate và policy suppression — tức
-là bỏ qua đúng hai cơ chế giữ cho verdict an toàn và chi phí có trần.
+thẳng `ai.graph` hay `ai.llm.nvidia_client` từ bên ngoài tầng AI là đi vòng qua
+eligibility gate và policy suppression — tức là bỏ qua đúng hai cơ chế giữ cho
+verdict an toàn và chi phí có trần.
 """
 
 from .contracts import (
@@ -16,7 +16,6 @@ from .contracts import (
 )
 from .gateway import (
     AIModelGateway,
-    GeminiLegacyGateway,
     MockGateway,
     ModelPolicy,
     ModelResponse,
@@ -40,7 +39,6 @@ __all__ = [
     "ModelResponse",
     "MockGateway",
     "NvidiaGateway",
-    "GeminiLegacyGateway",
     "get_gateway",
     "register_gateway",
     "available_gateways",

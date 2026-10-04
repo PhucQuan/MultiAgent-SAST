@@ -33,12 +33,15 @@ for _p in (REPO_ROOT, SCRIPT_DIR):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from run_ai_multiagent_benchmark import (  # noqa: E402
+from run_ai_multiagent_benchmark import (
+    _apply_run_settings,
     build_overlay,
     triage_findings,
     use_cold_cache,
 )
 from scan_target import run_manual_scan  # noqa: E402
+
+from aegis_sast.ai.api import AITriageService
 
 STATE_ORDER = ["confirmed", "likely", "needs-review", "suppressed"]
 
@@ -72,6 +75,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--exclude-dir", action="append", default=None, help="Bỏ qua thư mục, lặp lại được"
+    )
+    p.add_argument(
+        "--ai-mode",
+        choices=["disabled", "heuristic", "shadow", "review-only", "active"],
+        default="active",
+        help="Mode của tầng AI. `active` mới được ghi verdict vào overlay; "
+        "`shadow` chạy và ghi log nhưng giữ nguyên kết luận của core.",
+    )
+    p.add_argument(
+        "--max-ai-findings",
+        type=int,
+        default=None,
+        help="Trần số finding được gửi sang LLM. Không truyền thì lấy đúng số "
+        "finding sẽ triage trong lần chạy này.",
     )
     return p
 
@@ -147,9 +164,20 @@ def main() -> int:
         print(f"      -> cache lạnh: {use_cold_cache()}")
 
     # --- Bước 3: triage bằng multi-agent ----------------------------------
+    settings = _apply_run_settings(args, finding_count=len(findings))
     print(f"[3/3] Triage {len(findings)} finding bằng multi-agent (workers={args.workers})")
+    print(f"      -> ai mode: {settings.ai_mode}, gate: {settings.max_llm_findings_per_scan}/scan")
+
+    run_id = f"scan_{stamp}"
+    service = AITriageService(
+        run_id=run_id, trajectory_path=out_dir / "trajectories.jsonl"
+    )
     results, wall = triage_findings(
-        findings, workers=args.workers, checkpoint=out_dir / "checkpoint.jsonl"
+        findings,
+        workers=args.workers,
+        checkpoint=out_dir / "checkpoint.jsonl",
+        service=service,
+        run_id=run_id,
     )
 
     from ai.llm.nvidia_client import llm_client

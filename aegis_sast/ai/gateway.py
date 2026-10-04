@@ -5,9 +5,10 @@ multi-agent gọi client NVIDIA. Hệ quả là đổi provider phải sửa cod
 nơi, và một báo cáo không nói được nó đến từ mô hình nào — hai điều đều hỏng
 cho một công trình cần tái lập kết quả.
 
-Gateway giải quyết bằng cách hạ cả hai xuống thành adapter sau một Protocol.
-`gemini_legacy` giữ lại đúng một vai trò: chạy A/B đối chứng trong benchmark.
-Nó không còn là đường chạy chính và không được gọi trực tiếp từ core nữa.
+Gateway giải quyết bằng cách hạ provider xuống thành adapter sau một Protocol.
+Adapter Gemini legacy đã bị gỡ khỏi tầng AI: nó không đi qua graph multi-agent
+nên không sinh evidence ledger, và một verdict không có evidence thì policy
+suppression chặn lại — giữ nó chỉ tạo ra một đường chạy thứ hai yếu hơn.
 
 `mock` là adapter mặc định khi chưa cấu hình gì — chọn như vậy để một lần
 chạy nhầm trong CI không tiêu quota thật.
@@ -155,58 +156,9 @@ class NvidiaGateway:
         )
 
 
-class GeminiLegacyGateway:
-    """Adapter Gemini, CHỈ dùng để đối chứng A/B trong benchmark.
-
-    Giữ lại vì so sánh hai provider trên cùng một tập finding là dữ liệu có
-    giá trị cho phần đánh giá. Không dùng cho đường chạy chính: nó không đi
-    qua graph multi-agent nên không sinh evidence ledger, và một verdict
-    không có evidence thì policy suppression sẽ chặn lại.
-    """
-
-    name = "gemini_legacy"
-
-    def __init__(self, client=None):
-        self._client = client
-
-    @property
-    def client(self):
-        if self._client is None:
-            from aegis_sast.ai.gemini_client import GeminiClient
-
-            self._client = GeminiClient()
-        return self._client
-
-    def complete_json(
-        self,
-        *,
-        task: str,
-        system_prompt: str,
-        payload: dict,
-        response_model: type,
-        model_policy: ModelPolicy,
-        deadline_ms: int,
-    ) -> ModelResponse:
-        import time
-
-        start = time.perf_counter()
-        raw = self.client._call_api(f"{system_prompt}\n\n{payload}")
-        latency = int((time.perf_counter() - start) * 1000)
-
-        from ai.llm.nvidia_client import extract_json
-
-        return ModelResponse(
-            data=extract_json(raw) or {},
-            provider=self.name,
-            model=model_policy.model or "gemini-legacy",
-            latency_ms=latency,
-        )
-
-
 _REGISTRY: dict[str, Any] = {
     "mock": MockGateway,
     "nvidia_nim": NvidiaGateway,
-    "gemini_legacy": GeminiLegacyGateway,
 }
 
 
