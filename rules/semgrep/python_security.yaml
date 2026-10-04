@@ -1,0 +1,265 @@
+rules:
+  # =============================================================================
+  # COMMAND INJECTION (CWE-78) – taint sources x sinks
+  # Derived from semgrep_oss_python_baseline.legacy.yaml
+  # =============================================================================
+  - id: aegis-python-cmdi-subprocess-run
+    languages: [python]
+    message: "Potential OS command injection: untrusted input may reach subprocess.run(). Use shell=False and pass a list of args."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: COMMAND_INJECTION
+    patterns:
+      - pattern: subprocess.run($CMD, ...)
+      - pattern-not: subprocess.run([...], ...)
+      - pattern-not: subprocess.run($CMD, shell=False, ...)
+
+  - id: aegis-python-cmdi-subprocess-popen
+    languages: [python]
+    message: "Potential OS command injection: untrusted input may reach subprocess.Popen(). Use shell=False."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: COMMAND_INJECTION
+    patterns:
+      - pattern: subprocess.Popen($CMD, ...)
+      - pattern-not: subprocess.Popen([...], ...)
+
+  - id: aegis-python-cmdi-subprocess-call
+    languages: [python]
+    message: "Potential OS command injection: untrusted input may reach subprocess.call(). Use shell=False."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: COMMAND_INJECTION
+    patterns:
+      - pattern: subprocess.call($CMD, ...)
+      - pattern-not: subprocess.call([...], ...)
+
+  - id: aegis-python-cmdi-os-system
+    languages: [python]
+    message: "Potential OS command injection: os.system() executes shell commands. Avoid using user-controlled input."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: COMMAND_INJECTION
+    pattern: os.system($CMD)
+
+  - id: aegis-python-cmdi-os-popen
+    languages: [python]
+    message: "Potential OS command injection: os.popen() executes shell commands."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: COMMAND_INJECTION
+    pattern: os.popen($CMD)
+
+  - id: aegis-python-cmdi-subprocess-shell-true
+    languages: [python]
+    message: "Dangerous subprocess call with shell=True. If input is user-controlled this is a command injection risk."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-78"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: COMMAND_INJECTION
+    pattern: subprocess.$FN($CMD, ..., shell=True, ...)
+
+  # =============================================================================
+  # PATH TRAVERSAL (CWE-22)
+  # =============================================================================
+  - id: aegis-python-pathtraver-open
+    languages: [python]
+    message: "Potential path traversal: open() called with possibly user-controlled path. Validate with os.path.basename() or abspath()."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-22"]
+      owasp: ["A01:2021 – Broken Access Control"]
+      aegis_family: PATH_TRAVERSAL
+    patterns:
+      - pattern: open($PATH, ...)
+      - pattern-not: open(os.path.join($BASE, os.path.basename($PATH)), ...)
+
+  - id: aegis-python-pathtraver-send-file
+    languages: [python]
+    message: "Potential path traversal: send_file() called with possibly user-controlled filename."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-22"]
+      owasp: ["A01:2021 – Broken Access Control"]
+      aegis_family: PATH_TRAVERSAL
+    pattern: send_file($PATH, ...)
+
+  - id: aegis-python-pathtraver-os-remove
+    languages: [python]
+    message: "Potential path traversal: os.remove() called with possibly user-controlled path."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-22"]
+      owasp: ["A01:2021 – Broken Access Control"]
+      aegis_family: PATH_TRAVERSAL
+    pattern: os.remove($PATH)
+
+  # =============================================================================
+  # INSECURE DESERIALIZATION (CWE-502)
+  # =============================================================================
+  - id: aegis-python-deser-pickle-load
+    languages: [python]
+    message: "Insecure deserialization: pickle.load() / pickle.loads() with untrusted data allows arbitrary code execution."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+      owasp: ["A08:2021 – Software and Data Integrity Failures"]
+      aegis_family: INSECURE_DESERIALIZATION
+    pattern-either:
+      - pattern: pickle.load($DATA)
+      - pattern: pickle.loads($DATA)
+      - pattern: _pickle.load($DATA)
+      - pattern: _pickle.loads($DATA)
+      - pattern: cPickle.load($DATA)
+      - pattern: cPickle.loads($DATA)
+
+  - id: aegis-python-deser-dill-load
+    languages: [python]
+    message: "Insecure deserialization: dill.load() / dill.loads() with untrusted data allows arbitrary code execution."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+      owasp: ["A08:2021 – Software and Data Integrity Failures"]
+      aegis_family: INSECURE_DESERIALIZATION
+    pattern-either:
+      - pattern: dill.load($DATA)
+      - pattern: dill.loads($DATA)
+
+  - id: aegis-python-deser-yaml-load
+    languages: [python]
+    message: "Insecure deserialization: yaml.load() without Loader=yaml.SafeLoader is unsafe. Use yaml.safe_load() instead."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-502"]
+      owasp: ["A08:2021 – Software and Data Integrity Failures"]
+      aegis_family: INSECURE_DESERIALIZATION
+    patterns:
+      - pattern: yaml.load($DATA, ...)
+      - pattern-not: yaml.load($DATA, Loader=yaml.SafeLoader)
+      - pattern-not: yaml.load($DATA, Loader=yaml.BaseLoader)
+
+  # =============================================================================
+  # SQL INJECTION (CWE-89)
+  # =============================================================================
+  - id: aegis-python-sqli-execute-format
+    languages: [python]
+    message: "Potential SQL injection: cursor.execute() called with string formatting. Use parameterized queries."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: SQL_INJECTION
+    pattern-either:
+      - pattern: $CUR.execute("..." % ...)
+      - pattern: $CUR.execute("...".format(...))
+      - pattern: $CUR.execute(f"...")
+      - pattern: $CUR.execute($QUERY + ...)
+      - pattern: $CUR.execute(... + $QUERY)
+
+  - id: aegis-python-sqli-executemany-format
+    languages: [python]
+    message: "Potential SQL injection: cursor.executemany() with string formatting. Use parameterized queries."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: SQL_INJECTION
+    pattern-either:
+      - pattern: $CUR.executemany("..." % ...)
+      - pattern: $CUR.executemany("...".format(...))
+      - pattern: $CUR.executemany(f"...")
+
+  - id: aegis-python-sqli-sqlalchemy-text
+    languages: [python]
+    message: "Potential SQL injection: sqlalchemy.text() with user-controlled string. Use bound parameters."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-89"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: SQL_INJECTION
+    pattern-either:
+      - pattern: sqlalchemy.text("..." % ...)
+      - pattern: sqlalchemy.text("...".format(...))
+      - pattern: sqlalchemy.text(f"...")
+      - pattern: text("..." % ...)
+      - pattern: text("...".format(...))
+      - pattern: text(f"...")
+
+  # =============================================================================
+  # SSRF – Server-Side Request Forgery (CWE-918)
+  # =============================================================================
+  - id: aegis-python-ssrf-requests-get
+    languages: [python]
+    message: "Potential SSRF: requests.get() with user-controlled URL. Validate and allowlist the target domain."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-918"]
+      owasp: ["A10:2021 – Server-Side Request Forgery"]
+      aegis_family: SSRF
+    pattern: requests.get($URL, ...)
+
+  - id: aegis-python-ssrf-requests-post
+    languages: [python]
+    message: "Potential SSRF: requests.post() with user-controlled URL. Validate and allowlist the target domain."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-918"]
+      owasp: ["A10:2021 – Server-Side Request Forgery"]
+      aegis_family: SSRF
+    pattern: requests.post($URL, ...)
+
+  - id: aegis-python-ssrf-requests-request
+    languages: [python]
+    message: "Potential SSRF: requests.request() with user-controlled URL."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-918"]
+      owasp: ["A10:2021 – Server-Side Request Forgery"]
+      aegis_family: SSRF
+    pattern: requests.request($METHOD, $URL, ...)
+
+  - id: aegis-python-ssrf-urllib-urlopen
+    languages: [python]
+    message: "Potential SSRF: urllib.request.urlopen() with user-controlled URL."
+    severity: WARNING
+    metadata:
+      cwe: ["CWE-918"]
+      owasp: ["A10:2021 – Server-Side Request Forgery"]
+      aegis_family: SSRF
+    pattern-either:
+      - pattern: urllib.request.urlopen($URL)
+      - pattern: urllib.urlopen($URL)
+
+  # =============================================================================
+  # CODE INJECTION (CWE-94)
+  # =============================================================================
+  - id: aegis-python-codeinj-eval
+    languages: [python]
+    message: "Code injection: eval() with user-controlled input can execute arbitrary Python. Use ast.literal_eval() for safe literal parsing."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-94"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: CODE_INJECTION
+    pattern: eval($CODE)
+
+  - id: aegis-python-codeinj-exec
+    languages: [python]
+    message: "Code injection: exec() with user-controlled input can execute arbitrary Python."
+    severity: ERROR
+    metadata:
+      cwe: ["CWE-94"]
+      owasp: ["A03:2021 – Injection"]
+      aegis_family: CODE_INJECTION
+    pattern: exec($CODE)

@@ -50,6 +50,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # CWE trong dataset -> họ lỗ hổng của Aegis.
 CWE_TO_FAMILY = {
     "22": "PATH_TRAVERSAL",
@@ -155,8 +162,18 @@ def load_positions(dataset: Path) -> dict[str, str]:
     return out
 
 
-def scan_file(path: Path, registry, rule_engine_cls, detector_cls) -> list:
+def scan_file(path: Path, engine: str, service, rule_engine_cls, detector_cls) -> list:
     """Quét một file, trả về danh sách Vulnerability."""
+    if engine == "semgrep" and service is not None:
+        from aegis_sast.orchestration.service import ScanPipelineRequest
+        req = ScanPipelineRequest(
+            target_path=path,
+            enable_ai_verification=False,
+            scan_engine="semgrep",
+            export_reports=False,
+        )
+        res = service.run(req)
+        return res.scan_result.vulnerabilities or []
     detector = detector_cls(rule_engine_cls(), max_depth=5)
     return detector.analyze_file(path) or []
 
@@ -187,10 +204,16 @@ def main() -> int:
     ap.add_argument("--match", choices=("official", "family"), default="official",
                     help="official: khớp cả họ và tên hàm như script của tác giả; "
                          "family: chỉ khớp họ (rộng hơn)")
+    ap.add_argument("--engine", choices=("semgrep", "builtin"), default="semgrep",
+                    help="semgrep (mặc định): dùng Semgrep OSS Taint Bridge đầy đủ; "
+                         "builtin: dùng bộ rule engine nội bộ cũ")
     args = ap.parse_args()
 
     from aegis_sast.analysis.rule_engine import RuleEngine
     from aegis_sast.analysis.vulnerability_detector import VulnerabilityDetector
+    from aegis_sast.orchestration.service import ScanPipelineService
+
+    service = ScanPipelineService() if args.engine == "semgrep" else None
 
     positions = load_positions(args.dataset)
     if args.match == "official" and not positions:
@@ -221,7 +244,7 @@ def main() -> int:
             for label, path in (("vul", vul_path), ("fix", fix_path)):
                 if path is None:
                     continue
-                vulns = scan_file(path, None, RuleEngine, VulnerabilityDetector)
+                vulns = scan_file(path, args.engine, service, RuleEngine, VulnerabilityDetector)
                 scanned += 1
                 hits = {m: False for m in modes}
                 expected_scope = positions.get(case_id, "")

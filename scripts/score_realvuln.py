@@ -34,9 +34,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Ánh xạ CWE -> họ lỗ hổng của Aegis. Chỉ liệt kê các họ công cụ thực sự hỗ trợ;
 # nhãn mang CWE ngoài bảng này nằm ngoài phạm vi đánh giá.

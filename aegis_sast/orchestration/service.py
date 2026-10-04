@@ -407,10 +407,15 @@ class ScanPipelineService:
             )
 
             start_time = datetime.now()
+            # Build the full set of rule paths: explicit override + profile append rules.
+            # This is the key fix: append_rules_paths (from reviewed rule profiles used
+            # by the benchmark runner) were previously silently ignored here.
+            append_rule_strs = [
+                str(p) for p in request.append_rules_paths if p
+            ]
             runner = SemgrepRunner(
                 rules_path=str(request.rules_path) if request.rules_path else None,
-                rule_profile=request.rule_profile,
-                languages=repo_profile.detected_languages,
+                append_rules_paths=append_rule_strs if append_rule_strs else None,
             )
             matches = runner.run(
                 str(request.target_path),
@@ -418,8 +423,8 @@ class ScanPipelineService:
                 exclude_globs=request.exclude_globs,
             )
 
-            if runner.last_error or not matches:
-                fallback_reason = runner.last_error or "Semgrep returned no findings."
+            if runner.last_error:
+                fallback_reason = runner.last_error
                 self._emit_progress(
                     progress_callback,
                     {
@@ -436,6 +441,8 @@ class ScanPipelineService:
                     "scan_fallback": True,
                     "scan_fallback_reason": fallback_reason,
                     "rule_profile": runner.config_description,
+                    "semgrep_command": runner.last_command,
+                    "semgrep_match_count": getattr(runner, "last_match_count", 0),
                 }
 
             self._emit_progress(
@@ -510,7 +517,33 @@ class ScanPipelineService:
                 "scan_fallback": False,
                 "rule_profile": runner.config_description,
                 "semgrep_command": runner.last_command,
-                "semgrep_match_count": len(matches),
+                "semgrep_match_count": runner.last_match_count,
+            }
+        except RuntimeError as exc:
+            # RuntimeError from SemgrepRunner means semgrep binary is missing or
+            # a rule file path does not exist.  These are actionable setup errors –
+            # fall back with a loud warning so the user knows to fix the environment.
+            import warnings
+            warnings.warn(
+                f"[ScanPipelineService] Semgrep bridge failed: {exc}\n"
+                f"  Falling back to deterministic detector.  "
+                f"Fix the issue above to get full Semgrep OSS coverage.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self._emit_progress(
+                progress_callback,
+                {
+                    "event": "semgrep-fallback",
+                    "message": f"Semgrep bridge failed: {exc}. Falling back to deterministic detector.",
+                },
+            )
+            return None, {
+                "scan_engine_requested": "semgrep",
+                "scan_engine_used": "deterministic",
+                "scan_fallback": True,
+                "scan_fallback_reason": str(exc),
+                "rule_profile": request.rule_profile,
             }
         except Exception as exc:
             self._emit_progress(
@@ -561,7 +594,12 @@ class ScanPipelineService:
 
         rule_engine = RuleEngine(
             config.custom_rules_path,
-            extra_rules_paths=request.append_rules_paths,
+            # Semgrep profiles may be directories containing many YAML rules.
+            # They belong to SemgrepRunner and must never be opened as one
+            # deterministic Aegis YAML document during fallback.
+            extra_rules_paths=[
+                path for path in request.append_rules_paths if path.is_file()
+            ],
         )
         return VulnerabilityDetector(rule_engine, request.max_analysis_depth)
 
