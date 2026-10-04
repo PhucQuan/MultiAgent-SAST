@@ -1,0 +1,35 @@
+{
+  "cwe": "CWE-502",
+  "name": "INSECURE_DESERIALIZATION",
+  "language": "javascript",
+  "functional_semantics": "Dữ liệu không tin cậy được nạp bởi bộ giải tuần tự có khả năng dựng lại hàm hoặc gây prototype pollution",
+  "sources": ["req.body", "req.query", "req.cookies", "req.headers", "message payload từ socket"],
+  "sinks": ["node-serialize.unserialize", "serialize-javascript kết hợp eval", "eval", "Function(", "vm.runInNewContext", "js-yaml load với schema không an toàn", "funcster.deepDeserialize"],
+  "sanitizers": [
+    "JSON.parse() cho dữ liệu ngoài",
+    "js-yaml load mặc định (DEFAULT_SCHEMA, không cho !!js/function)",
+    "Xác thực chữ ký HMAC trước khi giải tuần tự",
+    "Schema validation (zod/joi/ajv) sau khi parse",
+    "Object.create(null) hoặc kiểm tra __proto__ khi merge dữ liệu"
+  ],
+  "root_cause": "Bộ giải tuần tự cho phép payload mô tả hàm hoặc khoá __proto__, dẫn tới thực thi mã hoặc prototype pollution",
+  "fp_indicators": [
+    "Dữ liệu được parse bằng JSON.parse chứ không phải unserialize/eval",
+    "js-yaml dùng schema mặc định nên không dựng được !!js/function",
+    "Payload đã qua kiểm HMAC trước khi giải tuần tự",
+    "Có bước validate schema và loại bỏ khoá __proto__/constructor",
+    "Chuỗi truyền vào là hằng số trong test"
+  ],
+  "few_shot": [
+    {
+      "code": "const serialize = require('node-serialize');\nconst obj = serialize.unserialize(req.cookies.profile);",
+      "label": "TP",
+      "why": "node-serialize thực thi IIFE trong payload, RCE trực tiếp"
+    },
+    {
+      "code": "const obj = JSON.parse(req.cookies.profile);\nconst clean = schema.parse(obj);",
+      "label": "FP",
+      "why": "JSON.parse không dựng hàm, lại có validate schema sau đó"
+    }
+  ]
+}

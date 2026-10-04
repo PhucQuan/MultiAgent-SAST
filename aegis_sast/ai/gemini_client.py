@@ -7,7 +7,6 @@ Handles communication with Google's Gemini API for AI-based analysis.
 import json
 import asyncio
 from typing import Dict, Any, Optional
-from datetime import datetime
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
