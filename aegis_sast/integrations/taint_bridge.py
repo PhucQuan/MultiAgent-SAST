@@ -212,6 +212,15 @@ class TaintBridge:
 
         evidence_meta = dict(match.metadata)
         evidence_meta["semgrep_check_id"] = match.check_id
+        evidence_meta["semgrep_fingerprint"] = match.fingerprint
+        evidence_meta["semgrep_start"] = {
+            "line": match.line,
+            "column": match.col,
+        }
+        evidence_meta["semgrep_end"] = {
+            "line": match.end_line,
+            "column": match.end_col,
+        }
         evidence_meta["dfg_trace_success"] = dfg_trace_success
         evidence_meta["metavars"] = match.metavars
 
@@ -225,14 +234,15 @@ class TaintBridge:
 
         metadata = dict(match.metadata)
         metadata["semgrep_check_id"] = match.check_id
+        metadata["semgrep_fingerprint"] = match.fingerprint
         metadata["cwe"] = match.metadata.get("cwe", [])
         metadata["owasp"] = match.metadata.get("owasp", [])
         metadata["dfg_trace_success"] = dfg_trace_success
 
         return NormalizedFinding(
-            id=str(uuid.uuid4()),
+            id=match.fingerprint or str(uuid.uuid4()),
             tool="semgrep-aegis-bridge",
-            language="python",
+            language=match.language or self._infer_language(match.file_path),
             rule_id=match.check_id,
             vulnerability_type=vuln_type.value,
             severity=match.severity,
@@ -247,6 +257,20 @@ class TaintBridge:
             metadata=metadata,
             detected_at=datetime.now(),
         )
+
+    @staticmethod
+    def _infer_language(file_path: str) -> str:
+        """Keep non-Python Semgrep findings correctly typed in the common schema."""
+        return {
+            ".py": "python",
+            ".pyw": "python",
+            ".js": "javascript",
+            ".jsx": "javascript",
+            ".ts": "typescript",
+            ".tsx": "typescript",
+            ".java": "java",
+            ".php": "php",
+        }.get(Path(file_path).suffix.lower(), "unknown")
 
     def _find_enclosing_node(
         self,

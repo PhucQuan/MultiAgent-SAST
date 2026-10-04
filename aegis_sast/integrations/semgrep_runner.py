@@ -12,7 +12,11 @@ Rule resolution priority (first match wins):
 from __future__ import annotations
 
 import json
+import hashlib
+import os
+import shutil
 import subprocess
+import sys
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +50,8 @@ class SemgrepMatch:
     metadata: Dict[str, Any] = field(default_factory=dict)
     metavars: Dict[str, Any] = field(default_factory=dict)
     code_snippet: str = ""
+    fingerprint: str = ""
+    language: str = ""
 
 
 class SemgrepRunner:
@@ -55,9 +61,32 @@ class SemgrepRunner:
         self,
         rules_path: Optional[str] = None,
         append_rules_paths: Optional[List[str]] = None,
+        rule_profile: str = "auto",
+        languages: Optional[List[str]] = None,
     ) -> None:
         self._explicit_rules_path = rules_path
         self._append_rules_paths: List[str] = [str(p) for p in (append_rules_paths or [])]
+        self._rule_profile = rule_profile
+        self._languages = languages or []
+        self.semgrep_executable = self._find_executable()
+        self.last_error: Optional[str] = None
+        self.last_command: List[str] = []
+        self.last_match_count = 0
+        self.config_description = ""
+
+    @staticmethod
+    def _find_executable() -> str:
+        """Prefer the Semgrep executable installed beside the active Python."""
+        candidates = []
+        scripts_dir = Path(sys.executable).resolve().parent
+        candidates.append(scripts_dir / ("semgrep.exe" if os.name == "nt" else "semgrep"))
+        found = shutil.which("semgrep")
+        if found:
+            candidates.append(Path(found))
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        return "semgrep"
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -94,6 +123,9 @@ class SemgrepRunner:
                 args += ["--config", path]
             return args
 
+        if self._rule_profile == "auto" and self._languages:
+            return ["--config", f"p/{self._languages[0]}"]
+
         # Priority 3 – repo-local offline baseline (no network needed)
         # Check full official rules directory first (371 rules)
         if _OFFLINE_BASELINE_DIR.exists() and _OFFLINE_BASELINE_DIR.is_dir():
@@ -128,7 +160,13 @@ class SemgrepRunner:
     # Public API
     # ------------------------------------------------------------------
 
-    def run(self, target_path: str) -> List[SemgrepMatch]:
+    def run(
+        self,
+        target_path: str,
+        *,
+        exclude_dir_names: Optional[List[str]] = None,
+        exclude_globs: Optional[List[str]] = None,
+    ) -> List[SemgrepMatch]:
         """Execute Semgrep on ``target_path`` and return parsed matches.
 
         Raises
@@ -137,15 +175,26 @@ class SemgrepRunner:
             If the ``semgrep`` binary is not found in PATH (helps diagnose
             silent fallback issues on machines where semgrep is not installed).
         """
+        self.last_error = None
         config_args = self._resolve_config_args()
+        self.config_description = ", ".join(
+            config_args[index + 1]
+            for index, value in enumerate(config_args[:-1])
+            if value == "--config"
+        )
         cmd = [
-            "semgrep",
+            self.semgrep_executable,
             "scan",
-            *config_args,
             "--json",
+            *config_args,
             "--no-rewrite-rule-ids",
-            target_path,
         ]
+        for directory in exclude_dir_names or []:
+            cmd.extend(["--exclude", directory])
+        for pattern in exclude_globs or []:
+            cmd.extend(["--exclude", pattern])
+        cmd.append(target_path)
+        self.last_command = cmd
 
         try:
             result = subprocess.run(
@@ -155,11 +204,19 @@ class SemgrepRunner:
                 encoding="utf-8",
             )
             if not result.stdout.strip():
+                self.last_error = (
+                    result.stderr.strip()
+                    or f"Semgrep exited with code {result.returncode} without JSON output."
+                )
                 return []
 
             try:
                 output = json.loads(result.stdout)
             except json.JSONDecodeError:
+                self.last_error = (
+                    result.stderr.strip()
+                    or "Semgrep returned invalid JSON output."
+                )
                 return []
 
             matches: List[SemgrepMatch] = []
@@ -179,8 +236,23 @@ class SemgrepRunner:
                         metadata=extra.get("metadata", {}),
                         metavars=extra.get("metavars", {}),
                         code_snippet=extra.get("lines", ""),
+                        fingerprint=str(
+                            r.get("fingerprint")
+                            or hashlib.sha256(
+                                "|".join(
+                                    [
+                                        str(r.get("check_id", "unknown")),
+                                        str(r.get("path", "unknown")),
+                                        str(r.get("start", {}).get("line", 0)),
+                                        str(extra.get("message", "")),
+                                    ]
+                                ).encode("utf-8")
+                            ).hexdigest()
+                        ),
+                        language=str(extra.get("metadata", {}).get("technology", "") or ""),
                     )
                 )
+            self.last_match_count = len(matches)
             return matches
 
         except FileNotFoundError:

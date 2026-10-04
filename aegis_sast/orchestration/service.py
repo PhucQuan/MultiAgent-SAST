@@ -38,6 +38,7 @@ class ScanPipelineRequest:
     output_dir: Path = field(default_factory=lambda: Path("reports"))
     export_reports: bool = True
     scan_engine: str = "semgrep"
+    rule_profile: str = "auto"
 
     def __post_init__(self) -> None:
         """Normalize filesystem inputs and list values."""
@@ -57,6 +58,7 @@ class ScanPipelineRequest:
         self.output_dir = Path(self.output_dir)
         self.output_formats = [value.lower() for value in self.output_formats]
         self.scan_engine = (self.scan_engine or "semgrep").strip().lower()
+        self.rule_profile = (self.rule_profile or "auto").strip().lower()
 
 
 @dataclass
@@ -150,13 +152,21 @@ class ScanPipelineService:
             type(self)._run_scan is not ScanPipelineService._run_scan
             or type(self)._build_detector is not ScanPipelineService._build_detector
         )
+        engine_metadata: dict[str, Any] = {
+            "scan_engine_requested": request.scan_engine,
+            "rule_profile": request.rule_profile,
+        }
         if not is_custom_stub and request.scan_engine == "semgrep":
-            scan_result = self._run_semgrep_bridge_scan(
+            scan_result, engine_metadata = self._run_semgrep_bridge_scan(
                 request,
+                repo_profile=repo_profile,
                 progress_callback=progress_callback,
             )
 
         if scan_result is None:
+            engine_metadata.setdefault("scan_engine_used", "deterministic")
+            if request.scan_engine == "semgrep":
+                engine_metadata.setdefault("scan_fallback", True)
             detector = self._build_detector(request, config)
             scan_result = self._run_scan_with_progress(
                 detector,
@@ -248,6 +258,7 @@ class ScanPipelineService:
                 workflow_state.triage_records = list(triage_records)
                 workflow_state.findings = [record.finding for record in triage_records]
                 workflow_state.metadata = dict(workflow_metadata)
+        workflow_metadata = {**engine_metadata, **workflow_metadata}
 
         exported_reports: dict[str, Path] = {}
         if request.export_reports:
@@ -335,7 +346,7 @@ class ScanPipelineService:
                 "errors": 0,
             },
         )
-        vulnerabilities = detector.analyze_file(target)
+        vulnerabilities = detector.analyze_file(target, project_root=target.parent)
         end_time = datetime.now()
 
         scan_result = ScanResult(
@@ -375,8 +386,9 @@ class ScanPipelineService:
         self,
         request: ScanPipelineRequest,
         *,
+        repo_profile: RepoProfile,
         progress_callback: Optional[Callable[[dict[str, Any]], None]] = None,
-    ) -> Optional[ScanResult]:
+    ) -> tuple[Optional[ScanResult], dict[str, Any]]:
         """Execute Semgrep OSS rules and bridge findings with Tree-sitter DFG."""
         try:
             from aegis_sast.integrations.semgrep_adapter import (
@@ -405,7 +417,33 @@ class ScanPipelineService:
                 rules_path=str(request.rules_path) if request.rules_path else None,
                 append_rules_paths=append_rule_strs if append_rule_strs else None,
             )
-            matches = runner.run(str(request.target_path))
+            matches = runner.run(
+                str(request.target_path),
+                exclude_dir_names=request.exclude_dir_names,
+                exclude_globs=request.exclude_globs,
+            )
+
+            if runner.last_error:
+                fallback_reason = runner.last_error
+                self._emit_progress(
+                    progress_callback,
+                    {
+                        "event": "semgrep-fallback",
+                        "message": (
+                            "Semgrep failed; using the deterministic YAML/Tree-sitter "
+                            f"fallback: {fallback_reason}"
+                        ),
+                    },
+                )
+                return None, {
+                    "scan_engine_requested": "semgrep",
+                    "scan_engine_used": "deterministic",
+                    "scan_fallback": True,
+                    "scan_fallback_reason": fallback_reason,
+                    "rule_profile": runner.config_description,
+                    "semgrep_command": runner.last_command,
+                    "semgrep_match_count": getattr(runner, "last_match_count", 0),
+                }
 
             self._emit_progress(
                 progress_callback,
@@ -437,7 +475,12 @@ class ScanPipelineService:
                             "message": "Analyzing inter-procedural cross-file call graph & dataflow.",
                         },
                     )
-                    cross_engine = CrossFileTaintEngine(project_root)
+                    cross_engine = CrossFileTaintEngine(
+                        project_root,
+                        max_depth=request.max_analysis_depth,
+                        exclude_dir_names=set(request.exclude_dir_names),
+                        exclude_globs=request.exclude_globs,
+                    )
                     cross_findings = cross_engine.analyze_project()
                     if cross_findings:
                         self._emit_progress(
@@ -468,7 +511,14 @@ class ScanPipelineService:
                 end_time=end_time,
                 vulnerabilities=vulnerabilities,
                 files_scanned=files_scanned,
-            )
+            ), {
+                "scan_engine_requested": "semgrep",
+                "scan_engine_used": "semgrep",
+                "scan_fallback": False,
+                "rule_profile": runner.config_description,
+                "semgrep_command": runner.last_command,
+                "semgrep_match_count": runner.last_match_count,
+            }
         except RuntimeError as exc:
             # RuntimeError from SemgrepRunner means semgrep binary is missing or
             # a rule file path does not exist.  These are actionable setup errors –
@@ -488,7 +538,13 @@ class ScanPipelineService:
                     "message": f"Semgrep bridge failed: {exc}. Falling back to deterministic detector.",
                 },
             )
-            return None
+            return None, {
+                "scan_engine_requested": "semgrep",
+                "scan_engine_used": "deterministic",
+                "scan_fallback": True,
+                "scan_fallback_reason": str(exc),
+                "rule_profile": request.rule_profile,
+            }
         except Exception as exc:
             self._emit_progress(
                 progress_callback,
@@ -497,7 +553,13 @@ class ScanPipelineService:
                     "message": f"Semgrep bridge notice: {exc}. Falling back to deterministic detector.",
                 },
             )
-            return None
+            return None, {
+                "scan_engine_requested": "semgrep",
+                "scan_engine_used": "deterministic",
+                "scan_fallback": True,
+                "scan_fallback_reason": str(exc),
+                "rule_profile": request.rule_profile,
+            }
 
     @staticmethod
     def _prepare_config(request: ScanPipelineRequest) -> AegisConfig:
@@ -532,7 +594,12 @@ class ScanPipelineService:
 
         rule_engine = RuleEngine(
             config.custom_rules_path,
-            extra_rules_paths=request.append_rules_paths,
+            # Semgrep profiles may be directories containing many YAML rules.
+            # They belong to SemgrepRunner and must never be opened as one
+            # deterministic Aegis YAML document during fallback.
+            extra_rules_paths=[
+                path for path in request.append_rules_paths if path.is_file()
+            ],
         )
         return VulnerabilityDetector(rule_engine, request.max_analysis_depth)
 
@@ -605,7 +672,7 @@ class ScanPipelineService:
             )
 
         start_time = datetime.now()
-        vulnerabilities = detector.analyze_file(target)
+        vulnerabilities = detector.analyze_file(target, project_root=target.parent)
         end_time = datetime.now()
         return ScanResult(
             target_path=str(target),

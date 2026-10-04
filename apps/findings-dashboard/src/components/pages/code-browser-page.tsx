@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -22,6 +22,7 @@ interface CodeBrowserPageProps {
   activeProjectName?: string;
   onSelectFinding?: (key: string) => void;
   onOpenFindingDeepDive?: (finding: NormalizedFinding) => void;
+  selectedFilePath?: string | null;
 }
 
 export function CodeBrowserPage({
@@ -29,11 +30,18 @@ export function CodeBrowserPage({
   activeProjectName = "vulnerable-python-suite",
   onSelectFinding,
   onOpenFindingDeepDive,
+  selectedFilePath,
 }: CodeBrowserPageProps) {
   // Collect unique files from findings
   const uniqueFiles = Array.from(new Set(findings.map((f) => f.filePath).filter(Boolean)));
   const [selectedFile, setSelectedFile] = useState<string>(uniqueFiles[0] || "examples/vulnerable_ssrf.py");
   const [searchFilter, setSearchFilter] = useState("");
+
+  useEffect(() => {
+    if (selectedFilePath && uniqueFiles.includes(selectedFilePath)) {
+      setSelectedFile(selectedFilePath);
+    }
+  }, [selectedFilePath, uniqueFiles]);
 
   const fileFindings = findings.filter((f) => f.filePath === selectedFile);
   const activeFinding = fileFindings[0] || findings[0];

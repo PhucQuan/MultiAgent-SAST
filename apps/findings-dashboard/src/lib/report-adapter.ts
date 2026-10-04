@@ -992,6 +992,19 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
   const family =
     firstString([rawFinding.type, rawFinding.vulnerability_type, rawFinding.rule_id]) ??
     "UNKNOWN";
+  const ruleId =
+    firstString([
+      rawFinding.rule_id,
+      rawFinding.ruleId,
+      getPath(rawFinding, ["rule", "id"]),
+    ]) ?? family;
+  const title =
+    firstString([
+      rawFinding.rule_title,
+      rawFinding.title,
+      getPath(rawFinding, ["rule", "title"]),
+      rawFinding.message,
+    ]) ?? family;
   const severity = normalizeSeverity(firstString([rawFinding.severity]));
   const status = normalizeTriageStatus(
     firstString([
@@ -1119,7 +1132,13 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
       recommendation.toLowerCase().includes("manual review")
     );
 
-  const cweId = deriveCweId(family);
+  const cweId =
+    firstString([
+      rawFinding.cwe,
+      rawFinding.cwe_id,
+      getPath(rawFinding, ["metadata", "cwe"]),
+      getPath(rawFinding, ["metadata", "cwe_id"]),
+    ]) ?? deriveCweId(family);
   const cvssScore = deriveCvssScore(severity, confidence);
   const owaspCategory = deriveOwaspCategory(family);
   const taintFlowSteps = buildTaintFlowSteps(rawFinding, filePath, line, family, sinkFunction);
@@ -1160,6 +1179,8 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
   return {
     id,
     key: `${reportId}:${id}:${filePath}:${line ?? "?"}`,
+    ruleId,
+    title,
     family,
     cweId,
     cvssScore,
@@ -1347,6 +1368,7 @@ export function normalizeBackendScanResult(
       total_vulnerabilities: number;
       by_severity: Record<string, number>;
       errors: string[];
+      duration_seconds?: number;
     };
     findings: unknown[];
     evidence_bundles?: unknown[];
@@ -1372,6 +1394,7 @@ export function normalizeBackendScanResult(
     },
     metrics: {
       files_scanned: result.summary.files_scanned,
+      duration_seconds: result.summary.duration_seconds,
       ai_enabled: result.ai.enabled,
     },
   };

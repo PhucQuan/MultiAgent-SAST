@@ -167,6 +167,10 @@ def build_request(payload: dict[str, Any]) -> ScanPipelineRequest:
     output_dir = _resolve_path(payload.get("outputDir")) or _default_output_dir(target_path)
     enable_ai = bool(payload.get("enableAi", False))
     max_depth = max(1, min(int(payload.get("maxDepth", 5) or 5), 20))
+    scan_engine = str(payload.get("scanEngine", "semgrep") or "semgrep").strip().lower()
+    if scan_engine not in {"semgrep", "deterministic"}:
+        raise ValueError(f"Unsupported scan engine: {scan_engine}")
+    rule_profile = str(payload.get("ruleProfile", "auto") or "auto").strip().lower()
 
     exclude_dir_names = payload.get("excludeDirNames")
     if isinstance(exclude_dir_names, list):
@@ -195,6 +199,8 @@ def build_request(payload: dict[str, Any]) -> ScanPipelineRequest:
         output_formats=_normalize_output_formats(payload.get("outputFormats")),
         output_dir=output_dir,
         export_reports=True,
+        scan_engine=scan_engine,
+        rule_profile=rule_profile,
     )
 
 
@@ -237,6 +243,8 @@ def serialize_result(result) -> dict[str, Any]:
             "targetPath": str(result.request.target_path),
             "enableAi": result.request.enable_ai_verification,
             "maxDepth": result.request.max_analysis_depth,
+            "scanEngine": result.request.scan_engine,
+            "ruleProfile": result.request.rule_profile,
             "excludeDirNames": result.request.exclude_dir_names,
             "excludeGlobs": result.request.exclude_globs,
             "outputDir": str(result.request.output_dir),

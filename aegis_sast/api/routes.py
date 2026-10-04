@@ -22,16 +22,53 @@ class ScanPipelineConfig(BaseModel):
     enable_ai_verification: bool = False
     max_analysis_depth: int = Field(default=5, ge=1, le=20)
     rules_path: str | None = None
-    exclude_dir_names: list[str] = Field(default_factory=list)
+    append_rules_paths: list[str] = Field(default_factory=list)
+    exclude_dir_names: list[str] = Field(
+        default_factory=lambda: [
+            ".git",
+            ".hg",
+            ".svn",
+            ".venv",
+            "venv",
+            "env",
+            "node_modules",
+            "vendor",
+            "third_party",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".tox",
+            ".nox",
+            "dist",
+            "build",
+            "target",
+            "coverage",
+            ".cache",
+            ".next",
+            ".nuxt",
+        ]
+    )
     exclude_globs: list[str] = Field(default_factory=list)
     scan_engine: str = "semgrep"
+    rule_profile: str = "auto"
 
 
 class ScanPipelineRequestModel(BaseModel):
     """Public request contract for starting a scan."""
 
-    path: str = Field(min_length=1)
+    path: str | None = Field(default=None, min_length=1)
+    repo_path: str | None = Field(default=None, min_length=1)
+    target_path: str | None = Field(default=None, min_length=1)
+    language: str | None = None
     config: ScanPipelineConfig = Field(default_factory=ScanPipelineConfig)
+
+    def resolved_path(self) -> str:
+        """Accept the names used by both the dashboard and older API clients."""
+        value = self.path or self.repo_path or self.target_path
+        if not value:
+            raise ValueError("path, repo_path, or target_path is required.")
+        return value
 
 
 class ScanJob(BaseModel):
@@ -84,9 +121,9 @@ class ScanJobStore:
         with self.lock:
             self.jobs[scan_id].status = "running"
         try:
-            target = Path(payload.path).expanduser().resolve()
+            target = Path(payload.resolved_path()).expanduser().resolve()
             if not target.exists():
-                raise FileNotFoundError(f"Target path does not exist: {payload.path}")
+                raise FileNotFoundError(f"Target path does not exist: {target}")
 
             config = payload.config
             request = ScanPipelineRequest(
@@ -96,6 +133,11 @@ class ScanJobStore:
                     if config.rules_path
                     else None
                 ),
+                append_rules_paths=[
+                    Path(path).expanduser().resolve()
+                    for path in config.append_rules_paths
+                    if isinstance(path, str) and path.strip()
+                ],
                 enable_ai_verification=config.enable_ai_verification,
                 max_analysis_depth=config.max_analysis_depth,
                 exclude_dir_names=config.exclude_dir_names,
@@ -103,6 +145,7 @@ class ScanJobStore:
                 output_formats=[],
                 export_reports=False,
                 scan_engine=config.scan_engine,
+                rule_profile=config.rule_profile,
             )
             service = ScanPipelineService()
             result = service.run(

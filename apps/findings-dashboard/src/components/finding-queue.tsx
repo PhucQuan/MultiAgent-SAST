@@ -236,10 +236,10 @@ export function FindingQueue({
                   {/* Rule / Title */}
                   <td className="px-2 py-2.5">
                     <div className="font-semibold text-slate-900 dark:text-slate-100">
-                      {finding.cweId || "CWE-22"}
+                      {finding.ruleId} · {finding.cweId || "CWE-22"}
                     </div>
                     <div className="text-[11px] text-slate-500 truncate max-w-[130px]">
-                      {formatLabel(finding.family)}
+                      {finding.title || formatLabel(finding.family)}
                     </div>
                   </td>
 

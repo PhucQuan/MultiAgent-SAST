@@ -124,16 +124,29 @@ def run_benchmark(
             target_path=target_file,
             enable_ai_verification=enable_ai,
             max_analysis_depth=5,
-            append_rules_paths=list(profile.append_rules_paths),
+            append_rules_paths=list(profile.semgrep_config_paths or profile.append_rules_paths),
+            scan_engine="semgrep",
+            rule_profile=profile.name,
             output_dir=output_dir / case_id,
             output_formats=["json"],
         )
 
         pipeline_result = service.run(request)
         findings = pipeline_result.scan_result.vulnerabilities
+        engine_metadata = pipeline_result.workflow_metadata
 
         findings_count = len(findings)
         total_findings += findings_count
+        normalized_findings = [
+            getattr(finding, "finding", finding) for finding in findings
+        ]
+        rule_ids = sorted(
+            {
+                str(getattr(finding, "rule_id", ""))
+                for finding in normalized_findings
+                if getattr(finding, "rule_id", "")
+            }
+        )
 
         triage_records = pipeline_result.triage_records
         confirmed_count = sum(
@@ -162,8 +175,20 @@ def run_benchmark(
             "confirmed_count": confirmed_count,
             "suppressed_count": suppressed_count,
             "status": "TP" if is_tp else ("FN" if is_fn else ("FP" if is_fp else "TN")),
+            "scan_engine_requested": engine_metadata.get("scan_engine_requested"),
+            "scan_engine_used": engine_metadata.get("scan_engine_used"),
+            "scan_fallback": engine_metadata.get("scan_fallback", False),
+            "semgrep_command": engine_metadata.get("semgrep_command"),
+            "semgrep_match_count": engine_metadata.get("semgrep_match_count", 0),
+            "rule_ids": rule_ids,
         })
-        print(f"  -> Detected {findings_count} finding(s) | Status: {'TP' if is_tp else ('FN' if is_fn else 'FP')}")
+        print(
+            f"  -> Engine: {engine_metadata.get('scan_engine_used')} "
+            f"| Semgrep matches: {engine_metadata.get('semgrep_match_count', 0)} "
+            f"| Rules: {', '.join(rule_ids) or 'none'} "
+            f"| Detected {findings_count} finding(s) "
+            f"| Status: {'TP' if is_tp else ('FN' if is_fn else 'FP')}"
+        )
 
     duration = time.time() - start_time
 
@@ -179,7 +204,10 @@ def run_benchmark(
 
     summary = {
         "benchmark_profile": profile_name,
-        "rule_provenance": "Semgrep OSS Registry (Community Rules)",
+        "rule_provenance": (
+            "Checked-in Semgrep OSS-compatible rulepack "
+            "(rules/semgrep-oss-full), executed by Semgrep CLI"
+        ),
         "timestamp": datetime.now().isoformat(),
         "cases_total": len(results),
         "ai_enabled": enable_ai,

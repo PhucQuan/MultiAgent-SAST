@@ -30,12 +30,16 @@ type ScanBridgePayload = {
   targetPath: string;
   enableAi?: boolean;
   maxDepth?: number;
+  scanEngine?: "deterministic" | "semgrep";
+  ruleProfile?: "auto" | "semgrep-oss" | "semgrep-oss-full";
 };
 
 type ScanApiPayload = {
   targetPath?: string;
   enableAi?: boolean;
   maxDepth?: number;
+  scanEngine?: "deterministic" | "semgrep";
+  ruleProfile?: "auto" | "semgrep-oss" | "semgrep-oss-full";
 };
 
 type ScanResultPayload = {
@@ -555,6 +559,8 @@ export async function POST(request: NextRequest) {
     targetPath,
     enableAi: Boolean(body?.enableAi),
     maxDepth,
+    scanEngine: body?.scanEngine ?? "semgrep",
+    ruleProfile: body?.ruleProfile ?? "auto",
   });
 
   return Response.json({ job }, { status: 202 });

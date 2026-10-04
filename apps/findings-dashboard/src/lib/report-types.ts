@@ -118,6 +118,8 @@ export interface MultiAgentLedger {
 export interface NormalizedFinding {
   id: string;
   key: string;
+  ruleId: string;
+  title: string;
   family: string;
   cweId: string;
   cvssScore: number;

@@ -18,14 +18,13 @@ class ReviewedRuleProfile:
     language_scope: tuple[str, ...]
     family_scope: tuple[str, ...]
     append_rules_paths: tuple[Path, ...]
+    semgrep_config_paths: tuple[Path, ...] = ()
 
 
 _SEMGREP_OSS_FULL_DIR = REPO_ROOT / "rules" / "semgrep-oss-full"
 _SEMGREP_PYTHON_RULES = REPO_ROOT / "rules" / "semgrep" / "python_security.yaml"
 
 def _resolve_default_rules() -> tuple[Path, ...]:
-    if _SEMGREP_OSS_FULL_DIR.exists() and _SEMGREP_OSS_FULL_DIR.is_dir():
-        return (_SEMGREP_OSS_FULL_DIR,)
     return (_SEMGREP_PYTHON_RULES,)
 
 _REVIEWED_RULE_PROFILES = {
@@ -43,6 +42,7 @@ _REVIEWED_RULE_PROFILES = {
             "SQL_INJECTION",
         ),
         append_rules_paths=_resolve_default_rules(),
+        semgrep_config_paths=(_SEMGREP_OSS_FULL_DIR,),
     ),
     "semgrep-python-ssrf": ReviewedRuleProfile(
         name="semgrep-python-ssrf",
@@ -53,6 +53,7 @@ _REVIEWED_RULE_PROFILES = {
         language_scope=("python",),
         family_scope=("SSRF",),
         append_rules_paths=_resolve_default_rules(),
+        semgrep_config_paths=(_SEMGREP_OSS_FULL_DIR,),
     ),
     "semgrep-oss-full": ReviewedRuleProfile(
         name="semgrep-oss-full",
@@ -68,8 +69,10 @@ _REVIEWED_RULE_PROFILES = {
             "INSECURE_DESERIALIZATION",
             "SSRF",
             "CODE_INJECTION",
+            "XSS",
         ),
         append_rules_paths=_resolve_default_rules(),
+        semgrep_config_paths=(_SEMGREP_OSS_FULL_DIR,),
     ),
     "semgrep-community-python": ReviewedRuleProfile(
         name="semgrep-community-python",
@@ -82,8 +85,10 @@ _REVIEWED_RULE_PROFILES = {
             "INSECURE_DESERIALIZATION",
             "SSRF",
             "CODE_INJECTION",
+            "XSS",
         ),
         append_rules_paths=_resolve_default_rules(),
+        semgrep_config_paths=(_SEMGREP_OSS_FULL_DIR,),
     ),
 }
 
