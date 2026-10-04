@@ -10,6 +10,7 @@ export interface BackendScanConfig {
   exclude_dir_names?: string[];
   exclude_globs?: string[];
   scan_engine?: "deterministic" | "semgrep";
+  rule_profile?: "auto" | "semgrep-oss" | "semgrep-oss-full";
 }
 
 export type BackendScanStatus = "queued" | "running" | "completed" | "failed";
@@ -41,6 +42,7 @@ export interface BackendScanJob {
       enabled: boolean;
       error?: string | null;
     };
+    workflow_metadata?: Record<string, unknown>;
   } | null;
   error?: string | null;
 }
@@ -60,6 +62,7 @@ export interface BackendScanResult {
   triage_records: unknown[];
   repo_profile: Record<string, unknown>;
   workflow_metadata: Record<string, unknown>;
+  engine_metadata?: Record<string, unknown>;
   ai: {
     requested?: boolean;
     enabled: boolean;

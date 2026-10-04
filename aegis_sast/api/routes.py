@@ -50,7 +50,8 @@ class ScanPipelineConfig(BaseModel):
         ]
     )
     exclude_globs: list[str] = Field(default_factory=list)
-    scan_engine: str = "deterministic"
+    scan_engine: str = "semgrep"
+    rule_profile: str = "auto"
 
 
 class ScanPipelineRequestModel(BaseModel):
@@ -144,6 +145,7 @@ class ScanJobStore:
                 output_formats=[],
                 export_reports=False,
                 scan_engine=config.scan_engine,
+                rule_profile=config.rule_profile,
             )
             service = ScanPipelineService()
             result = service.run(

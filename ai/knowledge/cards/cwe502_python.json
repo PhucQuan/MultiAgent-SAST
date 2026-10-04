@@ -1,0 +1,35 @@
+{
+  "cwe": "CWE-502",
+  "name": "INSECURE_DESERIALIZATION",
+  "language": "python",
+  "functional_semantics": "Dữ liệu không tin cậy được nạp bởi bộ giải tuần tự có khả năng dựng lại object hoặc gọi hàm",
+  "sources": ["request.data", "request.form", "request.cookies", "request.headers", "socket.recv", "open(...).read() trên tệp do người dùng tải lên"],
+  "sinks": ["pickle.loads", "pickle.load", "cPickle.loads", "yaml.load", "yaml.unsafe_load", "marshal.loads", "shelve.open", "jsonpickle.decode", "dill.loads"],
+  "sanitizers": [
+    "json.loads() cho dữ liệu ngoài",
+    "yaml.safe_load() thay cho yaml.load()",
+    "yaml.load(data, Loader=yaml.SafeLoader)",
+    "Ký và xác thực HMAC trước khi giải tuần tự",
+    "Schema validation (pydantic/marshmallow) sau khi parse JSON"
+  ],
+  "root_cause": "pickle/yaml unsafe loader cho phép payload chỉ định lớp và hàm sẽ được gọi lúc nạp",
+  "fp_indicators": [
+    "Dùng yaml.safe_load hoặc SafeLoader nên không dựng được object tuỳ ý",
+    "Dữ liệu được giải tuần tự bằng json.loads chứ không phải pickle",
+    "Payload đã qua kiểm tra chữ ký HMAC với khoá phía server trước khi loads",
+    "Nguồn dữ liệu là tệp nội bộ do chính ứng dụng ghi ra, không nhận từ người dùng",
+    "Biến truyền vào loads là hằng số hoặc dữ liệu test"
+  ],
+  "few_shot": [
+    {
+      "code": "data = request.cookies.get('session')\nobj = pickle.loads(base64.b64decode(data))",
+      "label": "TP",
+      "why": "pickle.loads trên cookie do client kiểm soát dẫn tới thực thi mã tuỳ ý"
+    },
+    {
+      "code": "cfg = yaml.safe_load(request.data)",
+      "label": "FP",
+      "why": "safe_load chỉ dựng kiểu dữ liệu cơ bản, không gọi được constructor tuỳ ý"
+    }
+  ]
+}

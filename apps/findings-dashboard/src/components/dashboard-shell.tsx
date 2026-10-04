@@ -504,23 +504,46 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [scanJobResult, setScanJobResult] =
     useState<ScanApiResponse["scan"] | null>(null);
   const [scanJobError, setScanJobError] = useState<string | null>(null);
-  const [scannedTargets, setScannedTargets] = useState<ScannedTarget[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const stored = window.localStorage.getItem("aegis-scan-inventory");
-      const parsed = stored ? JSON.parse(stored) : [];
-      return Array.isArray(parsed) ? (parsed as ScannedTarget[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Keep the server snapshot and the client's first render identical. Persisted
+  // inventory is loaded after hydration so it cannot change button/div shape
+  // during React's hydration pass.
+  const [scannedTargets, setScannedTargets] = useState<ScannedTarget[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const handledScanJobRef = useRef<string | null>(null);
   const appliedLocationStateRef = useRef<string | null>(null);
   const missingLinkedReportRef = useRef<string | null>(null);
+  const scannedTargetsLoadedRef = useRef(false);
   const deferredSearch = useDeferredValue(filters.search);
   const scanRunning = scanJobStatus === "queued" || scanJobStatus === "running";
+
+  useEffect(() => {
+    if (!hydrated || scannedTargetsLoadedRef.current) {
+      return;
+    }
+
+    scannedTargetsLoadedRef.current = true;
+    try {
+      const stored = window.localStorage.getItem("aegis-scan-inventory");
+      const parsed = stored ? JSON.parse(stored) : [];
+      if (Array.isArray(parsed)) {
+        setScannedTargets(parsed as ScannedTarget[]);
+      }
+    } catch {
+      // Ignore malformed persisted inventory and keep the empty initial state.
+    }
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !scannedTargetsLoadedRef.current) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      "aegis-scan-inventory",
+      JSON.stringify(scannedTargets),
+    );
+  }, [hydrated, scannedTargets]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -529,15 +552,6 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
     writeReviewStore(reviewStore);
   }, [hydrated, reviewStore]);
-
-  useEffect(() => {
-    if (hydrated) {
-      window.localStorage.setItem(
-        "aegis-scan-inventory",
-        JSON.stringify(scannedTargets),
-      );
-    }
-  }, [hydrated, scannedTargets]);
 
   useEffect(() => {
     const nextLocationKey = `${requestedReportId ?? ""}|${
@@ -1148,7 +1162,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         config: {
           enable_ai_verification: scanEnableAi,
           max_analysis_depth: maxDepth,
-          scan_engine: "deterministic",
+          scan_engine: "semgrep",
+          rule_profile: "auto",
           rules_path: null,
         },
       });

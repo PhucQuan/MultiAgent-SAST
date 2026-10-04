@@ -1,0 +1,39 @@
+{
+  "cwe": "CWE-89",
+  "name": "SQL_INJECTION",
+  "language": "php",
+  "functional_semantics": "User input tới câu truy vấn DB không qua tham số hóa",
+  "sources": ["$_GET", "$_POST", "$_REQUEST", "$_COOKIE", "php://input", "$_SERVER['HTTP_USER_AGENT']"],
+  "sinks": ["mysqli_query", "mysql_query", "PDO::query", "->query(", "PDO::exec", "pg_query", "sqlite_query"],
+  "sanitizers": [
+    "PDO prepared statement với bindParam/bindValue",
+    "mysqli_prepare + bind_param",
+    "intval() hoặc (int) cast cho numeric input",
+    "Allow-list cho tên cột/bảng khi phải nội suy identifier"
+  ],
+  "root_cause": "Ghép chuỗi trực tiếp user input vào SQL query",
+  "fp_indicators": [
+    "Có dùng PDO->prepare() và bindParam trước query",
+    "Input đã ép kiểu int/float trước khi vào query",
+    "Query chỉ dùng hằng số hardcoded",
+    "Dùng mysqli_prepare kèm bind_param với placeholder ?",
+    "Biến nội suy lấy từ hằng số cấu hình chứ không từ superglobal"
+  ],
+  "few_shot": [
+    {
+      "code": "$id = intval($_GET['id']);\n$result = $pdo->query(\"SELECT * FROM users WHERE id = $id\");",
+      "label": "FP",
+      "why": "Input đã ép int, không inject được"
+    },
+    {
+      "code": "$name = $_POST['name'];\nmysqli_query($conn, \"SELECT * FROM users WHERE name = '$name'\");",
+      "label": "TP",
+      "why": "Ghép chuỗi trực tiếp từ $_POST"
+    },
+    {
+      "code": "$stmt = $pdo->prepare('SELECT * FROM users WHERE name = :n');\n$stmt->execute([':n' => $_POST['name']]);",
+      "label": "FP",
+      "why": "Prepared statement, giá trị đi qua bind nên không đổi cấu trúc câu lệnh"
+    }
+  ]
+}

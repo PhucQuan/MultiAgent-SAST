@@ -1,0 +1,35 @@
+{
+  "cwe": "CWE-918",
+  "name": "SSRF",
+  "language": "javascript",
+  "functional_semantics": "URL do người dùng kiểm soát được server Node.js dùng để phát sinh request ra ngoài",
+  "sources": ["req.query", "req.body", "req.params", "req.headers"],
+  "sinks": ["axios.get", "axios.request", "fetch", "node-fetch", "http.request", "https.request", "got", "request", "superagent.get"],
+  "sanitizers": [
+    "Allow-list host sau khi new URL(input)",
+    "Chặn dải IP nội bộ sau khi dns.lookup",
+    "Chỉ cho phép protocol http/https",
+    "maxRedirects: 0 (axios) hoặc redirect: 'manual' (fetch)",
+    "Gọi qua proxy egress có kiểm soát"
+  ],
+  "root_cause": "Server tin URL từ input nên bị ép truy cập tài nguyên nội bộ hoặc metadata endpoint của cloud",
+  "fp_indicators": [
+    "Hostname đã đối chiếu allow-list sau new URL() trước khi gọi",
+    "URL dựng từ base URL hằng số, input chỉ là path đã encodeURIComponent",
+    "Có kiểm tra protocol và chặn dải IP private trước khi request",
+    "maxRedirects: 0 kèm kiểm tra host sau mỗi hop",
+    "Input chỉ đi vào query string của endpoint nội bộ cố định"
+  ],
+  "few_shot": [
+    {
+      "code": "const url = req.query.url;\nconst r = await axios.get(url);",
+      "label": "TP",
+      "why": "URL hoàn toàn do người dùng kiểm soát, gọi được http://169.254.169.254/"
+    },
+    {
+      "code": "const host = new URL(req.query.url).hostname;\nif (!ALLOWED.includes(host)) return res.sendStatus(400);\nconst r = await axios.get(req.query.url, { maxRedirects: 0 });",
+      "label": "FP",
+      "why": "Host bị chặn bởi allow-list và redirect đã tắt"
+    }
+  ]
+}

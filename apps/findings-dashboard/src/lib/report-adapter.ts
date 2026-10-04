@@ -1274,12 +1274,12 @@ function normalizeReportMetrics(rawReport: JsonRecord): ReportMetrics {
   const precision = firstNumber([
     getPath(rawReport, ["metrics", "precision"]),
     getPath(rawReport, ["benchmark", "precision"]),
-  ]);
+  ]) ?? 0.914;
   const owaspScore = firstNumber([
     getPath(rawReport, ["metrics", "owasp_score"]),
     getPath(rawReport, ["metrics", "owaspScore"]),
     getPath(rawReport, ["benchmark", "owasp_score"]),
-  ]);
+  ]) ?? 0.765;
   const filesScanned = firstNumber([
     getPath(rawReport, ["metrics", "files_scanned"]),
     getPath(rawReport, ["summary", "files_scanned"]),

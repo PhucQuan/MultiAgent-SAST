@@ -1,0 +1,35 @@
+{
+  "cwe": "CWE-22",
+  "name": "PATH_TRAVERSAL",
+  "language": "java",
+  "functional_semantics": "Dữ liệu người dùng tham gia dựng đường dẫn tệp và thoát khỏi thư mục gốc dự kiến",
+  "sources": ["request.getParameter", "request.getPathInfo", "@RequestParam", "@PathVariable", "MultipartFile.getOriginalFilename"],
+  "sinks": ["new File", "new FileInputStream", "new FileOutputStream", "Files.readAllBytes", "Files.newInputStream", "Files.delete", "Paths.get", "ZipEntry.getName khi giải nén"],
+  "sanitizers": [
+    "Paths.get(input).getFileName() để bỏ thành phần thư mục",
+    "file.getCanonicalPath().startsWith(baseDir.getCanonicalPath())",
+    "Path.normalize() rồi kiểm tra startsWith(base)",
+    "FilenameUtils.getName() của commons-io",
+    "Allow-list tên tệp"
+  ],
+  "root_cause": "Nối input vào đường dẫn mà không chuẩn hoá rồi kiểm tra vẫn nằm trong thư mục gốc",
+  "fp_indicators": [
+    "Đã lấy getFileName()/FilenameUtils.getName() nên thành phần thư mục bị loại",
+    "Có getCanonicalPath kèm kiểm tra tiền tố thư mục gốc trước khi mở tệp",
+    "Tên tệp lấy từ allow-list hoặc bảng ánh xạ cố định",
+    "Đường dẫn do server sinh (UUID) chứ không lấy từ input",
+    "Đã normalize() và so sánh startsWith với base path"
+  ],
+  "few_shot": [
+    {
+      "code": "String f = request.getParameter(\"file\");\nreturn Files.readAllBytes(Paths.get(BASE_DIR, f));",
+      "label": "TP",
+      "why": "Paths.get giữ nguyên '..', đọc được tệp ngoài BASE_DIR"
+    },
+    {
+      "code": "String f = Paths.get(request.getParameter(\"file\")).getFileName().toString();\nreturn Files.readAllBytes(Paths.get(BASE_DIR, f));",
+      "label": "FP",
+      "why": "getFileName chỉ giữ lại thành phần cuối nên không leo thư mục được"
+    }
+  ]
+}

@@ -6,7 +6,6 @@ Uses SHA256 hashing to cache and retrieve previous AI analysis results.
 
 import hashlib
 import json
-from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from diskcache import Cache
