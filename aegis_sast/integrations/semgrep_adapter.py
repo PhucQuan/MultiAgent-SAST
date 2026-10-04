@@ -251,6 +251,15 @@ class ImportedNormalizedVulnerability:
         """Expose line number for compatibility with report helpers."""
         return self.finding.line_number
 
+    @property
+    def vuln_type(self) -> Any:
+        """Expose vuln_type for compatibility with benchmark scorers."""
+        return self.finding.vulnerability_type
+
+    def infer_triage_status(self) -> Any:
+        """Expose triage status for compatibility with benchmark scorers."""
+        return getattr(self.finding.triage_status, "value", self.finding.triage_status)
+
     def to_normalized_finding(
         self,
         tool: str = "aegis-sast",
