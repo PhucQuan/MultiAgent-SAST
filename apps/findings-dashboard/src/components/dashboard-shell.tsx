@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Suspense,
   startTransition,
   useDeferredValue,
   useEffect,
@@ -9,14 +10,24 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { PanelLeft, X } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { FindingDetail } from "@/components/finding-detail";
 import { FindingQueue, type QueueFilters } from "@/components/finding-queue";
 import { ReportSidebar, type ReportEntry } from "@/components/report-sidebar";
+import { AppRail } from "@/components/app-rail";
+import { ScanInventory } from "@/components/scan-inventory";
 import { MetaTag } from "@/components/status-badge";
 import { TopBar } from "@/components/top-bar";
+import { DashboardOverviewPage } from "@/components/pages/dashboard-overview-page";
+import { VulnerabilityDeepDivePage } from "@/components/pages/vulnerability-deepdive-page";
+import { CodeBrowserPage } from "@/components/pages/code-browser-page";
+import { AiTriagePage } from "@/components/pages/ai-triage-page";
+import { ReportsPage } from "@/components/pages/reports-page";
+import { IntegrationsPage } from "@/components/pages/integrations-page";
+import { SettingsPage } from "@/components/pages/settings-page";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +41,17 @@ import {
   shortenPath,
   triageRank,
 } from "@/lib/dashboard-ui";
-import { normalizeReport, summarizeReport } from "@/lib/report-adapter";
+import {
+  normalizeBackendScanResult,
+  normalizeReport,
+  summarizeReport,
+} from "@/lib/report-adapter";
+import {
+  getBackendScanResults,
+  getBackendScanStatus,
+  startBackendScan,
+  type BackendScanJob,
+} from "@/lib/aegis-api";
 import {
   clearReviewEntry,
   readReviewStore,
@@ -145,6 +166,54 @@ const emptyScanJobProgress: ScanJobProgress = {
   durationSeconds: null,
 };
 
+function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["job"]> {
+  const latest = job.progress.at(-1) ?? {};
+  const numberValue = (key: string): number | null =>
+    typeof latest[key] === "number" ? latest[key] as number : null;
+  const stringValue = (key: string): string | null =>
+    typeof latest[key] === "string" ? latest[key] as string : null;
+
+  return {
+    id: job.scan_id,
+    status: (job.status as ScanJobStatus) || "queued",
+    targetPath: String(job.result?.summary.target ?? ""),
+    enableAi: job.result?.ai.enabled ?? false,
+    maxDepth: 5,
+    progressEvery: 1,
+    startedAt: job.started_at,
+    updatedAt: job.finished_at ?? job.started_at,
+    finishedAt: job.finished_at ?? null,
+    progress: {
+      ...emptyScanJobProgress,
+      stage: stringValue("stage") ?? (job.status === "completed" ? "completed" : job.status),
+      message: stringValue("message"),
+      totalFiles: numberValue("total_files"),
+      filesScanned: numberValue("files_scanned"),
+      filesProcessed: numberValue("files_processed"),
+      findings: numberValue("findings"),
+      errors: numberValue("errors"),
+      currentFile: stringValue("current_file"),
+      indexedFunctions: numberValue("indexed_functions"),
+      durationSeconds: numberValue("duration_seconds"),
+    },
+    logs: job.progress
+      .map((event) => stringValueForEvent(event))
+      .filter((message): message is string => Boolean(message)),
+    result: null,
+    error: job.error ?? null,
+  };
+}
+
+function stringValueForEvent(event: Record<string, unknown>): string | null {
+  if (typeof event.message === "string" && event.message.trim()) {
+    return event.message;
+  }
+  if (typeof event.event === "string") {
+    return event.event;
+  }
+  return null;
+}
+
 function sortByTimestamp<
   T extends { timestamp: string | null; totalFindings: number; id?: string; sourcePath?: string },
 >(values: T[]): T[] {
@@ -218,31 +287,40 @@ function sortFindings(
   });
 }
 
-function useMediaQuery(query: string) {
-  return useSyncExternalStore(
-    (onStoreChange) => {
-      if (typeof window === "undefined") {
-        return () => undefined;
-      }
-
-      const mediaQuery = window.matchMedia(query);
-      const handler = () => onStoreChange();
-
-      mediaQuery.addEventListener("change", handler);
-      return () => mediaQuery.removeEventListener("change", handler);
-    },
-    () =>
-      typeof window !== "undefined" ? window.matchMedia(query).matches : false,
-    () => false,
-  );
-}
-
 function useHydrated() {
   return useSyncExternalStore(
     () => () => undefined,
     () => true,
     () => false,
   );
+}
+
+function readDashboardLocationState(searchParams: {
+  get(name: string): string | null;
+}) {
+  const requestedReportId = searchParams.get("report")?.trim() || null;
+  const showArchiveReports =
+    searchParams.get("archive") === "1" || requestedReportId !== null;
+
+  return {
+    requestedReportId,
+    showArchiveReports,
+  };
+}
+
+function buildDashboardReportHref(
+  pathname: string,
+  reportPath: string,
+  includeArchive: boolean,
+) {
+  const params = new URLSearchParams();
+  params.set("report", reportPath);
+
+  if (includeArchive) {
+    params.set("archive", "1");
+  }
+
+  return `${pathname}?${params.toString()}`;
 }
 
 function SummaryStatCard({
@@ -345,9 +423,15 @@ function SelectedReportPanel({
 }
 
 function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { requestedReportId, showArchiveReports: initialArchivePreference } =
+    readDashboardLocationState(searchParams);
   const [workspaceReports, setWorkspaceReports] = useState<ReportSummaryCard[]>([]);
   const [importedReports, setImportedReports] = useState<NormalizedReport[]>([]);
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(
+    requestedReportId,
+  );
   const [loadedWorkspaceReport, setLoadedWorkspaceReport] =
     useState<NormalizedReport | null>(null);
   const [selectedFindingKey, setSelectedFindingKey] = useState<string | null>(null);
@@ -359,9 +443,13 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     hydrated ? readReviewStore() : {},
   );
   const [filters, setFilters] = useState<QueueFilters>(emptyFilters);
-  const [showArchiveReports, setShowArchiveReports] = useState(false);
+  const [showArchiveReports, setShowArchiveReports] = useState(
+    initialArchivePreference,
+  );
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [activeAppTab, setActiveAppTab] = useState<string>("scans");
+  const [selectedQuickFamily, setSelectedQuickFamily] = useState<string | null>(null);
   const [scanSheetOpen, setScanSheetOpen] = useState(false);
   const [scanTargetPath, setScanTargetPath] = useState("");
   const [scanEnableAi, setScanEnableAi] = useState(false);
@@ -377,8 +465,9 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const handledScanJobRef = useRef<string | null>(null);
+  const appliedLocationStateRef = useRef<string | null>(null);
+  const missingLinkedReportRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(filters.search);
-  const hasSidebar = useMediaQuery("(min-width: 1024px)");
   const scanRunning = scanJobStatus === "queued" || scanJobStatus === "running";
 
   useEffect(() => {
@@ -388,6 +477,27 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
     writeReviewStore(reviewStore);
   }, [hydrated, reviewStore]);
+
+  useEffect(() => {
+    const nextLocationKey = `${requestedReportId ?? ""}|${
+      initialArchivePreference ? "1" : "0"
+    }`;
+
+    if (appliedLocationStateRef.current === nextLocationKey) {
+      return;
+    }
+
+    appliedLocationStateRef.current = nextLocationKey;
+    setShowArchiveReports(initialArchivePreference);
+    setLoadedWorkspaceReport(null);
+    setReportError(null);
+
+    startTransition(() => {
+      setSelectedReportId(requestedReportId);
+      setSelectedFindingKey(null);
+      setFilters(emptyFilters);
+    });
+  }, [initialArchivePreference, requestedReportId]);
 
   async function refreshWorkspaceReports(
     showToast = false,
@@ -512,6 +622,27 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   }));
   const reportEntries = sortByTimestamp([...importedEntries, ...workspaceEntries]);
 
+  useEffect(() => {
+    if (!requestedReportId || loadingWorkspaceReports) {
+      return;
+    }
+
+    if (reportEntries.some((report) => report.id === requestedReportId)) {
+      missingLinkedReportRef.current = null;
+      return;
+    }
+
+    if (missingLinkedReportRef.current === requestedReportId) {
+      return;
+    }
+
+    missingLinkedReportRef.current = requestedReportId;
+    toast.error("Linked report not found", {
+      description:
+        "The requested report is unavailable in this workspace. Showing the newest available report instead.",
+    });
+  }, [loadingWorkspaceReports, reportEntries, requestedReportId]);
+
   const effectiveSelectedReportId =
     selectedReportId && reportEntries.some((report) => report.id === selectedReportId)
       ? selectedReportId
@@ -523,6 +654,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     workspaceReports.find((report) => report.id === effectiveSelectedReportId) ?? null;
   const selectedReportSummary =
     reportEntries.find((report) => report.id === effectiveSelectedReportId) ?? null;
+  const shareableWorkspaceReport =
+    selectedReportSummary?.origin === "workspace" ? selectedReportSummary : null;
 
   function handleOpenScanSheet() {
     if (!scanTargetPath.trim() && selectedReportSummary?.target) {
@@ -549,9 +682,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
       handledScanJobRef.current = job.id;
 
-      const nextReports = await refreshWorkspaceReports(false);
-      const selectedReportPath = job.result?.selectedReportPath;
-      const nextSelectedReportId = selectedReportPath ?? nextReports[0]?.id ?? null;
+      const result = await getBackendScanResults(job.id);
+      const apiReport = normalizeBackendScanResult(result);
+      setImportedReports((current) =>
+        sortByTimestamp([
+          apiReport,
+          ...current.filter((report) => report.id !== apiReport.id),
+        ]),
+      );
+      const nextSelectedReportId = apiReport.id;
 
       if (nextSelectedReportId) {
         startTransition(() => {
@@ -563,15 +702,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         setReportError(null);
       }
 
-      const filesScanned = job.result?.summary?.files_scanned ?? 0;
-      const findings = job.result?.summary?.total_vulnerabilities ?? 0;
-      const aiRequested = job.result?.ai?.requested === true;
-      const aiEnabled = job.result?.ai?.enabled === true;
+      const filesScanned = result.summary.files_scanned;
+      const findings = result.summary.total_vulnerabilities;
+      const aiRequested = result.ai.requested === true;
+      const aiEnabled = result.ai.enabled === true;
       const aiDetail = aiRequested
         ? aiEnabled
           ? "AI triage overlay applied."
-          : job.result?.ai?.error
-            ? `AI unavailable: ${job.result.ai.error}`
+          : result.ai.error
+            ? `AI unavailable: ${result.ai.error}`
             : "AI triage unavailable for this run."
         : "Deterministic triage only.";
 
@@ -614,26 +753,19 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
     const pollJob = async () => {
       try {
-        const response = await fetch(
-          `/api/scan?jobId=${encodeURIComponent(scanJobId)}`,
-          { cache: "no-store" },
-        );
-        const data = (await response.json()) as ScanJobResponse;
-
-        if (!response.ok || !data.job) {
-          throw new Error(data.error ?? "Unable to load scan status.");
-        }
+        const backendJob = await getBackendScanStatus(scanJobId);
+        const data = backendJobToUiJob(backendJob);
 
         if (cancelled) {
           return;
         }
 
-        applyScanJob(data.job);
+        applyScanJob(data);
 
-        if (data.job.status === "completed") {
-          await finalizeCompletedScan(data.job);
-        } else if (data.job.status === "failed") {
-          finalizeFailedScan(data.job);
+        if (data.status === "completed") {
+          await finalizeCompletedScan(data);
+        } else if (data.status === "failed") {
+          finalizeFailedScan(data);
         }
       } catch (error) {
         if (cancelled) {
@@ -818,11 +950,47 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     startTransition(() => {
       setSelectedFindingKey(findingKey);
     });
-    setDetailOpen(true);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setDetailOpen(true);
+    }
   }
 
   function handleImportRequest() {
     fileInputRef.current?.click();
+  }
+
+  async function handleCopyReportLink() {
+    if (!shareableWorkspaceReport) {
+      toast.error("No shareable link available", {
+        description:
+          "Select a workspace report to copy a dashboard link for the demo flow.",
+      });
+      return;
+    }
+
+    const relativeHref = buildDashboardReportHref(
+      pathname,
+      shareableWorkspaceReport.sourcePath,
+      showArchiveReports,
+    );
+    const absoluteHref =
+      typeof window !== "undefined"
+        ? new URL(relativeHref, window.location.origin).toString()
+        : relativeHref;
+
+    try {
+      await navigator.clipboard.writeText(absoluteHref);
+      toast.success("Report link copied", {
+        description: `${shareableWorkspaceReport.shortName} is ready to share.`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Clipboard access was denied.";
+
+      toast.error("Copy failed", {
+        description: `${message} Use this link instead: ${absoluteHref}`,
+      });
+    }
   }
 
   async function handleRunScan() {
@@ -852,25 +1020,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     handledScanJobRef.current = null;
 
     try {
-      const response = await fetch("/api/scan", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const backendJob = await startBackendScan({
+        path: targetPath,
+        config: {
+          enable_ai_verification: scanEnableAi,
+          max_analysis_depth: maxDepth,
         },
-        body: JSON.stringify({
-          targetPath,
-          enableAi: scanEnableAi,
-          maxDepth,
-        }),
       });
-      const data = (await response.json()) as ScanJobResponse;
-
-      if (!response.ok || !data.job) {
-        throw new Error(data.error ?? "Unable to start the local scan.");
-      }
-
-      applyScanJob(data.job);
-      toast("Local scan started", {
+      applyScanJob(backendJobToUiJob(backendJob));
+      toast("Backend scan started", {
         description: "Progress and logs will update live in this panel.",
       });
     } catch (error) {
@@ -1044,36 +1202,40 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     />
   );
 
-  const detail = (
-    <FindingDetail
-      key={selectedFinding?.key ?? "empty-detail"}
-      finding={selectedFinding}
-      feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
-      loading={loadingSelectedReport}
-      onDisposition={(disposition) =>
-        selectedFinding && handleSetDisposition(selectedFinding.key, disposition)
-      }
-      onToggleMute={() =>
-        selectedFinding &&
-        handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)
-      }
-      onSaveNote={(note) => {
-        if (!selectedFinding) {
-          return;
-        }
-        handleSaveNote(selectedFinding.key, note);
-      }}
-      onReset={() => {
-        if (!selectedFinding) {
-          return;
-        }
-        handleClearFeedback(selectedFinding.key);
-      }}
-    />
+  const currentFindingIndex = Math.max(
+    1,
+    filteredFindings.findIndex((f) => f.key === effectiveSelectedFindingKey) + 1
   );
 
+  const handleNavigateFinding = (direction: "prev" | "next") => {
+    const currentIndex = filteredFindings.findIndex(
+      (f) => f.key === effectiveSelectedFindingKey
+    );
+    if (currentIndex === -1 && filteredFindings.length > 0) {
+      handleSelectFinding(filteredFindings[0].key);
+      return;
+    }
+    if (direction === "prev" && currentIndex > 0) {
+      handleSelectFinding(filteredFindings[currentIndex - 1].key);
+    } else if (direction === "next" && currentIndex < filteredFindings.length - 1) {
+      handleSelectFinding(filteredFindings[currentIndex + 1].key);
+    }
+  };
+
+  const handleSelectQuickFamily = (family: string | null) => {
+    setSelectedQuickFamily(family);
+    if (!family) {
+      setFilters((prev) => ({ ...prev, family: "all" }));
+      return;
+    }
+    if (family === "CWE-89") setFilters((prev) => ({ ...prev, family: "SQL_INJECTION" }));
+    else if (family === "CWE-78") setFilters((prev) => ({ ...prev, family: "COMMAND_INJECTION" }));
+    else if (family === "CWE-22") setFilters((prev) => ({ ...prev, family: "PATH_TRAVERSAL" }));
+    else if (family === "CWE-502") setFilters((prev) => ({ ...prev, family: "INSECURE_DESERIALIZATION" }));
+  };
+
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-background">
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
       <input
         ref={fileInputRef}
         type="file"
@@ -1086,117 +1248,141 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         }}
       />
 
-      <TopBar
-        report={selectedReportSummary}
-        reportsLoaded={reportEntries.length}
-        reviewedLocally={Object.keys(reviewStore).length}
-        onImport={handleImportRequest}
-        onRefresh={() => void refreshWorkspaceReports(true)}
-        onExport={handleExportFeedback}
-        onRunScan={handleOpenScanSheet}
-        scanPending={scanRunning}
-      />
-
-      {!hasSidebar ? (
-        <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-[12.5px]"
-            onClick={() => setExplorerOpen(true)}
-          >
-            <PanelLeft className="h-3.5 w-3.5" /> Reports
-          </Button>
-          <span className="truncate font-mono text-[12px] text-muted-foreground">
-            {selectedReportSummary?.shortName ?? "No report selected"}
-          </span>
-        </div>
-      ) : null}
-
-      {!selectedReportSummary && !loadingWorkspaceReports ? (
-        <div className="border-b border-border bg-sev-medium/8 px-4 py-3 text-[12.5px] text-foreground">
-          No normalized Aegis report is loaded yet. Run the CLI to export a
-          report bundle or import a saved JSON file.
-        </div>
-      ) : null}
-
-      {selectedReport?.errors.length ? (
-        <div className="border-b border-border bg-sev-medium/8 px-4 py-3 text-[12.5px] text-foreground">
-          This report recorded {selectedReport.errors.length} scan error
-          {selectedReport.errors.length === 1 ? "" : "s"}. Review the raw report if
-          a file seems to be missing from the findings queue.
-        </div>
-      ) : null}
-
-      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[292px_minmax(0,1fr)]">
-        {hasSidebar ? (
-          <div className="border-r border-border bg-surface">{explorer}</div>
-        ) : null}
-
-        <div className="min-w-0 bg-background">
-          <div className="border-b border-border px-4 py-4">
-            <SelectedReportPanel
-              report={selectedReportSummary}
-              totalFindings={allFindings.length}
-              selectedFindings={filteredFindings.length}
-              reviewedLocally={Object.keys(reviewStore).length}
-            />
-
-            {scanJobStatus ? (
-              <div className="mt-3 rounded-2xl border border-border bg-surface px-4 py-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Scan activity
-                    </div>
-                    <div className="mt-1 text-[14px] font-semibold text-foreground">
-                      {scanStatusLabel}
-                    </div>
-                    <p className="mt-1 truncate text-[12px] text-muted-foreground">
-                      {scanJobProgress.message ??
-                        (scanJobResult?.selectedReportPath
-                          ? `Latest report: ${scanJobResult.selectedReportPath}`
-                          : "Open the scan panel to watch the full live log.")}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {scanProgressPercent !== null ? (
-                      <MetaTag>{scanProgressPercent}% complete</MetaTag>
-                    ) : null}
-                    <MetaTag>{scanJobProgress.filesScanned ?? 0} files scanned</MetaTag>
-                    <MetaTag>{scanJobProgress.findings ?? 0} findings</MetaTag>
-                    {scanJobError ? (
-                      <MetaTag className="border-destructive/25 bg-destructive/8 text-destructive">
-                        Error
-                      </MetaTag>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          <div>
-            <FindingQueue
-              findings={filteredFindings}
-              total={allFindings.length}
-              feedbackStore={reviewStore}
-              filters={filters}
-              onFiltersChange={setFilters}
-              selectedFindingKey={effectiveSelectedFindingKey}
-              onSelectFinding={handleSelectFinding}
-              languages={languageOptions}
-              families={familyOptions}
-              statuses={statusOptions}
-              severities={severityOptions}
-              loading={loadingSelectedReport}
-              error={reportError}
-            />
-          </div>
-        </div>
+      {/* Far Left: Slim App Rail */}
+      <div className="hidden lg:flex">
+        <AppRail
+          activeTab={activeAppTab}
+          onTabChange={setActiveAppTab}
+          findingsCount={allFindings.length}
+          activeProjectName={selectedReportSummary?.shortName}
+          lastScanDuration="n/a"
+        />
       </div>
 
+      {/* Main Workspace Area */}
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+        {/* TopBar */}
+        <TopBar
+          report={selectedReportSummary}
+          reportsLoaded={reportEntries.length}
+          reviewedLocally={Object.keys(reviewStore).length}
+          selectedFamily={selectedQuickFamily}
+          onSelectFamily={handleSelectQuickFamily}
+          onImport={handleImportRequest}
+          onCopyLink={() => void handleCopyReportLink()}
+          onRefresh={() => void refreshWorkspaceReports(true)}
+          onExport={handleExportFeedback}
+          onRunScan={handleOpenScanSheet}
+          copyLinkDisabled={!shareableWorkspaceReport}
+          scanPending={scanRunning}
+          findings={allFindings}
+          onOpenExplorer={() => setExplorerOpen(true)}
+        />
+
+        {/* Dynamic Page Router based on activeAppTab */}
+        {activeAppTab === "dashboard" ? (
+          <DashboardOverviewPage
+            reports={reportEntries}
+            activeReport={selectedReport}
+            onOpenReport={(p) => handleSelectReport(p)}
+            onNavigateTab={setActiveAppTab}
+            onRunScan={handleOpenScanSheet}
+            scanPending={scanRunning}
+          />
+        ) : activeAppTab === "vulnerabilities" ? (
+          <VulnerabilityDeepDivePage
+            finding={selectedFinding}
+            allFindings={filteredFindings}
+            reportTimestamp={selectedReport?.timestamp}
+            onSelectFinding={handleSelectFinding}
+            onBackToWorkbench={() => setActiveAppTab("scans")}
+          />
+        ) : activeAppTab === "code" ? (
+          <CodeBrowserPage
+            findings={allFindings}
+            activeProjectName={selectedReportSummary?.shortName}
+            onSelectFinding={handleSelectFinding}
+            onOpenFindingDeepDive={(f) => {
+              handleSelectFinding(f.key);
+              setActiveAppTab("vulnerabilities");
+            }}
+          />
+        ) : activeAppTab === "ai" ? (
+          <AiTriagePage
+            findings={allFindings}
+            reviewStore={reviewStore}
+            onOpenFindingDeepDive={(f) => {
+              handleSelectFinding(f.key);
+              setActiveAppTab("vulnerabilities");
+            }}
+            onSetDisposition={(k, d) => handleSetDisposition(k, d)}
+          />
+        ) : activeAppTab === "reports" ? (
+          <ReportsPage
+            reports={reportEntries}
+            onOpenReport={(p) => handleSelectReport(p)}
+            onNavigateTab={setActiveAppTab}
+            onRunScan={handleOpenScanSheet}
+            scanPending={scanRunning}
+          />
+        ) : activeAppTab === "integrations" ? (
+          <IntegrationsPage />
+        ) : activeAppTab === "settings" ? (
+          <SettingsPage />
+          ) : (
+          /* Default: 3-Column Tri-Pane Workbench (Scans) */
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            {/* Column 1: Scan Inventory */}
+            <div className="hidden w-[260px] shrink-0 lg:flex">
+              <ScanInventory
+                reports={reportEntries}
+                selectedReportId={effectiveSelectedReportId}
+                onSelectReport={(r) => handleSelectReport(r.sourcePath)}
+                activeReport={selectedReportSummary}
+              />
+            </div>
+
+            {/* Column 2: Findings Queue Table */}
+            <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
+              <FindingQueue
+                findings={filteredFindings}
+                total={allFindings.length}
+                feedbackStore={reviewStore}
+                filters={filters}
+                onFiltersChange={setFilters}
+                selectedFindingKey={effectiveSelectedFindingKey}
+                onSelectFinding={handleSelectFinding}
+                languages={languageOptions}
+                families={familyOptions}
+                statuses={statusOptions}
+                severities={severityOptions}
+                loading={loadingSelectedReport}
+                error={reportError}
+              />
+            </div>
+
+            {/* Column 3: Persistent detail on desktop; a sheet on mobile. */}
+            <div className="hidden w-[440px] shrink-0 lg:flex">
+              <FindingDetail
+                key={selectedFinding?.key ?? "empty-detail"}
+                finding={selectedFinding}
+                feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
+                loading={loadingSelectedReport}
+                currentIndex={currentFindingIndex}
+                totalCount={filteredFindings.length}
+                onNavigate={handleNavigateFinding}
+                onExpand={() => setActiveAppTab("vulnerabilities")}
+                onDisposition={(disposition) => selectedFinding && handleSetDisposition(selectedFinding.key, disposition)}
+                onMuteToggle={() => selectedFinding && handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)}
+                onSaveNote={(note) => selectedFinding && handleSaveNote(selectedFinding.key, note)}
+                onReset={() => selectedFinding && handleClearFeedback(selectedFinding.key)}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Expanded Modal (Image 2) */}
       <Sheet open={explorerOpen} onOpenChange={setExplorerOpen}>
         <SheetContent side="left" className="w-[300px] p-0">
           <SheetTitle className="sr-only">Reports</SheetTitle>
@@ -1204,8 +1390,36 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         </SheetContent>
       </Sheet>
 
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
+          <SheetTitle className="sr-only">Finding detail</SheetTitle>
+          <FindingDetail
+            key={selectedFinding?.key ?? "mobile-empty-detail"}
+            finding={selectedFinding}
+            feedback={selectedFinding ? reviewStore[selectedFinding.key] : undefined}
+            loading={loadingSelectedReport}
+            currentIndex={currentFindingIndex}
+            totalCount={filteredFindings.length}
+            onNavigate={handleNavigateFinding}
+            onExpand={() => {
+              setDetailOpen(false);
+              setActiveAppTab("vulnerabilities");
+            }}
+            onDisposition={(disposition) => selectedFinding && handleSetDisposition(selectedFinding.key, disposition)}
+            onMuteToggle={() => selectedFinding && handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)}
+            onSaveNote={(note) => selectedFinding && handleSaveNote(selectedFinding.key, note)}
+            onReset={() => selectedFinding && handleClearFeedback(selectedFinding.key)}
+          />
+        </SheetContent>
+      </Sheet>
+
       {scanSheetOpen ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/45">
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/45"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setScanSheetOpen(false);
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
@@ -1435,13 +1649,6 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         </div>
       ) : null}
 
-      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-[540px]">
-          <SheetTitle className="sr-only">Finding detail</SheetTitle>
-          {detail}
-        </SheetContent>
-      </Sheet>
-
       <Toaster position="bottom-right" />
     </div>
   );
@@ -1451,9 +1658,19 @@ export function DashboardShell() {
   const hydrated = useHydrated();
 
   return (
-    <DashboardShellContent
-      key={hydrated ? "dashboard-hydrated" : "dashboard-ssr"}
-      hydrated={hydrated}
-    />
+    <Suspense
+      fallback={
+        <div className="flex min-h-[100dvh] items-center justify-center bg-background px-4">
+          <div className="rounded-xl border border-border bg-surface px-4 py-3 text-[12.5px] text-muted-foreground">
+            Loading dashboard...
+          </div>
+        </div>
+      }
+    >
+      <DashboardShellContent
+        key={hydrated ? "dashboard-hydrated" : "dashboard-ssr"}
+        hydrated={hydrated}
+      />
+    </Suspense>
   );
 }

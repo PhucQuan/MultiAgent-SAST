@@ -1,0 +1,9 @@
+{
+  "rules_seen": 4,
+  "rules_selected": 4,
+  "rules_skipped": [],
+  "exported_sources": 7,
+  "exported_sinks": 23,
+  "exported_sanitizers": 8,
+  "skipped_patterns": []
+}

@@ -1,0 +1,172 @@
+sources:
+- pattern: request.args.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.form.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.values.get(
+  type: HTTP_PARAM
+  severity: MEDIUM
+- pattern: request.headers.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.data
+  type: HTTP_DATA
+  severity: MEDIUM
+- pattern: request.GET.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+- pattern: request.POST.get(
+  type: UNTRUSTED_INPUT
+  severity: MEDIUM
+sinks:
+  rce:
+  - pattern: subprocess.run(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: subprocess.call(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: subprocess.Popen(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: os.system(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  - pattern: os.popen(
+    type: COMMAND_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep command injection coverage for subprocess and os
+      system calls
+  path_traversal:
+  - pattern: open(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: send_file(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: os.remove(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  - pattern: os.listdir(
+    type: PATH_TRAVERSAL
+    severity: HIGH
+    description: Reviewed Semgrep path traversal coverage for real file access sinks
+  deserialization:
+  - pattern: pickle.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: pickle.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: _pickle.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: _pickle.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: cPickle.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: cPickle.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: dill.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: dill.loads(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: yaml.load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  - pattern: yaml.unsafe_load(
+    type: INSECURE_DESERIALIZATION
+    severity: CRITICAL
+    description: Reviewed Semgrep insecure deserialization coverage for pickle, dill,
+      and yaml loaders
+  sqli:
+  - pattern: execute(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: executemany(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: raw(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+  - pattern: sqlalchemy.text(
+    type: SQL_INJECTION
+    severity: CRITICAL
+    description: Reviewed Semgrep SQL injection coverage for execute family and raw
+      query helpers
+sanitizers:
+- pattern: shlex.quote(
+  mitigates:
+  - COMMAND_INJECTION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-CMD-001
+- pattern: os.path.basename(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: os.path.abspath(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: os.path.realpath(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: os.path.normpath(
+  mitigates:
+  - PATH_TRAVERSAL
+  description: Imported sanitizer from PY-REVIEWED-CORE4-PATH-001
+- pattern: yaml.safe_load(
+  mitigates:
+  - INSECURE_DESERIALIZATION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-DESER-001
+- pattern: int(
+  mitigates:
+  - SQL_INJECTION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-SQLI-001
+- pattern: float(
+  mitigates:
+  - SQL_INJECTION
+  description: Imported sanitizer from PY-REVIEWED-CORE4-SQLI-001
+safe_patterns: []

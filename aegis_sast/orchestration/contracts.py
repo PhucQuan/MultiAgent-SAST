@@ -45,6 +45,7 @@ class SkepticReview:
     summary: str
     objections: List[str] = field(default_factory=list)
     mitigation_signals: List[str] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
     suggested_status: Optional[TriageStatus] = None
     confidence_cap: Optional[float] = None
     metadata: Dict[str, object] = field(default_factory=dict)
@@ -57,6 +58,7 @@ class SkepticReview:
             "summary": self.summary,
             "objections": self.objections,
             "mitigation_signals": self.mitigation_signals,
+            "notes": self.notes,
             "suggested_status": (
                 self.suggested_status.value if self.suggested_status else None
             ),
@@ -73,6 +75,8 @@ class JudgeReview:
     final_status: TriageStatus
     final_confidence: float
     summary: str
+    notes: List[str] = field(default_factory=list)
+    remediation_patch: Optional[Dict[str, object]] = None
     metadata: Dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, object]:
@@ -82,5 +86,7 @@ class JudgeReview:
             "final_status": self.final_status.value,
             "final_confidence": self.final_confidence,
             "summary": self.summary,
+            "notes": self.notes,
+            "remediation_patch": self.remediation_patch,
             "metadata": self.metadata,
         }

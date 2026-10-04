@@ -1,0 +1,10 @@
+{
+  "name": "aegis-sast",
+  "private": true,
+  "scripts": {
+    "test:ui": "node scripts/test_ui_playwright.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

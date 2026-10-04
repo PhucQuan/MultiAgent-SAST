@@ -1,0 +1,61 @@
+{
+  "schema_version": "aegis-semgrep-oss-benchmark-v1",
+  "description": "Unified Semgrep OSS Community Baseline Benchmark covering OWASP Top 10 and CWE Top 25 vulnerabilities in Python.",
+  "baseline_profile": "semgrep-oss-full",
+  "cases": [
+    {
+      "case_id": "cwe-78-command-injection",
+      "cwe": "CWE-78",
+      "family": "COMMAND_INJECTION",
+      "target": "examples/vulnerable_rce.py",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of OS command injection via subprocess/os.system sinks using Semgrep community rules with inter-procedural taint."
+    },
+    {
+      "case_id": "cwe-22-path-traversal",
+      "cwe": "CWE-22",
+      "family": "PATH_TRAVERSAL",
+      "target": "examples/vulnerable_path_traversal.py",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of arbitrary file read/write via open/send_file sinks and suppression of sanitized safe paths."
+    },
+    {
+      "case_id": "cwe-502-insecure-deserialization",
+      "cwe": "CWE-502",
+      "family": "INSECURE_DESERIALIZATION",
+      "target": "examples/vulnerable_deserialization.py",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of untrusted pickle/yaml deserialization with Semgrep provenance metadata."
+    },
+    {
+      "case_id": "cwe-89-sql-injection",
+      "cwe": "CWE-89",
+      "family": "SQL_INJECTION",
+      "target": "examples/vulnerable_sqli.py",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of unparameterized SQL execution across raw queries, SQLAlchemy, and ORM methods."
+    },
+    {
+      "case_id": "cwe-918-ssrf",
+      "cwe": "CWE-918",
+      "family": "SSRF",
+      "target": "examples/vulnerable_ssrf.py",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of server-side request forgery via requests.get and urllib.request.urlopen sinks."
+    },
+    {
+      "case_id": "cwe-78-cross-file-rce",
+      "cwe": "CWE-78",
+      "family": "COMMAND_INJECTION",
+      "target": "examples/cross_file_rce",
+      "reviewed_rule_profile": "semgrep-oss-full",
+      "expected_vulnerable": true,
+      "goal": "Verify detection of inter-procedural cross-file command injection across 3 separate modules (app.py -> service.py -> executor.py)."
+    }
+  ]
+}

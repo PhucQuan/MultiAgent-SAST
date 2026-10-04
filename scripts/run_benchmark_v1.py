@@ -27,6 +27,8 @@ if str(SCRIPT_DIR) not in sys.path:
 from compare_reviewed_bundle_scan import (  # noqa: E402
     build_comparison_summary,
     ensure_report_formats,
+    render_reviewed_rules_label,
+    resolve_reviewed_rule_inputs,
     select_report_path,
     write_summary,
 )
@@ -123,6 +125,7 @@ def resolve_manifest_cases(
         family = item.get("family")
         target = item.get("target")
         reviewed_rules = item.get("reviewed_rules")
+        reviewed_rule_profile = item.get("reviewed_rule_profile")
 
         if not isinstance(case_id, str) or not case_id.strip():
             raise ValueError("Each benchmark case must define a non-empty string case_id.")
@@ -132,15 +135,52 @@ def resolve_manifest_cases(
             raise ValueError(f"Benchmark case {case_id!r} is missing a valid family.")
         if not isinstance(target, str) or not target.strip():
             raise ValueError(f"Benchmark case {case_id!r} is missing a valid target.")
-        if not isinstance(reviewed_rules, str) or not reviewed_rules.strip():
-            raise ValueError(f"Benchmark case {case_id!r} is missing reviewed_rules.")
+
+        normalized_reviewed_rules: str | None = None
+        if reviewed_rules is not None:
+            if not isinstance(reviewed_rules, str) or not reviewed_rules.strip():
+                raise ValueError(f"Benchmark case {case_id!r} has an invalid reviewed_rules value.")
+            normalized_reviewed_rules = reviewed_rules.strip()
+
+        normalized_reviewed_rule_profile: str | None = None
+        if reviewed_rule_profile is not None:
+            if (
+                not isinstance(reviewed_rule_profile, str)
+                or not reviewed_rule_profile.strip()
+            ):
+                raise ValueError(
+                    f"Benchmark case {case_id!r} has an invalid reviewed_rule_profile value."
+                )
+            normalized_reviewed_rule_profile = reviewed_rule_profile.strip()
+
+        if normalized_reviewed_rules and normalized_reviewed_rule_profile:
+            raise ValueError(
+                f"Benchmark case {case_id!r} must define only one of "
+                "reviewed_rules or reviewed_rule_profile."
+            )
+        if not normalized_reviewed_rules and not normalized_reviewed_rule_profile:
+            raise ValueError(
+                f"Benchmark case {case_id!r} is missing reviewed_rules or reviewed_rule_profile."
+            )
+
+        explicit_reviewed_rules_path = (
+            (REPO_ROOT / normalized_reviewed_rules).resolve()
+            if normalized_reviewed_rules
+            else None
+        )
+        resolved_profile_name, resolved_reviewed_rules = resolve_reviewed_rule_inputs(
+            reviewed_rules=explicit_reviewed_rules_path,
+            reviewed_rule_profile=normalized_reviewed_rule_profile,
+        )
 
         resolved_cases.append(
             {
                 "case_id": case_id,
                 "family": family,
                 "target": (REPO_ROOT / target).resolve(),
-                "reviewed_rules": (REPO_ROOT / reviewed_rules).resolve(),
+                "reviewed_rules": explicit_reviewed_rules_path,
+                "reviewed_rule_profile": resolved_profile_name,
+                "resolved_reviewed_rules": resolved_reviewed_rules,
                 "goal": item.get("goal", ""),
             }
         )
@@ -161,14 +201,21 @@ def run_benchmark_case(
 ) -> dict[str, Any]:
     """Run default-vs-reviewed scans for one manifest case."""
     target = case["target"]
-    reviewed_rules = case["reviewed_rules"]
+    reviewed_rule_profile = case.get("reviewed_rule_profile")
+    resolved_reviewed_rules = list(case.get("resolved_reviewed_rules", []))
 
     if not target.exists():
         raise FileNotFoundError(f"Benchmark target does not exist: {target}")
-    if not reviewed_rules.exists():
-        raise FileNotFoundError(
-            f"Reviewed rules file does not exist for case {case['case_id']}: {reviewed_rules}"
+    if not resolved_reviewed_rules:
+        raise ValueError(
+            f"Benchmark case {case['case_id']!r} does not have any resolved reviewed rules."
         )
+    for reviewed_rule_path in resolved_reviewed_rules:
+        if not reviewed_rule_path.exists():
+            raise FileNotFoundError(
+                "Reviewed rules file does not exist for case "
+                f"{case['case_id']}: {reviewed_rule_path}"
+            )
 
     case_output_dir = output_root / case["case_id"]
     default_scan_dir = case_output_dir / "default_scan"
@@ -190,18 +237,27 @@ def run_benchmark_case(
     )
 
     print(f"[case] {case['case_id']}: reviewed bundle overlay scan...")
-    reviewed_result = run_manual_scan(
-        custom_rules_path=None,
-        append_rules_paths=[reviewed_rules],
-        output_dir=reviewed_scan_dir,
-        **common_kwargs,
-    )
+    if reviewed_rule_profile:
+        reviewed_result = run_manual_scan(
+            custom_rules_path=None,
+            reviewed_rule_profile=reviewed_rule_profile,
+            output_dir=reviewed_scan_dir,
+            **common_kwargs,
+        )
+    else:
+        reviewed_result = run_manual_scan(
+            custom_rules_path=None,
+            append_rules_paths=resolved_reviewed_rules,
+            output_dir=reviewed_scan_dir,
+            **common_kwargs,
+        )
 
     default_report_path = select_report_path(default_result["written_reports"], ".json")
     reviewed_report_path = select_report_path(reviewed_result["written_reports"], ".json")
     summary = build_comparison_summary(
         target=target,
-        reviewed_rules=reviewed_rules,
+        reviewed_rule_profile=reviewed_rule_profile,
+        resolved_reviewed_rules=resolved_reviewed_rules,
         output_dir=case_output_dir,
         default_report_path=default_report_path,
         reviewed_report_path=reviewed_report_path,
@@ -216,7 +272,9 @@ def run_benchmark_case(
         "family": case["family"],
         "goal": case.get("goal", ""),
         "target": str(target),
-        "reviewed_rules": str(reviewed_rules),
+        "reviewed_rule_profile": reviewed_rule_profile,
+        "reviewed_rules": render_reviewed_rules_label(resolved_reviewed_rules),
+        "resolved_reviewed_rules": [str(path) for path in resolved_reviewed_rules],
         "comparison_summary_path": str(summary_path),
         "default_findings": summary["default"]["total_findings"],
         "reviewed_findings": summary["reviewed"]["total_findings"],
@@ -332,6 +390,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
         if item.get("goal"):
             lines.append(f"- Goal: {item['goal']}")
         lines.append(f"- Target: `{item['target']}`")
+        if item.get("reviewed_rule_profile"):
+            lines.append(f"- Reviewed profile: `{item['reviewed_rule_profile']}`")
         lines.append(f"- Reviewed rules: `{item['reviewed_rules']}`")
         lines.append(f"- Comparison summary: `{item['comparison_summary_path']}`")
         if item["added_keys"]:

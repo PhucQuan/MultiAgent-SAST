@@ -145,6 +145,16 @@ class TestExtractSources:
             "wrapper get_form_parameter() helpers should be treated as taint sources"
         )
 
+    def test_request_query_string_counts_as_source(self, plugin, rules):
+        code = "query_string = request.query_string.decode('utf-8')\n"
+        path = write_temp(code)
+        ast = plugin.parse_file(path)
+        sources = plugin.extract_sources(ast, path, rules)
+        assert any(
+            source.pattern == "request.query_string" and source.variable_name == "query_string"
+            for source in sources
+        ), "request.query_string should be treated as a taint source"
+
 
 # ---------------------------------------------------------------------------
 # Tests: extract_sinks

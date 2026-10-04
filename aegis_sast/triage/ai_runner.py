@@ -56,6 +56,12 @@ class AITriageRunner:
         triage_metadata["manual_review_required"] = decision.manual_review_required
         if decision.metadata.get("model_used"):
             triage_metadata["ai_model"] = decision.metadata["model_used"]
+        if decision.metadata.get("agent_reviews"):
+            triage_metadata["agent_reviews"] = decision.metadata["agent_reviews"]
+            updated_finding.metadata["agent_reviews"] = decision.metadata["agent_reviews"]
+        if decision.metadata.get("remediation_patch"):
+            triage_metadata["remediation_patch"] = decision.metadata["remediation_patch"]
+            updated_finding.metadata["remediation_patch"] = decision.metadata["remediation_patch"]
 
         updated_finding.triage_status = decision.status
         updated_finding.confidence = decision.confidence
@@ -96,26 +102,43 @@ class AITriageRunner:
 
     @staticmethod
     def build_prompt(triage_input: Dict[str, Any]) -> str:
-        """Build a conservative prompt around the stable triage_input contract."""
+        """Build a conservative prompt using the Multi-Agent debate protocol."""
         payload = json.dumps(triage_input, indent=2, ensure_ascii=False)
-        return f"""You are reviewing one static-analysis finding after deterministic detection.
+        return f"""You are an advanced AI Security Engine performing Multi-Agent Triage on a static analysis finding.
 
-Use only the evidence in triage_input. Do not invent missing source code, sanitizers, or exploitability facts.
-If the evidence is ambiguous, return "needs-review".
+Simulate three specialized security agents debating this finding:
+1. Auditor Agent (Offensive Penetration Tester): Analyzes data flow reachability, exploit scenario, and payload feasibility.
+2. Skeptic Agent (Defensive Code Reviewer): Searches for sanitizers, type guards, allowlists, or early returns that render the finding a False Positive.
+3. Judge Agent (Security Lead): Evaluates the debate between Auditor and Skeptic, assigns the final verdict status, and generates a concrete remediation patch.
 
 Return ONLY valid JSON in this exact shape:
 {{
   "status": "confirmed" | "likely" | "needs-review" | "suppressed",
   "confidence": 0.0 to 1.0,
-  "explanation": "short technical justification",
-  "recommendation": "short remediation or manual-review guidance"
+  "explanation": "concise technical justification summarizing the verdict",
+  "recommendation": "actionable remediation guidance",
+  "auditor_analysis": {{
+    "attack_vector": "how untrusted data travels from source to sink",
+    "hypothesized_payload": "example payload that triggers the issue",
+    "security_impact": "impact on application and infrastructure"
+  }},
+  "skeptic_analysis": {{
+    "sanitizer_detected": false,
+    "defense_evaluation": "analysis of validation, type casts, or lack thereof",
+    "objections": ["any reasons why this might be a false positive"]
+  }},
+  "remediation_patch": {{
+    "vulnerable_snippet": "vulnerable line of code",
+    "secure_snippet": "secure replacement line(s)",
+    "explanation": "why this fix prevents exploitation"
+  }}
 }}
 
 Decision guidance:
-- confirmed: strong evidence of a real vulnerability
-- likely: suspicious and mostly convincing, but still somewhat ambiguous
-- needs-review: insufficient evidence to decide safely
-- suppressed: strong evidence of effective mitigation or false positive
+- confirmed: strong evidence of an unmitigated vulnerability reaching sink
+- likely: suspicious flow with high likelihood of exploitability
+- needs-review: ambiguous context or incomplete call graph
+- suppressed: verified sanitizer, type cast, or safe constant in dataflow (False Positive)
 
 triage_input:
 {payload}
@@ -172,6 +195,83 @@ triage_input:
             fallback_used=False,
         )
 
+        metadata: Dict[str, Any] = {
+            "triage_input_schema": triage_input.get("schema_version"),
+            "model_used": self.model_name or "custom-provider",
+            "provider": self._provider_label(),
+            "fallback_used": False,
+            "raw_status": raw_status,
+            "reason_codes": reason_codes,
+            "evidence_summary": evidence_summary,
+            "manual_review_required": manual_review_required,
+        }
+
+        # Multi-Agent Triage debate extraction
+        auditor_data = payload.get("auditor_analysis") or payload.get("auditor")
+        skeptic_data = payload.get("skeptic_analysis") or payload.get("skeptic")
+        remediation_data = payload.get("remediation_patch") or payload.get("patch")
+
+        if auditor_data or skeptic_data or remediation_data:
+            metadata["ai_multi_agent"] = True
+            agent_reviews: Dict[str, Any] = {}
+            if auditor_data:
+                auditor_notes = []
+                if isinstance(auditor_data, dict):
+                    if auditor_data.get("attack_vector"):
+                        auditor_notes.append(f"Attack vector: {auditor_data['attack_vector']}")
+                    if auditor_data.get("hypothesized_payload"):
+                        auditor_notes.append(f"Hypothesized payload: {auditor_data['hypothesized_payload']}")
+                    if auditor_data.get("security_impact"):
+                        auditor_notes.append(f"Security impact: {auditor_data['security_impact']}")
+                elif isinstance(auditor_data, list):
+                    auditor_notes.extend([str(item) for item in auditor_data])
+                elif isinstance(auditor_data, str):
+                    auditor_notes.append(auditor_data)
+                agent_reviews["auditor_review"] = {
+                    "summary": (
+                        auditor_data.get("summary", "AI Auditor validated offensive attack reachability.")
+                        if isinstance(auditor_data, dict)
+                        else "AI Auditor validated offensive attack reachability."
+                    ),
+                    "notes": auditor_notes,
+                }
+
+            if skeptic_data:
+                skeptic_notes = []
+                objections = []
+                if isinstance(skeptic_data, dict):
+                    if skeptic_data.get("defense_evaluation"):
+                        skeptic_notes.append(f"Defense check: {skeptic_data['defense_evaluation']}")
+                    if skeptic_data.get("sanitizer_detected"):
+                        skeptic_notes.append("Sanitizer detected in code context.")
+                    for obj in skeptic_data.get("objections", []):
+                        objections.append(str(obj))
+                elif isinstance(skeptic_data, str):
+                    skeptic_notes.append(skeptic_data)
+                agent_reviews["skeptic_review"] = {
+                    "summary": (
+                        skeptic_data.get("summary", "AI Skeptic evaluated defensive context.")
+                        if isinstance(skeptic_data, dict)
+                        else "AI Skeptic evaluated defensive context."
+                    ),
+                    "notes": skeptic_notes,
+                    "objections": objections,
+                }
+
+            agent_reviews["judge_review"] = {
+                "summary": explanation,
+                "final_status": status.value,
+                "final_confidence": confidence,
+                "notes": [
+                    f"AI Judge finalized status as {status.value}.",
+                    f"Confidence score evaluated at {confidence:.2f}.",
+                ],
+            }
+            metadata["agent_reviews"] = agent_reviews
+
+            if remediation_data and isinstance(remediation_data, dict):
+                metadata["remediation_patch"] = remediation_data
+
         return TriageDecision(
             status=status,
             confidence=confidence,
@@ -186,16 +286,7 @@ triage_input:
                 f"ai_status={status.value}",
                 f"ai_confidence={confidence:.2f}",
             ],
-            metadata={
-                "triage_input_schema": triage_input.get("schema_version"),
-                "model_used": self.model_name or "custom-provider",
-                "provider": self._provider_label(),
-                "fallback_used": False,
-                "raw_status": raw_status,
-                "reason_codes": reason_codes,
-                "evidence_summary": evidence_summary,
-                "manual_review_required": manual_review_required,
-            },
+            metadata=metadata,
         )
 
     def _build_fallback_decision(

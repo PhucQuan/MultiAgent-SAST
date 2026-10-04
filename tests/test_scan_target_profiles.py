@@ -90,6 +90,19 @@ def test_parser_accepts_append_rules_option():
     ]
 
 
+def test_parser_accepts_reviewed_rule_profile_option():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "sample.py",
+            "--reviewed-rule-profile",
+            "semgrep-python-core4",
+        ]
+    )
+
+    assert args.reviewed_rule_profile == "semgrep-python-core4"
+
+
 def test_resolve_output_formats_uses_artifact_profile_when_no_explicit_formats():
     assert resolve_output_formats([], "minimal") == ["json"]
     assert resolve_output_formats([], "review") == ["json", "markdown"]

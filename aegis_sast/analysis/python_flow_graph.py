@@ -311,6 +311,15 @@ class PythonFlowGraphBuilder:
         arguments: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> PythonFlowNode:
+        node_metadata = dict(metadata or {})
+        node_metadata.setdefault(
+            "end_line_number",
+            max(getattr(node, "end_lineno", getattr(node, "lineno", 1)), 1),
+        )
+        node_metadata.setdefault(
+            "end_column_number",
+            max(getattr(node, "end_col_offset", getattr(node, "col_offset", 0)), 0),
+        )
         flow_node = PythonFlowNode(
             node_id=self._next_id(),
             kind=kind,
@@ -321,7 +330,7 @@ class PythonFlowGraphBuilder:
             writes=writes or [],
             callee_name=callee_name,
             arguments=arguments or [],
-            metadata=metadata or {},
+            metadata=node_metadata,
         )
         self.graph.add_node(flow_node)
         return flow_node
@@ -1277,7 +1286,7 @@ class PythonDataflowAnalyzer:
     ) -> List[TaintSink]:
         matches: List[TaintSink] = []
         for sink in sinks:
-            if sink.location.line_number != node.location.line_number:
+            if not self._node_covers_line(node, sink.location.line_number):
                 continue
             if node.callee_name and sink.function_name:
                 if sink.function_name in node.callee_name or node.callee_name in sink.function_name:
@@ -1285,6 +1294,12 @@ class PythonDataflowAnalyzer:
                     continue
             matches.append(sink)
         return matches
+
+    @staticmethod
+    def _node_covers_line(node: PythonFlowNode, line_number: int) -> bool:
+        start_line = node.location.line_number
+        end_line = int(node.metadata.get("end_line_number", start_line))
+        return start_line <= line_number <= end_line
 
     def _node_reaches_sink(
         self,

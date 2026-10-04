@@ -1,9 +1,6 @@
 # Aegis-SAST cache directory
 .aegis_cache/
 
-# Cache LLM của multi-agent layer (AEGIS_CACHE_DIR)
-cache/
-
 # Environment variables
 .env
 
@@ -19,8 +16,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+!apps/findings-dashboard/src/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -31,6 +29,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv*/
 .venv-cpython/
 venv/
 ENV/
@@ -61,6 +60,11 @@ datasets/generated/
 .pytest_cache/
 htmlcov/
 
+# Node.js
+node_modules/
+.next/
+
+
 # OS
 .DS_Store
 Thumbs.db
@@ -69,3 +73,5 @@ Thumbs.db
 refs/
 AGENTS.md
 .codex/
+.tmp*
+aegis-scan-triage/

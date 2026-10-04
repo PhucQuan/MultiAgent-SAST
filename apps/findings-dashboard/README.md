@@ -38,6 +38,21 @@ npm.cmd run dev
 
 Mo `http://localhost:3000`.
 
+## Backend scan API
+
+The scan form calls the FastAPI service directly. Start it from the repository
+root in a second terminal:
+
+```powershell
+.\.venv-1\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+```
+
+The dashboard defaults to `http://localhost:8000/api/v1`. Set
+`NEXT_PUBLIC_AEGIS_API_URL` when the backend runs elsewhere. The API exposes
+`POST /api/v1/scan`, `GET /api/v1/scan/{scan_id}/status`, and
+`GET /api/v1/scan/{scan_id}/results`; the latter returns normalized findings,
+evidence bundles, and triage records.
+
 ## Verify
 
 ```powershell

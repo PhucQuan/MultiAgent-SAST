@@ -159,6 +159,127 @@ def test_validate_workbench_profile_rejects_out_of_scope_rule():
     assert "out_of_scope_family" in error_codes
 
 
+def test_validate_python_reviewed_core4_profile_accepts_python_sqli_rule():
+    module = _load_validator_module()
+    document = {
+        "schema_version": "aegis-normalized-rule-v1",
+        "rule_id": "PY-SQL-001",
+        "title": "Potential SQL injection via execute-family sink",
+        "language": "python",
+        "family": "SQL_INJECTION",
+        "severity": "CRITICAL",
+        "taxonomy": {
+            "cwe": ["CWE-89"],
+            "owasp": ["A05:2025"],
+        },
+        "detection": {
+            "match_mode": "semgrep-reviewed-legacy-bridge",
+            "source_patterns": [
+                {
+                    "pattern": "request.args.get(...)",
+                    "pattern_mode": "pattern",
+                    "exact": True,
+                    "by_side_effect": False,
+                }
+            ],
+            "sink_patterns": [
+                {
+                    "pattern": "execute(...)",
+                    "pattern_mode": "pattern",
+                    "exact": True,
+                    "by_side_effect": False,
+                }
+            ],
+            "sanitizers": [
+                {
+                    "pattern": "int(...)",
+                    "pattern_mode": "pattern",
+                    "exact": True,
+                    "by_side_effect": False,
+                }
+            ],
+        },
+        "triage": {
+            "knowledge_refs": ["generic-sql-injection"],
+            "fp_hints": ["parameterized-query"],
+            "remediation_notes": ["Use parameterized queries."],
+        },
+        "provenance": {
+            "source": "semgrep-rules-reviewed-adaptation",
+            "source_rule_id": "tainted-sql-string",
+            "source_path": "refs/rule_sources/semgrep-rules/python/flask/security/injection/tainted-sql-string.yaml",
+            "importer": "manual-reviewed-semgrep-python-core4-profile",
+            "snapshot_version": "unit-test",
+        },
+        "notes": [],
+    }
+
+    report = module.validate_normalized_document(
+        document,
+        profile="python-reviewed-core4-v1",
+    )
+
+    assert report["valid"] is True
+    assert report["error_count"] == 0
+
+
+def test_validate_python_reviewed_ssrf_profile_accepts_python_ssrf_rule():
+    module = _load_validator_module()
+    document = {
+        "schema_version": "aegis-normalized-rule-v1",
+        "rule_id": "PY-SSRF-001",
+        "title": "Potential SSRF via outbound request helper",
+        "language": "python",
+        "family": "SSRF",
+        "severity": "HIGH",
+        "taxonomy": {
+            "cwe": ["CWE-918"],
+            "owasp": ["A10:2021", "A01:2025"],
+        },
+        "detection": {
+            "match_mode": "semgrep-reviewed-legacy-bridge",
+            "source_patterns": [
+                {
+                    "pattern": "request.args.get(...)",
+                    "pattern_mode": "pattern",
+                    "exact": True,
+                    "by_side_effect": False,
+                }
+            ],
+            "sink_patterns": [
+                {
+                    "pattern": "requests.get(...)",
+                    "pattern_mode": "pattern",
+                    "exact": True,
+                    "by_side_effect": False,
+                }
+            ],
+            "sanitizers": [],
+        },
+        "triage": {
+            "knowledge_refs": ["generic-ssrf"],
+            "fp_hints": ["allowlist-hosts"],
+            "remediation_notes": ["Allowlist outbound destinations before proxying requests."],
+        },
+        "provenance": {
+            "source": "semgrep-rules-reviewed-adaptation",
+            "source_rule_id": "ssrf-requests",
+            "source_path": "refs/rule_sources/semgrep-rules/python/flask/security/injection/ssrf-requests.yaml",
+            "importer": "manual-reviewed-semgrep-python-ssrf-profile",
+            "snapshot_version": "unit-test",
+        },
+        "notes": [],
+    }
+
+    report = module.validate_normalized_document(
+        document,
+        profile="python-reviewed-ssrf-v1",
+    )
+
+    assert report["valid"] is True
+    assert report["error_count"] == 0
+
+
 def test_cli_writes_json_report_and_returns_nonzero_on_invalid_rule(tmp_path):
     module = _load_validator_module()
     input_path = tmp_path / "invalid_rule.json"
