@@ -263,3 +263,187 @@ rules:
       owasp: ["A03:2021 – Injection"]
       aegis_family: CODE_INJECTION
     pattern: exec($CODE)
+
+
+  # =============================================================================
+  # OWASP BENCHMARK TAINT RULES (XPATH, LDAP, REDIRECT, XSS, PATH TRAVERSAL)
+  # =============================================================================
+
+  # ─── 1. XPath Injection (CWE-643) ─────────────────────────────────────────
+  - id: aegis-xpath-injection
+    mode: taint
+    message: >
+      User-controlled input flows into an XPath query expression without sanitization.
+      An attacker can modify the query structure to bypass authentication or extract sensitive XML data.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-643: Improper Neutralization of Data within XPath Expressions ('XPath Injection')"
+      category: security
+      confidence: HIGH
+      owasp:
+        - "A03:2021 - Injection"
+    pattern-sources:
+      - pattern: request.cookies.get(...)
+      - pattern: request.cookies[...]
+      - pattern: request.form.get(...)
+      - pattern: request.form[...]
+      - pattern: request.form.getlist(...)
+      - pattern: request.args.get(...)
+      - pattern: request.args[...]
+      - pattern: request.values.get(...)
+      - pattern: request.headers.get(...)
+      - pattern: urllib.parse.unquote(...)
+      - pattern: urllib.parse.unquote_plus(...)
+    pattern-sanitizers:
+      - pattern: escape_for_html(...)
+      - pattern: int(...)
+      - pattern: float(...)
+    pattern-sinks:
+      - pattern: lxml.etree.XPath(...)
+      - pattern: elementpath.select(...)
+      - pattern: $ROOT.xpath(...)
+
+  # ─── 2. LDAP Injection (CWE-90) ───────────────────────────────────────────
+  - id: aegis-ldap-injection
+    mode: taint
+    message: >
+      User-controlled input flows into an LDAP query filter without sanitization.
+      An attacker can manipulate the LDAP query logic.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-90: Improper Neutralization of Special Elements used in an LDAP Query ('LDAP Injection')"
+      category: security
+      confidence: HIGH
+      owasp:
+        - "A03:2021 - Injection"
+    pattern-sources:
+      - pattern: request.cookies.get(...)
+      - pattern: request.cookies[...]
+      - pattern: request.form.get(...)
+      - pattern: request.form[...]
+      - pattern: request.form.getlist(...)
+      - pattern: request.args.get(...)
+      - pattern: request.args[...]
+      - pattern: request.values.get(...)
+      - pattern: request.headers.get(...)
+      - pattern: urllib.parse.unquote(...)
+      - pattern: urllib.parse.unquote_plus(...)
+    pattern-sanitizers:
+      - pattern: ldap3.utils.conv.escape_filter_chars(...)
+      - pattern: int(...)
+      - pattern: float(...)
+    pattern-sinks:
+      - pattern: $CONN.search(...)
+
+  # ─── 3. Open Redirect (CWE-601) ───────────────────────────────────────────
+  - id: aegis-open-redirect
+    mode: taint
+    message: >
+      User-controlled input flows into a redirect function, which may allow unvalidated redirects.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-601: URL Redirection to Untrusted Site ('Open Redirect')"
+      category: security
+      confidence: HIGH
+      owasp:
+        - "A01:2021 - Broken Access Control"
+    pattern-sources:
+      - pattern: request.cookies.get(...)
+      - pattern: request.cookies[...]
+      - pattern: request.form.get(...)
+      - pattern: request.form[...]
+      - pattern: request.form.getlist(...)
+      - pattern: request.args.get(...)
+      - pattern: request.args[...]
+      - pattern: request.values.get(...)
+      - pattern: request.headers.get(...)
+      - pattern: urllib.parse.unquote(...)
+      - pattern: urllib.parse.unquote_plus(...)
+    pattern-sanitizers:
+      - pattern: url_for(...)
+    pattern-sinks:
+      - pattern: flask.redirect(...)
+      - pattern: redirect(...)
+
+  # ─── 4. Cross-Site Scripting (CWE-79) ────────────────────────────────────
+  - id: aegis-reflected-xss
+    mode: taint
+    message: >
+      User-controlled data is rendered directly into the HTTP response without HTML escaping,
+      leading to Reflected Cross-Site Scripting (XSS).
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+      category: security
+      confidence: HIGH
+      owasp:
+        - "A03:2021 - Injection"
+    pattern-sources:
+      - pattern: request.cookies.get(...)
+      - pattern: request.cookies[...]
+      - pattern: request.form.get(...)
+      - pattern: request.form[...]
+      - pattern: request.form.getlist(...)
+      - pattern: request.args.get(...)
+      - pattern: request.args[...]
+      - pattern: request.values.get(...)
+      - pattern: request.headers.get(...)
+      - pattern: urllib.parse.unquote(...)
+      - pattern: urllib.parse.unquote_plus(...)
+    pattern-sanitizers:
+      - pattern: escape_for_html(...)
+      - pattern: html.escape(...)
+      - pattern: markupsafe.escape(...)
+      - pattern: int(...)
+      - pattern: float(...)
+    pattern-sinks:
+      - pattern: make_response(...)
+      - pattern: render_template_string(...)
+      - patterns:
+          - pattern-inside: |
+              @$APP.route(...)
+              def $FUNC(...):
+                ...
+                return $RESP
+          - pattern: return $RESP
+
+  # ─── 5. Path Traversal - codecs.open / open (CWE-22) ──────────────────────
+  - id: aegis-path-traversal-open
+    mode: taint
+    message: >
+      User-controlled data flows into codecs.open() or open() file path, allowing arbitrary file read/write.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      category: security
+      confidence: HIGH
+      owasp:
+        - "A01:2021 - Broken Access Control"
+    pattern-sources:
+      - pattern: request.cookies.get(...)
+      - pattern: request.cookies[...]
+      - pattern: request.form.get(...)
+      - pattern: request.form[...]
+      - pattern: request.form.getlist(...)
+      - pattern: request.args.get(...)
+      - pattern: request.args[...]
+      - pattern: request.values.get(...)
+      - pattern: request.headers.get(...)
+      - pattern: urllib.parse.unquote(...)
+      - pattern: urllib.parse.unquote_plus(...)
+    pattern-sanitizers:
+      - pattern: os.path.basename(...)
+      - pattern: int(...)
+      - pattern: float(...)
+    pattern-sinks:
+      - pattern: codecs.open(...)

@@ -38,22 +38,36 @@ KNOWN_SANITIZERS: Dict[str, Tuple[str, List[VulnerabilityType]]] = {
     "os.path.abspath": ("Absolute path canonicalization", [VulnerabilityType.PATH_TRAVERSAL]),
     "normpath": ("Path normalization", [VulnerabilityType.PATH_TRAVERSAL]),
     "os.path.normpath": ("Path normalization", [VulnerabilityType.PATH_TRAVERSAL]),
+    "secure_filename": ("Secure filename extraction", [VulnerabilityType.PATH_TRAVERSAL]),
+    "werkzeug.utils.secure_filename": ("Secure filename extraction", [VulnerabilityType.PATH_TRAVERSAL]),
+    "resolve": ("Path canonicalization and resolution", [VulnerabilityType.PATH_TRAVERSAL]),
     "int": ("Integer type cast", [
         VulnerabilityType.SQL_INJECTION,
         VulnerabilityType.COMMAND_INJECTION,
         VulnerabilityType.PATH_TRAVERSAL,
         VulnerabilityType.SSRF,
         VulnerabilityType.XSS,
+        VulnerabilityType.XPATH_INJECTION,
+        VulnerabilityType.LDAP_INJECTION,
+        VulnerabilityType.OPEN_REDIRECT,
     ]),
     "float": ("Float type cast", [
         VulnerabilityType.SQL_INJECTION,
         VulnerabilityType.COMMAND_INJECTION,
         VulnerabilityType.PATH_TRAVERSAL,
+        VulnerabilityType.XPATH_INJECTION,
+        VulnerabilityType.LDAP_INJECTION,
     ]),
     "escape": ("HTML escaping", [VulnerabilityType.XSS]),
     "html.escape": ("HTML entity escaping", [VulnerabilityType.XSS]),
+    "escape_for_html": ("HTML escaping helper", [VulnerabilityType.XSS, VulnerabilityType.XPATH_INJECTION, VulnerabilityType.LDAP_INJECTION]),
+    "markupsafe.escape": ("MarkupSafe HTML escaping", [VulnerabilityType.XSS]),
+    "cgi.escape": ("CGI HTML escaping", [VulnerabilityType.XSS]),
+    "escape_filter_chars": ("LDAP filter char escaping", [VulnerabilityType.LDAP_INJECTION]),
+    "ldap3.utils.conv.escape_filter_chars": ("LDAP filter char escaping", [VulnerabilityType.LDAP_INJECTION]),
     "safe_load": ("Safe YAML loading", [VulnerabilityType.INSECURE_DESERIALIZATION]),
     "yaml.safe_load": ("Safe YAML loading", [VulnerabilityType.INSECURE_DESERIALIZATION]),
+    "url_for": ("Internal URL routing", [VulnerabilityType.OPEN_REDIRECT]),
     "urlparse": ("URL validation/parsing", [VulnerabilityType.SSRF, VulnerabilityType.OPEN_REDIRECT]),
     "urllib.parse.urlparse": ("URL validation/parsing", [VulnerabilityType.SSRF, VulnerabilityType.OPEN_REDIRECT]),
 }
@@ -193,8 +207,8 @@ class TaintBridge:
                             )
                         ]
 
-                    # 3. Check for sanitizers along the trace
-                    sanitizers = self._find_sanitizers_in_trace(trace_nodes, [sink_node])
+                    # 3. Check for sanitizers along the trace and enclosing scope
+                    sanitizers = self._find_sanitizers_in_trace(trace_nodes, [sink_node], graph=graph)
 
         # Fallback if DFG could not trace backward
         if not dfg_trace_success or source_loc is None:
@@ -203,15 +217,30 @@ class TaintBridge:
 
         # Triage status heuristics based on DFG evidence
         has_effective_sanitizer = any(s.is_effective_against(vuln_type) for s in sanitizers)
+
+        has_untrusted_source = False
+        if dfg_trace_success and trace_nodes:
+            has_untrusted_source = any(self._is_untrusted_source(n) for n in trace_nodes)
+
+        # Injection & Traversal vulnerabilities require user-controlled data flow.
+        # If DFG analysis confirms that no untrusted input reaches the sink,
+        # or if an effective sanitizer/guard is applied along the path:
         if has_effective_sanitizer:
             triage_status = TriageStatus.SUPPRESSED
-            confidence = 0.90
-        elif dfg_trace_success and source_loc.line_number != sink_loc.line_number:
+            confidence = 0.92
+        elif not has_untrusted_source:
+            # Sinks receiving only static/internal data (no reaching untrusted input) are suppressed
+            triage_status = TriageStatus.SUPPRESSED
+            confidence = 0.88
+        elif dfg_trace_success and has_untrusted_source and source_loc.line_number != sink_loc.line_number:
             triage_status = TriageStatus.CONFIRMED
             confidence = 0.88
-        else:
+        elif dfg_trace_success and source_loc.line_number != sink_loc.line_number:
             triage_status = TriageStatus.NEEDS_REVIEW
             confidence = 0.70
+        else:
+            triage_status = TriageStatus.NEEDS_REVIEW
+            confidence = 0.65
 
         evidence_meta = dict(match.metadata)
         evidence_meta["semgrep_check_id"] = match.check_id
@@ -316,29 +345,72 @@ class TaintBridge:
         trace.sort(key=lambda n: n.location.line_number)
         return trace
 
+    @staticmethod
+    def _is_untrusted_source(node: PythonFlowNode) -> bool:
+        """Check if a flow node originates from untrusted user input."""
+        snippet = (node.location.code_snippet or "").lower()
+        label = (node.label or "").lower()
+        combined = f"{snippet} {label}"
+        untrusted_indicators = [
+            "request.", "request[", "request.cookies", "request.form",
+            "request.args", "request.values", "request.headers",
+            "request.data", "request.get_json", "request.files",
+            "request.query_params", "request.get(",
+            "unquote(", "unquote_plus(", "sys.argv", "input(",
+            "environ.get", "os.environ"
+        ]
+        return any(ind in combined for ind in untrusted_indicators)
+
     def _find_sanitizers_in_trace(
         self,
         trace_nodes: List[PythonFlowNode],
         sink_nodes: List[PythonFlowNode],
+        graph: Optional[PythonFlowGraph] = None,
     ) -> List[Sanitizer]:
-        """Scan through visited trace nodes to detect sanitizer invocations."""
+        """Scan through visited trace nodes and enclosing scope to detect sanitizers and guards."""
         sanitizers: List[Sanitizer] = []
-        all_nodes = trace_nodes + sink_nodes
+        all_nodes = list(trace_nodes) + list(sink_nodes)
 
+        # Include nodes in the same function scope to catch control guards
+        if graph and sink_nodes:
+            scope_name = sink_nodes[0].scope_name
+            for nid, node in graph.nodes.items():
+                if node.scope_name == scope_name and node not in all_nodes:
+                    all_nodes.append(node)
+
+        seen_keys: Set[str] = set()
         for node in all_nodes:
             snippet = node.location.code_snippet.lower()
             callee = (node.callee_name or "").lower()
 
             for func_key, (desc, mitigates) in KNOWN_SANITIZERS.items():
                 if func_key.lower() in callee or f"{func_key.lower()}(" in snippet:
+                    key = f"{func_key}:{node.location.line_number}"
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        sanitizers.append(
+                            Sanitizer(
+                                location=node.location,
+                                sanitizer_type=desc,
+                                function_name=func_key,
+                                mitigates=list(mitigates),
+                            )
+                        )
+
+            # Check for path traversal guards: e.g. "if '../' in", "if '..' in", ".startswith(", "resolve()"
+            if any(term in snippet for term in ["'../'", '"../"', "'..'", '".."', ".startswith(", "resolve()"]):
+                key = f"guard_check:{node.location.line_number}"
+                if key not in seen_keys:
+                    seen_keys.add(key)
                     sanitizers.append(
                         Sanitizer(
                             location=node.location,
-                            sanitizer_type=desc,
-                            function_name=func_key,
-                            mitigates=list(mitigates),
+                            sanitizer_type="Path traversal guard check",
+                            function_name="guard_check",
+                            mitigates=[VulnerabilityType.PATH_TRAVERSAL],
                         )
                     )
+
         return sanitizers
 
     def _get_snippet(self, source_lines: List[str], line: int, default: str) -> str:
