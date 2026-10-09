@@ -25,7 +25,7 @@ from aegis_sast.ai.api import (  # noqa: E402
     get_gateway,
 )
 
-pytest.importorskip("langgraph", reason="tầng AI là tuỳ chọn")
+pytest.importorskip("langgraph.graph", reason="tầng AI là tuỳ chọn")
 
 from ai import config as config_module  # noqa: E402
 from ai.schemas.state import GraphState, ValidatorAssessment  # noqa: E402

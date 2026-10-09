@@ -1284,14 +1284,35 @@ class PythonDataflowAnalyzer:
         node: PythonFlowNode,
         sinks: List[TaintSink],
     ) -> List[TaintSink]:
+        if node.kind in {
+            "loop",
+            "branch",
+            "merge",
+            "function_decl",
+            "function_entry",
+            "parameter",
+            "continue",
+            "break",
+        }:
+            return []
+
         matches: List[TaintSink] = []
         for sink in sinks:
             if not self._node_covers_line(node, sink.location.line_number):
                 continue
             if node.callee_name and sink.function_name:
-                if sink.function_name in node.callee_name or node.callee_name in sink.function_name:
+                if (
+                    sink.function_name in node.callee_name
+                    or node.callee_name in sink.function_name
+                ):
                     matches.append(sink)
                     continue
+                if sink.function_name in node.label:
+                    matches.append(sink)
+                    continue
+                continue
+            if sink.function_name and sink.function_name not in node.label:
+                continue
             matches.append(sink)
         return matches
 
@@ -1416,6 +1437,9 @@ class PythonDataflowAnalyzer:
             summary = self._lookup_local_summary(node.callee_name)
             if summary is not None:
                 return summary.returns_tainted_from_parameters
+            callee_leaf = self._callee_leaf_name(node.callee_name)
+            if node.callee_name in self.graph.function_entries or callee_leaf in self.graph.function_entries:
+                return False
             return True
 
         receiver = self._callee_receiver(node.callee_name)

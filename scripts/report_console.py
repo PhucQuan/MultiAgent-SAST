@@ -596,7 +596,7 @@ def select_cleanup_directories(
     for prefix, group in grouped.items():
         if target_prefix and prefix != target_prefix:
             continue
-        group.sort(key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
+        group.sort(key=lambda path: (path.name, path.stat().st_mtime), reverse=True)
         stale_dirs.extend(group[keep:])
     return stale_dirs
 

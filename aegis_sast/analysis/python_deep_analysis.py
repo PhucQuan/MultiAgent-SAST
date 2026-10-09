@@ -12,6 +12,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import tempfile
 from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
 
 from aegis_sast.core.models import CodeLocation, TaintSource
@@ -77,11 +78,18 @@ class PythonDeepAnalyzer:
         """Build the shared Python project context once for one scan root."""
         function_index_factory, import_resolver_factory = self._resolve_factories()
         function_index = function_index_factory()
-        function_index.build(
-            project_root,
-            exclude_dir_names=exclude_dir_names,
-            exclude_globs=exclude_globs,
-        )
+        try:
+            temp_dir = Path(tempfile.gettempdir()).resolve()
+            is_raw_temp_root = project_root.resolve() == temp_dir
+        except Exception:
+            is_raw_temp_root = False
+
+        if not is_raw_temp_root:
+            function_index.build(
+                project_root,
+                exclude_dir_names=exclude_dir_names,
+                exclude_globs=exclude_globs,
+            )
         return PythonProjectContext(
             project_root=project_root,
             function_index=function_index,
@@ -124,10 +132,31 @@ class PythonDeepAnalyzer:
         common project markers while walking upward, then falls back to the
         parent just above the highest contiguous Python package chain.
         """
-        file_path = Path(file_path)
-        start_directory = file_path.parent
+        try:
+            resolved_path = Path(file_path).resolve()
+        except OSError:
+            resolved_path = Path(file_path)
+
+        start_directory = resolved_path.parent
+        try:
+            temp_dir = Path(tempfile.gettempdir()).resolve()
+        except Exception:
+            temp_dir = None
+
+        try:
+            user_home = Path.home().resolve()
+        except Exception:
+            user_home = None
 
         for candidate in [start_directory, *start_directory.parents]:
+            # Never escape into or above the system temp directory itself
+            if temp_dir and (candidate == temp_dir or candidate in temp_dir.parents):
+                break
+
+            # Never escape into or above user profile or filesystem root
+            if candidate == user_home or candidate.parent == candidate:
+                break
+
             if any((candidate / marker).exists() for marker in PYTHON_PROJECT_ROOT_MARKERS):
                 return candidate
             if (candidate / ".git").exists():
@@ -135,6 +164,8 @@ class PythonDeepAnalyzer:
 
         package_root = start_directory
         while (package_root / "__init__.py").exists() and package_root.parent != package_root:
+            if package_root.parent == user_home or (temp_dir and package_root.parent == temp_dir):
+                break
             package_root = package_root.parent
 
         return package_root

@@ -49,6 +49,9 @@ import {
 import {
   getBackendScanResults,
   getBackendScanStatus,
+  getExportSarifUrl,
+  getExportPatchUrl,
+  syncReviewerDisposition,
   startBackendScan,
   type BackendScanJob,
 } from "@/lib/aegis-api";
@@ -1253,6 +1256,88 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     });
   }
 
+  function handleExportSarif() {
+    if (!selectedReport) {
+      toast.error("No active report selected to export.");
+      return;
+    }
+    const record = selectedReport as unknown as Record<string, unknown>;
+    const scanId = (record.scanId || record.id || record.scan_id) as string | undefined;
+    if (scanId && typeof scanId === "string") {
+      window.open(getExportSarifUrl(scanId), "_blank");
+      toast.success("SARIF export started", {
+        description: "Downloading standardized SARIF v2.1.0 document.",
+      });
+      return;
+    }
+
+    // Client-side fallback if running against legacy static JSON
+    const sarifDoc = {
+      $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+      version: "2.1.0",
+      runs: [
+        {
+          tool: { driver: { name: "Aegis-SAST", version: "1.0.0" } },
+          results: allFindings.map((f) => ({
+            ruleId: f.ruleId,
+            message: { text: f.message },
+            locations: [
+              {
+                physicalLocation: {
+                  artifactLocation: { uri: f.filePath },
+                  region: { startLine: f.line || 1, startColumn: 1 },
+                },
+              },
+            ],
+          })),
+        },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(sarifDoc, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `aegis-report-${Date.now()}.sarif`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("SARIF downloaded", {
+      description: `Exported ${allFindings.length} findings as SARIF v2.1.0.`,
+    });
+  }
+
+  function handleExportPatch() {
+    const patches: string[] = [];
+    allFindings.forEach((f, i) => {
+      const patch = f.remediationPatch;
+      if (patch && patch.diffLines && patch.diffLines.length > 0) {
+        const diffBody = patch.diffLines.map((d) => d.text).join("\n");
+        const hunk = patch.hunkHeader ? `${patch.hunkHeader}\n` : "";
+        patches.push(
+          `# ========================================================\n# Patch ${i + 1}: ${f.title} [${f.severity}]\n# Target: ${patch.filePath || f.filePath}\n# Explanation: ${patch.explanation || "Automated remediation patch"}\n# ========================================================\n${hunk}${diffBody}`
+        );
+      }
+    });
+
+    if (patches.length === 0) {
+      toast.error("No AI remediation patches available for this report.");
+      return;
+    }
+
+    const content = patches.join("\n\n");
+    const blob = new Blob([content], { type: "text/x-diff" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `aegis-remediation-${Date.now()}.patch`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Patch document downloaded", {
+      description: `Exported ${patches.length} fix patches for git apply.`,
+    });
+  }
+
   function handleClearMemory() {
     setReviewStore({});
     toast.success("Local review state cleared", {
@@ -1267,6 +1352,9 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     setReviewStore((current) =>
       updateReviewStore(current, findingKey, { disposition }),
     );
+    if (disposition) {
+      void syncReviewerDisposition(findingKey, disposition);
+    }
   }
 
   function handleSetMuted(findingKey: string, muted: boolean) {
@@ -1412,6 +1500,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           onCopyLink={() => void handleCopyReportLink()}
           onRefresh={() => void refreshWorkspaceReports(true)}
           onExport={handleExportFeedback}
+          onExportSarif={handleExportSarif}
+          onExportPatch={handleExportPatch}
           onRunScan={handleOpenScanSheet}
           copyLinkDisabled={!shareableWorkspaceReport}
           scanPending={scanRunning}

@@ -457,6 +457,8 @@ class PythonGraphAblationBenchmark:
     def _run_graph_mode(self, case: BenchmarkCase, use_summary: bool) -> Dict[str, Any]:
         source_text = case.file_path.read_text(encoding="utf-8", errors="replace")
         graph = PythonFlowGraphBuilder(case.file_path, source_text).build()
+        if not use_summary:
+            graph.function_summaries = {}
         resolver: Optional[Callable[[str, List[str], Set[str]], bool]] = None
         if use_summary:
             resolver = self._build_local_summary_resolver(graph)

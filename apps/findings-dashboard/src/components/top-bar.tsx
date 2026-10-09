@@ -3,6 +3,8 @@
 import {
   Bell,
   ChevronRight,
+  Download,
+  FileCode,
   FolderGit2,
   Moon,
   PanelLeft,
@@ -27,6 +29,8 @@ interface TopBarProps {
   onCopyLink: () => void;
   onRefresh: () => void;
   onExport: () => void;
+  onExportSarif?: () => void;
+  onExportPatch?: () => void;
   onRunScan: () => void;
   copyLinkDisabled: boolean;
   scanPending: boolean;
@@ -40,6 +44,8 @@ export function TopBar({
   onSelectFamily,
   onImport,
   onRefresh,
+  onExportSarif,
+  onExportPatch,
   onRunScan,
   scanPending,
   findings,
@@ -184,6 +190,33 @@ export function TopBar({
             ⌘K
           </kbd>
         </div>
+
+        {/* Export Actions */}
+        {onExportSarif && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onExportSarif}
+            title="Download SARIF v2.1.0 document for GitHub Code Scanning"
+            className="hidden h-8.5 gap-1.5 rounded-lg border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 lg:inline-flex"
+          >
+            <Download className="h-3.5 w-3.5 text-slate-500" />
+            <span>SARIF</span>
+          </Button>
+        )}
+
+        {onExportPatch && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onExportPatch}
+            title="Download AI remediation Unified Diff patch (.patch)"
+            className="hidden h-8.5 gap-1.5 rounded-lg border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 lg:inline-flex"
+          >
+            <FileCode className="h-3.5 w-3.5 text-blue-600" />
+            <span>.patch</span>
+          </Button>
+        )}
 
         {/* Trigger Scan Button */}
         <Button

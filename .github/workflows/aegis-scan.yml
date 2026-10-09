@@ -1,0 +1,58 @@
+name: "Aegis-SAST Security Scan"
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  sast-scan:
+    name: "Aegis-SAST Static Analysis & Taint Scan"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.12"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install Aegis-SAST & dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install semgrep
+          pip install -e .
+
+      - name: "Run Aegis-SAST Scan Pipeline"
+        run: |
+          python -m aegis_sast.cli scan . \
+            --engine semgrep \
+            -o sarif \
+            -o json \
+            -o markdown \
+            --output-dir reports
+        continue-on-error: true
+
+      - name: "Upload SARIF Report to GitHub Security"
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: reports
+        continue-on-error: true
+
+      - name: "Archive Scan Reports & Artifacts"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aegis-sast-reports
+          path: reports/
+          retention-days: 14

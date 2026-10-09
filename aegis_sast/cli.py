@@ -62,6 +62,12 @@ def cli():
     default="semgrep",
     help="Underlying scan engine: 'semgrep' (default, Semgrep OSS + Tree-sitter DFG) or 'builtin'",
 )
+@click.option(
+    "--fail-on",
+    type=click.Choice(["critical", "high", "confirmed", "any", "none"]),
+    default="any",
+    help="Quality Gate failure threshold: 'critical', 'high', 'confirmed', 'any', or 'none'",
+)
 def scan(
     target_path,
     rules,
@@ -72,6 +78,7 @@ def scan(
     output,
     output_dir,
     engine,
+    fail_on,
 ):
     """Scan a file or directory for security vulnerabilities."""
     console.print(
@@ -163,14 +170,36 @@ def scan(
             )
 
     console.print("\n" + "=" * 60 + "\n")
-    if pipeline_result.exit_code == 2:
-        console.print("[red bold]Critical vulnerabilities found[/red bold]")
-        sys.exit(2)
-    if pipeline_result.exit_code == 1:
-        console.print("[yellow]Vulnerabilities found[/yellow]")
-        sys.exit(1)
+    res = pipeline_result.scan_result
+    confirmed_count = sum(
+        1 for v in res.vulnerabilities
+        if getattr(v, "triage_status", None) == "confirmed"
+        or (hasattr(v, "finding") and getattr(v.finding, "triage_status", None) and str(v.finding.triage_status.value).lower() == "confirmed")
+    )
 
-    console.print("[green]No vulnerabilities detected[/green]")
+    should_fail = False
+    fail_reason = ""
+
+    if fail_on == "critical" and res.critical_count > 0:
+        should_fail = True
+        fail_reason = f"Found {res.critical_count} critical vulnerability(ies)"
+    elif fail_on == "high" and (res.critical_count > 0 or res.high_count > 0):
+        should_fail = True
+        fail_reason = f"Found {res.critical_count + res.high_count} critical/high vulnerability(ies)"
+    elif fail_on == "confirmed" and confirmed_count > 0:
+        should_fail = True
+        fail_reason = f"Found {confirmed_count} confirmed exploit(s)"
+    elif fail_on == "any" and res.total_vulnerabilities > 0:
+        should_fail = True
+        fail_reason = f"Found {res.total_vulnerabilities} total vulnerability(ies)"
+    elif fail_on == "none":
+        should_fail = False
+
+    if should_fail:
+        console.print(f"[red bold]Quality Gate Failed:[/red bold] {fail_reason}")
+        sys.exit(2 if res.critical_count > 0 else 1)
+
+    console.print("[green]Quality Gate Passed: No blocking vulnerabilities detected[/green]")
     sys.exit(0)
 
 

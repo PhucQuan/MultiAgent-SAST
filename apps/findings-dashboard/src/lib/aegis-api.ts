@@ -139,3 +139,51 @@ export async function getBackendScanResults(
 
   return (await response.json()) as BackendScanResult;
 }
+
+/**
+ * Get download URL for standardized SARIF v2.1.0 report.
+ */
+export function getExportSarifUrl(scanId: string): string {
+  return `${API_BASE_URL}/api/v1/scan/${scanId}/export/sarif`;
+}
+
+/**
+ * Get download URL for Markdown summary report.
+ */
+export function getExportMarkdownUrl(scanId: string): string {
+  return `${API_BASE_URL}/api/v1/scan/${scanId}/export/markdown`;
+}
+
+/**
+ * Get download URL for Unified Diff patch document.
+ */
+export function getExportPatchUrl(scanId: string): string {
+  return `${API_BASE_URL}/api/v1/scan/${scanId}/export/patch`;
+}
+
+/**
+ * Persist reviewer disposition to backend memory.
+ */
+export async function syncReviewerDisposition(
+  fingerprint: string,
+  disposition: string,
+  note?: string,
+): Promise<void> {
+  try {
+    await fetch(
+      `${API_BASE_URL}/api/v1/findings/${encodeURIComponent(fingerprint)}/disposition`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          disposition,
+          note,
+          reviewer: "workbench-reviewer",
+        }),
+      },
+    );
+  } catch {
+    // Graceful offline fallback
+  }
+}
+
