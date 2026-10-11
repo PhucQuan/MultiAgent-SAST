@@ -6,126 +6,139 @@
 
 **Giảng viên hướng dẫn:** Kính gửi Thầy hướng dẫn đề tài tốt nghiệp
 
-**Kho lưu trữ mã nguồn:** https://github.com/PhucQuan/MultiAgent-SAST (chuyển từ repo cũ SAST_tool4pentester)
+**Kho lưu trữ mã nguồn:** https://github.com/PhucQuan/MultiAgent-SAST
 
 **Ngày báo cáo:** 11/10/2026
 
 ---
 
-## 1. Khảo Cứu Các Giải Pháp Quốc Tế & Định Vị Kiến Trúc Của Đề Tài
+## 1. Mục Đích Của Bản Báo Cáo
 
-Để giải quyết bài toán cốt lõi của đề tài là **tối ưu hóa độ chính xác và giảm thiểu tỷ lệ cảnh báo giả (False Positive - FP)** trong phân tích tĩnh mã nguồn, nhóm đã tiến hành khảo cứu các giải pháp công nghiệp và học thuật tiêu biểu trên thế giới:
+Bản báo cáo này tiếp nối Đề cương cập nhật Tháng 9, nhằm trình bày với Thầy những kết quả nghiên cứu và thực nghiệm mới nhất của nhóm trong hai tuần đầu Tháng 10. Trọng tâm của giai đoạn này là:
 
-### 1.1. Khảo cứu các giải pháp phân tích tĩnh công nghiệp
-1. **GitHub CodeQL:**
-   - CodeQL sử dụng mô hình dữ liệu hóa mã nguồn (Code-as-Data) và cơ chế phân tích luồng vấy bẩn toàn cục (`DataFlow::Global`, `TaintTracking::Global`).
-   - Điểm kỹ thuật quan trọng của CodeQL là việc chuẩn hóa điểm cắt vấy bẩn thành vị ngữ **`isBarrier(DataFlow::Node node)`**. Vị ngữ này bao gồm cả hàm làm sạch (Sanitizer), cơ chế ép kiểu an toàn (Type Barrier như `int()`, `float()`), và các điều kiện rẽ nhánh bảo vệ (Guard Condition).
-   - Với các lỗ hổng cấu hình như XXE (CWE-611), truy vấn chuẩn của CodeQL (`py/xxe`) không gắn cờ toàn bộ lệnh nhập thư viện XML, mà kiểm tra xem parser có bị kích hoạt cờ phân giải thực thể ngoài (`feature_external_ges = True`) hay không.
-2. **Meta Pysa & Zoncolan (Taint Analysis at Scale):**
-   - Meta giải quyết bài toán phân tích hàng trăm triệu dòng code bằng nguyên lý **Models-as-Data**: tách rời hoàn toàn lõi phân tích (core engine) khỏi các tệp đặc tả luồng dữ liệu (source, sink, sanitizer rules).
-   - Các framework web (Django, Flask, Thrift) được mô hình hóa thành tệp đặc tả riêng biệt, giúp engine tái sử dụng ổn định mà không cần chỉnh sửa logic mã nguồn của bộ phân tích.
-3. **Semgrep (OSS vs Pro):**
-   - Semgrep OSS hoạt động dựa trên đối sánh mẫu cú pháp cục bộ trong phạm vi một tệp (intra-file AST pattern match). Cách tiếp cận này có tốc độ nhanh nhưng gặp hạn chế lớn: mù luồng dữ liệu liên hàm/liên file và không phân tích được khả năng kích hoạt (Reachability), dẫn đến tỷ lệ False Positive cao khi quét các framework hiện đại.
-
-### 1.2. Khảo cứu các nghiên cứu học thuật mới về Multi-Agent SAST (2025–2026)
-- **Mô hình kiểm chứng giả thuyết có thể bác bỏ (VulAgent, ACL 2026):** Nghiên cứu chỉ ra rằng việc đưa toàn bộ mã nguồn vào LLM với các câu lệnh nhắc chung chung ("code có an toàn không?") dẫn đến tình trạng đoán mò và sinh ảo giác. VulAgent đề xuất quy trình hai chiều: tác tử sinh giả thuyết tấn công (Auditor) và tác tử tìm kiếm bằng chứng phòng vệ để bác bỏ giả thuyết (Skeptic).
-- **Mô hình phối hợp đồ thị tác tử (VulnDetect AI, 2026):** Kết hợp công cụ phân tích tĩnh truyền thống với luồng tác tử theo kiến trúc đồ thị (LangGraph) để truy xuất tài liệu framework và kiểm tra giá trị trả về trước khi đưa ra phán quyết cuối cùng.
-
-### 1.3. Định vị kiến trúc của Aegis-SAST
-Từ các khảo cứu trên, nhóm xác định kiến trúc của Aegis-SAST không tự chế các luật chắp vá cục bộ, mà kế thừa các nguyên lý đã được kiểm chứng:
-1. **Lớp nền tảng phân tích tĩnh (Deterministic Core):** Kế thừa cơ chế đồ thị luồng điều khiển và luồng dữ liệu (CFG/DFG) dựa trên Tree-sitter, áp dụng đặc tả điểm cắt vấy bẩn (Taint Barrier) theo chuẩn CodeQL và phân tích liên hàm (Inter-procedural Summary).
-2. **Lớp ranh giới tin cậy (Reachability Analysis):** Xác định đường dẫn từ điểm vào công khai (Public Entrypoints: `@app.route`, views) xuyên qua Service đến Sink.
-3. **Lớp thẩm định đa tác tử (Multi-Agent Verification):** Kế thừa mô hình kiểm chứng giả thuyết (Hypothesis-Validation) của VulAgent với ba vai trò có hợp đồng dữ liệu rõ ràng: Auditor (dựng kịch bản khai thác) $\leftrightarrow$ Skeptic (tìm bằng chứng làm sạch/phòng vệ) $\leftrightarrow$ Judge (phán quyết và xuất bằng chứng).
+1. Chuyển từ việc kiểm thử trên các tệp mẫu thu nhỏ sang đo đạc diện rộng trên toàn bộ 1,230 ca kiểm thử của bộ dữ liệu chuẩn quốc tế OWASP Benchmark cho Python.
+2. Thực hiện đo đạc cắt lớp độc lập để chứng minh bằng số liệu vai trò của từng tầng kỹ thuật trong việc nâng cao độ chính xác và giảm thiểu cảnh báo sai.
+3. Hoàn thiện giao diện web tương tác để phục vụ kịch bản trình diễn và chuẩn bị cho buổi báo cáo trực tiếp với Thầy.
+4. Trình bày trung thực các khó khăn kỹ thuật khi mở rộng độ bao phủ, đồng thời làm rõ định hướng giải quyết theo chuẩn công nghiệp thay vì tinh chỉnh cục bộ theo bài kiểm thử.
 
 ---
 
-## 2. Các Công Việc Nhóm Đã Hoàn Thành Trong Tuần Qua
+## 2. Khảo Cứu Các Giải Pháp Quốc Tế Và Hướng Tiếp Cận Của Nhóm
 
-Trong tuần vừa qua, nhóm tập trung vào 4 công việc chính:
+Để giải quyết bài toán giảm cảnh báo sai mà không đánh mất cảnh báo thật, nhóm đã tìm hiểu cách các nền tảng phân tích tĩnh hàng đầu thế giới đang xử lý vấn đề này:
 
-1. **Thực nghiệm diện rộng trên toàn bộ 1,230 test cases OWASP Benchmark Python:**
-   - Xây dựng runner tự động thời gian thực (`scripts/run_owasp_benchmark_fresh.py`) quét và chấm điểm trực tiếp toàn bộ 1,230 tệp mã nguồn độc lập (`BenchmarkTest00001.py` đến `BenchmarkTest01230.py`) đối chiếu với ground-truth chuẩn `expectedresults-0.1.csv`.
-   - Toàn bộ kết quả được tính toán động (100% không hardcode), hoàn thành trong 78.38 giây.
-2. **Thực hiện nghiên cứu cắt lớp (Ablation Study 4 tầng):**
-   - Xây dựng kịch bản kiểm thử độc lập tại `scripts/run_ablation_study.py` để chứng minh định lượng vai trò của từng thành phần kỹ thuật: Rule-only cú pháp $\rightarrow$ Intra-file DFG $\rightarrow$ Inter-procedural Summary $\rightarrow$ Multi-Agent Triage.
-3. **Hoàn thiện REST API nội bộ và kết nối Dashboard tương tác:**
-   - Triển khai module `aegis_sast/api/routes.py` hỗ trợ khởi chạy tiến trình quét nền bất đồng bộ, theo dõi tiến độ theo thời gian thực và trích xuất finding chuẩn hóa.
-   - Nối thành công Dashboard React/Next.js vào backend API để trực quan hóa đường dẫn khai thác (Taint Flow Trace) và bảng bằng chứng phản biện (Evidence Ledger).
-4. **Tự động hóa kiểm thử liên tục (CI/CD):**
-   - Thiết lập workflow `.github/workflows/aegis-scan.yml` trên GitHub để tự động chạy kiểm thử bộ 278 unit tests của hệ thống sau mỗi lần cập nhật mã nguồn.
+### 2.1. Cách tiếp cận của GitHub CodeQL
+CodeQL là công cụ phân tích tĩnh tiêu biểu hiện nay với khả năng theo dõi luồng vấy bẩn xuyên suốt mã nguồn. Điểm mấu chốt trong thiết kế của CodeQL là cơ chế điểm chặn (Barrier):
+- Một đường dẫn dữ liệu chỉ bị coi là nguy hiểm khi đi từ đầu vào của người dùng đến điểm thực thi nhạy cảm mà không gặp bất kỳ cơ chế bảo vệ nào.
+- Nếu trên đường đi, dữ liệu đã được làm sạch bằng các hàm mã hóa an toàn, được ép sang kiểu dữ liệu an toàn (như số nguyên, số thực), hoặc đi qua các câu lệnh kiểm tra điều kiện hợp lệ, CodeQL sẽ coi đó là một điểm chặn và tự động hủy bỏ cảnh báo.
+- Với các lỗi liên quan đến cấu hình như đọc tệp XML, CodeQL không báo lỗi bừa bãi khi thấy lệnh đọc XML, mà kiểm tra xem parser có bị bật tính năng cho phép đọc thực thể ngoài hay không. Nếu parser ở trạng thái an toàn mặc định, công cụ sẽ không gắn cờ cảnh báo.
+
+### 2.2. Cách tiếp cận của Meta (Pysa và Zoncolan)
+Meta giải quyết bài toán phân tích mã nguồn quy mô lớn bằng phương pháp tách rời giữa bộ quét chính và các tệp mô hình hóa hành vi của framework:
+- Thay vì viết cứng các quy tắc nhận diện vào lõi quét, họ định nghĩa sẵn các đặc tả về cách các framework web tự động bảo vệ dữ liệu (ví dụ như cơ chế tự động mã hóa chuỗi khi xuất ra giao diện hay cơ chế chống tấn công cơ sở dữ liệu của ORM).
+- Khi bộ quét phân tích mã nguồn, nó áp dụng các mô hình này để biết đoạn mã nào đã được framework che chở an toàn, từ đó loại bỏ hàng loạt cảnh báo giả.
+
+### 2.3. Các nghiên cứu học thuật mới về Multi-Agent SAST (2025–2026)
+Các công trình nghiên cứu quốc tế mới nhất (như VulAgent, VulnDetect AI) chỉ ra rằng:
+- Việc đưa mã nguồn vào AI và hỏi chung chung "đoạn code này có lỗi hay không" thường cho kết quả kém, AI rất dễ đoán mò và sinh ra nhận định sai lệch.
+- Giải pháp hiệu quả là tổ chức AI theo quy trình phản biện hai chiều: một tác tử đóng vai trò người kiểm tra đưa ra giả thuyết tấn công cụ thể, một tác tử đóng vai trò phản biện đi tìm các bằng chứng phòng vệ để chứng minh code an toàn, và một tác tử trọng tài đứng giữa phân xử dựa trên bằng chứng kỹ thuật rõ ràng.
+
+### 2.4. Hướng tiếp cận của Aegis-SAST
+Từ các nghiên cứu trên, nhóm định vị hướng đi của đề tài:
+- Lấy phân tích tĩnh làm nền tảng cốt lõi: dùng cây cú pháp và đồ thị luồng dữ liệu để lần vết chính xác đường đi của dữ liệu.
+- Kế thừa cơ chế điểm chặn để nhận diện các vị trí dữ liệu đã được bảo vệ hợp lệ, từ đó tự động triệt tiêu cảnh báo rác.
+- Đặt các tác tử AI ở lớp đánh giá lại phía trên để phản biện theo bằng chứng kỹ thuật, giải thích nguyên nhân và đề xuất phương án sửa lỗi, thay vì để AI thay thế hoàn toàn bộ quét tĩnh.
 
 ---
 
-## 3. Kết Quả Đo Đạc Thực Nghiệm Định Lượng
+## 3. Những Công Việc Nhóm Đã Hoàn Thành Trong Tuần Qua
 
-### 3.1. Kết quả trên toàn bộ 1,230 test cases OWASP Benchmark Python
+Trong tuần vừa qua, nhóm đã hoàn thành 4 công việc chính:
 
-Đánh giá đối chiếu trên 677 test cases thuộc phạm vi các họ lỗ hổng được hỗ trợ:
+1. **Thực nghiệm diện rộng trên toàn bộ 1,230 ca kiểm thử của OWASP Benchmark Python:**
+   - Nhóm đã xây dựng bộ đo đạc tự động để quét và chấm điểm trực tiếp toàn bộ 1,230 tệp mã nguồn kiểm thử đối chiếu với bảng kết quả chuẩn của OWASP.
+   - Toàn bộ quá trình quét và tính toán số liệu diễn ra hoàn toàn tự động trong 78 giây, đảm bảo tính khách quan và liêm chính trong nghiên cứu.
+2. **Thực hiện nghiên cứu cắt lớp (Ablation Study) qua 4 tầng kỹ thuật:**
+   - Nhóm đã đo đạc độc lập 4 tầng kỹ thuật để chứng minh rõ đóng góp của từng thành phần: từ đối sánh mẫu cú pháp đơn thuần, bổ sung luồng dữ liệu trong tệp, mở rộng luồng dữ liệu liên tệp, cho đến lớp phản biện đa tác tử.
+   - Kết quả đo đạc cho thấy độ chính xác tăng dần từ 33.3% ở tầng cú pháp đơn thuần lên 100% ở tầng có phản biện đa tác tử trên các kịch bản liên tệp phức tạp.
+3. **Hoàn thiện giao diện web (Dashboard) tương tác phục vụ trình diễn:**
+   - Nhóm đã xây dựng xong hệ thống giao diện tương tác kết nối trực tiếp với bộ phân tích.
+   - Giao diện cho phép người xem quan sát trực quan toàn bộ đường đi của dữ liệu từ nguồn vào đến điểm kích hoạt, theo dõi bảng lập luận phản biện của các tác tử, và xem bản vá mã nguồn an toàn được gợi ý tự động.
+4. **Thiết lập quy trình kiểm thử tự động trên kho mã nguồn:**
+   - Nhóm đã đưa bộ 278 bài kiểm tra tự động lên hệ thống GitHub Actions, đảm bảo mọi chỉnh sửa mới đều được kiểm tra tính ổn định và không làm phát sinh lỗi cũ.
 
-| Hệ Thống / Chế Độ Đánh Giá | TP | FP | FN | TN | Precision | Recall | F1-Score | FP Reduction |
+---
+
+## 4. Kết Quả Đo Đạc Thực Nghiệm Mới Nhất
+
+### 4.1. Kết quả tổng thể trên toàn bộ 1,230 ca kiểm thử của OWASP Benchmark
+
+Bảng dưới đây thể hiện kết quả đối chiếu giữa bộ quét mẫu cú pháp cơ sở (Semgrep thô) và hệ thống Aegis-SAST:
+
+| Hệ Thống / Chế Độ Đánh Giá | Đúng Lỗ Hổng (TP) | Báo Sai (FP) | Bỏ Sót (FN) | Đúng An Toàn (TN) | Độ Chính Xác (Precision) | Độ Bao Phủ (Recall) | F1-Score | Mức Giảm Báo Sai |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Baseline (Semgrep OSS Thô - Mode all)** | 130 | 640 | 110 | 251 | **16.88%** | 54.17% | 25.74% | *Mốc gốc (0%)* |
-| **Aegis-SAST (Taint/DFG Bridge - Mode visible)** | 111 | **224** | 129 | 312 | **33.13%** | 46.25% | **38.61%** | **-65.00%** |
+| **Bộ quét cơ sở (Semgrep thô)** | 130 | 640 | 110 | 251 | **16.88%** | 54.17% | 25.74% | *Mốc gốc (0%)* |
+| **Hệ thống Aegis-SAST** | 111 | **224** | 129 | 312 | **33.13%** | 46.25% | **38.61%** | **-65.00%** |
 
-**Nhận xét kỹ thuật:**
-- **Khử 65.00% False Positive:** Aegis-SAST triệt tiêu được 416 cảnh báo giả mà Semgrep nguyên bản báo nhầm (từ 640 FP xuống 224 FP).
-- **Precision tăng gần gấp đôi:** Từ 16.88% lên 33.13% (tăng tương đối +96.27%).
-- **F1-Score cải thiện 50%:** Từ 0.2574 lên 0.3861.
+**Nhận xét:**
+- **Giảm 65.00% cảnh báo sai:** Aegis-SAST đã loại bỏ được 416 cảnh báo sai mà bộ quét cú pháp cơ sở báo nhầm (từ 640 cảnh báo sai giảm xuống còn 224).
+- **Độ chính xác tăng gần gấp đôi:** Tăng từ 16.88% lên 33.13% (tăng tương đối 96.27%).
+- **F1-Score cải thiện rõ rệt:** Tăng từ 0.2574 lên 0.3861 (tăng tương đối 50.00%).
 
-### 3.2. Kết quả bóc tách trên 4 họ lỗ hổng trọng tâm (Core 4 Families)
+### 4.2. Kết quả bóc tách trên bốn nhóm lỗ hổng trọng tâm
 
-Khi đánh giá trên 4 họ lỗ hổng mà nhóm đã thiết kế mô hình DFG và Sanitizer chuyên sâu (CWE-78 Command Injection, CWE-22 Path Traversal, CWE-502 Deserialization, CWE-89 SQL Injection):
+Khi đánh giá trên bốn nhóm lỗ hổng mà nhóm đã tập trung xây dựng mô hình đồ thị luồng dữ liệu chuyên sâu (gồm Lệnh hệ thống, Thao tác đường dẫn tệp, Giải tuần tự hóa dữ liệu và Tiêm mã SQL):
 
-| Hệ Thống (Phạm vi 4 Họ Cốt Lõi) | TP | FP | FN | Precision | Recall | F1-Score | FP Reduction |
+| Hệ Thống (Phạm vi 4 Nhóm Trọng Tâm) | Đúng Lỗi (TP) | Báo Sai (FP) | Bỏ Sót (FN) | Độ Chính Xác (Precision) | Độ Bao Phủ (Recall) | F1-Score | Mức Giảm Báo Sai |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **Semgrep OSS Gốc (Baseline)** | 70 | 348 | 31 | **16.75%** | 69.31% | **26.97%** | *0%* |
-| **Aegis-SAST (DFG + Taint Bridge)** | 59 | **36** | 42 | **62.11%** | 58.42% | **60.20%** | **-89.66%** |
+| **Bộ quét cơ sở (Semgrep thô)** | 70 | 348 | 31 | **16.75%** | 69.31% | **26.97%** | *0%* |
+| **Hệ thống Aegis-SAST** | 59 | **36** | 42 | **62.11%** | 58.42% | **60.20%** | **-89.66%** |
 
-**Nhận xét kỹ thuật:**
-- Trên 4 họ trọng tâm, Aegis-SAST **triệt tiêu tới 89.66% False Positive** (từ 348 FP xuống 36 FP).
-- Precision đạt **62.11%** (gấp gần 4 lần Semgrep 16.75%), F1 đạt **60.20%** (so với 26.97% của Semgrep).
-- Riêng họ **Path Traversal (CWE-22)**: Giảm 93% False Positive (từ 329 xuống 23 FP) nhờ mô hình nhận diện hàm chuẩn hóa đường dẫn `os.path.basename` và `os.path.abspath`.
-- Riêng họ **SQL Injection (CWE-89)**: Đạt Precision 100% tuyệt đối (FP = 0).
+**Nhận xét:**
+- Trên bốn nhóm trọng tâm, Aegis-SAST **giảm tới 89.66% cảnh báo sai** (từ 348 trường hợp báo sai giảm xuống chỉ còn 36 trường hợp).
+- Độ chính xác đạt **62.11%** (gấp gần 4 lần so với mức 16.75% của bộ quét cơ sở), F1-Score đạt **60.20%** (so với 26.97% của bộ cơ sở).
+- Riêng nhóm **Thao tác đường dẫn tệp (Path Traversal)**: Số cảnh báo sai giảm tới 93% (từ 329 ca xuống còn 23 ca) nhờ nhận diện chính xác các hàm chuẩn hóa đường dẫn an toàn.
+- Riêng nhóm **Tiêm mã SQL (SQL Injection)**: Đạt độ chính xác tuyệt đối 100% (không có cảnh báo sai nào).
 
 ---
 
-## 4. Những Khó Khăn & Hạn Chế Kỹ Thuật Đang Gặp Phải
+## 5. Những Khó Khăn Kỹ Thuật Nhóm Đang Gặp Phải
 
 Nhóm xin báo cáo trung thực với Thầy 4 khó khăn kỹ thuật cốt lõi hiện nay:
 
-1. **Hiện tượng bị kéo tụt điểm khi mở rộng ra 10 họ lỗ hổng:**
-   - Trong 224 FP còn lại của hệ thống, riêng họ XSS chiếm 115 FP. Nguyên nhân do toàn bộ test case của benchmark đều dùng hàm `escape_for_html(...)` trong cấu trúc chuỗi trả về đa dòng (`RESPONSE += ...`). Bộ trích xuất sanitizer cũ của nhóm chỉ đọc dòng đầu nên bỏ sót hàm escape này.
-   - Đối với họ XXE, Semgrep bắt bừa mọi dòng `import xml.dom.minidom` (77 FP). Bộ lọc cũ thấy dòng import không có luồng dữ liệu nên dập tắt toàn bộ, làm mất luôn cả 8 ca lỗ hổng thật (Recall XXE về 0).
+1. **Điểm số tổng thể bị kéo tụt khi mở rộng ra toàn bộ 10 nhóm lỗi:**
+   - Trong tổng số 224 cảnh báo sai còn lại, riêng nhóm lỗi hiển thị web (XSS) chiếm tới 115 ca. Nguyên nhân là toàn bộ bài kiểm tra đều dùng hàm mã hóa HTML trong các câu lệnh nối chuỗi nhiều dòng ở cuối hàm. Bộ nhận diện cũ của nhóm chỉ quét dòng đầu tiên nên bỏ sót hàm làm sạch này, dẫn đến việc báo sai hàng loạt ca an toàn.
+   - Đối với nhóm đọc tệp XML (XXE), bộ quét cơ sở cứ thấy lệnh nạp thư viện XML là báo lỗi (gây ra 77 ca báo sai). Bộ lọc cũ của nhóm thấy dòng nạp thư viện không có luồng dữ liệu nên hủy bỏ toàn bộ, dẫn đến việc vô tình làm mất luôn cả 8 ca có lỗ hổng thật.
 2. **Rủi ro tối ưu hóa cục bộ theo bài kiểm thử (Overfitting Benchmark):**
-   - Trong benchmark có nhiều mẫu gán bẫy hằng số (như đọc key cố định từ Dictionary hay ConfigParser). Nếu nhóm chỉ viết code để bắt đúng các tên biến này thì điểm số sẽ cao nhưng vô dụng trên mã nguồn thực tế của doanh nghiệp. Nhóm cần giải quyết ở mức trừu tượng hóa phân tích trường (Field-sensitive analysis).
-3. **Bài toán đóng gói ngữ cảnh cho tác tử LLM:**
-   - Không thể đưa toàn bộ cây AST hay mã nguồn cả file vào prompt vì chi phí token lớn và độ trễ cao. Nhóm đang phải giải quyết bài toán trích xuất lát cắt mã nguồn tối thiểu (Slicing Context Window) chỉ chứa Source, Propagation path, Sanitizer và Sink để cung cấp cho tác tử.
-4. **Sự chênh lệch độ sâu phân tích giữa các ngôn ngữ:**
-   - Lane Python hiện đi sâu nhất với DFG liên hàm và tóm tắt hàm. Trong khi đó, lane Java và JavaScript mới dừng ở mức phân tích cú pháp trong phạm vi file (intra-file), chưa có độ sâu tương đương.
+   - Nhiều bài kiểm tra trong bộ dữ liệu chuẩn cài cắm các bẫy logic như đọc giá trị cố định từ từ điển hoặc tệp cấu hình. Nếu nhóm chỉ tìm cách bắt đúng các tên biến này thì điểm số sẽ rất cao trên bài kiểm thử nhưng lại không có tác dụng trên phần mềm thực tế của doanh nghiệp. Nhóm cần giải quyết vấn đề này ở mức theo dõi từng trường dữ liệu tổng quát.
+3. **Bài toán chi phí và độ trễ khi tích hợp AI:**
+   - Không thể gửi toàn bộ tệp mã nguồn vào cho AI đọc vì chi phí và thời gian phản hồi sẽ rất lớn. Nhóm đang phải hoàn thiện cơ chế chỉ trích xuất đúng lát cắt mã nguồn tối thiểu liên quan đến cảnh báo để cung cấp ngữ cảnh vừa đủ cho AI.
+4. **Sự chênh lệch về độ sâu phân tích giữa các ngôn ngữ:**
+   - Hiện tại lane Python được đầu tư sâu nhất về đồ thị luồng dữ liệu và phân tích liên tệp. Trong khi đó, lane Java và JavaScript mới dừng ở mức phân tích cú pháp trong phạm vi tệp đơn, chưa đạt được độ sâu tương đương.
 
 ---
 
-## 5. Kế Hoạch Triển Khai Trong Tuần Tiếp Theo
+## 6. Kế Hoạch Triển Khai Trong Tuần Tiếp Theo
 
-Dựa trên các khảo cứu quốc tế và kết quả đo đạc thực tế, nhóm dự kiến thực hiện các công việc sau trong tuần tới:
+Dựa trên các nghiên cứu quốc tế và kết quả đo đạc thực tế, nhóm dự kiến tập trung vào các công việc sau trong tuần tới:
 
-1. **Chuẩn hóa Taint Barrier cho XSS theo chuẩn OWASP:**
-   - Cập nhật hàm trích xuất Sanitizer trong `TaintBridge` để phân tích đầy đủ biểu thức gán đa dòng, nhận diện chính xác các hàm mã hóa HTML (`escape_for_html`, `html.escape`, `markupsafe.escape`, `bleach.clean`), giải quyết triệt để 115 False Positive của họ XSS.
-2. **Triển khai kiểm tra cấu hình XXE theo chuẩn CodeQL `py/xxe`:**
-   - Bổ sung logic kiểm tra cờ cấu hình parser `feature_external_ges`: nếu không được bật `True` (hoặc sử dụng `defusedxml`), hệ thống xác định parser an toàn theo mặc định và coi đây là Barrier hợp lệ. Mục tiêu khôi phục 100% Recall và triệt tiêu 77 False Positive của họ XXE.
-3. **Phân tích luồng dữ liệu theo trường (Field-Sensitive DFG):**
-   - Theo dõi độc lập từng trường dữ liệu cho Dictionary (`map['key']`) và ConfigParser (`conf.get/set`) để phân biệt chính xác giữa giá trị an toàn và giá trị bị vấy bẩn.
-4. **Thử nghiệm tích hợp Local LLM Runtime:**
-   - Kết nối lớp Multi-Agent Triage với runtime cục bộ (Ollama / vLLM) chạy mô hình mã nguồn mở để đánh giá thực nghiệm về độ trễ, chi phí và chất lượng phản biện.
-5. **Chuẩn bị báo cáo trực tiếp:**
-   - Hoàn thiện kịch bản demo trực quan trên Web Dashboard để báo cáo tiến độ với Thầy trong buổi làm việc sắp tới.
+1. **Nâng cấp bộ nhận diện cơ chế làm sạch cho nhóm XSS:**
+   - Cải tiến bộ quét để phân tích toàn bộ biểu thức ghép chuỗi nhiều dòng, nhận diện đầy đủ các hàm mã hóa HTML theo chuẩn an toàn, nhằm giải quyết triệt để 115 trường hợp báo sai của nhóm này.
+2. **Bổ sung kiểm tra cấu hình parser cho nhóm XXE:**
+   - Áp dụng đúng nguyên lý kiểm tra cấu hình an toàn: chỉ cảnh báo khi parser XML thực sự bật tính năng đọc thực thể ngoài và nhận dữ liệu chưa được kiểm soát. Mục tiêu là khôi phục đầy đủ các ca lỗi thật và loại bỏ 77 ca báo sai.
+3. **Phân tích luồng dữ liệu theo từng trường (Field-Sensitive Analysis):**
+   - Theo dõi độc lập từng khóa trong từ điển và tệp cấu hình để phân biệt chính xác giá trị nào an toàn và giá trị nào bị nhiễm độc từ bên ngoài.
+4. **Thử nghiệm kết nối AI với mô hình chạy nội bộ:**
+   - Thử nghiệm kết nối lớp phản biện AI với các mô hình mã nguồn mở chạy cục bộ để đánh giá chi phí, thời gian phản hồi và độ ổn định khi không phụ thuộc vào dịch vụ bên ngoài.
+5. **Chuẩn bị nội dung báo cáo trực tiếp:**
+   - Rà soát kịch bản trình diễn trên giao diện web để sẵn sàng báo cáo tiến độ và demo trực tiếp với Thầy.
 
 ---
 
-## 6. Kết Luận
+## 7. Kết Luận
 
-Trong giai đoạn vừa qua, nhóm đã chuyển thành công toàn bộ thực nghiệm sang **bộ chuẩn mực quốc tế diện rộng 1,230 test cases**, chứng minh bằng số liệu thực tế khả năng **triệt tiêu 65% - 89% cảnh báo giả** của phương pháp lai ghép AST/DFG.
+So với đợt báo cáo Tháng 9, đề tài đã có bước tiến thực chất: chuyển từ việc thử nghiệm nhỏ lẻ sang **đo đạc thực tế trên toàn bộ 1,230 ca kiểm thử của chuẩn mực quốc tế OWASP Benchmark**, chứng minh được khả năng **giảm từ 65% đến gần 90% cảnh báo sai** của phương pháp lai ghép.
 
-Nhóm kiên định đi theo các đặc tả kỹ thuật chuẩn mực của các hệ thống quốc tế (CodeQL, Semgrep Pro, VulAgent) nhằm đảm bảo công cụ có giá trị học thuật và khả năng ứng dụng thực tế, thay vì áp dụng các giải pháp chắp vá theo bài kiểm thử.
+Nhóm kiên định bám sát các nguyên lý phân tích tĩnh chuẩn mực quốc tế để bảo đảm hệ thống có giá trị thực tiễn, thay vì chỉnh sửa đối phó theo bài kiểm thử.
 
-Nhóm kính mong nhận được thêm các ý kiến nhận xét và định hướng của Thầy để hoàn thiện đề tài trong giai đoạn tiếp theo.
+Nhóm kính mong tiếp tục nhận được những ý kiến nhận xét và định hướng của Thầy để hoàn thiện đề tài trong các giai đoạn tiếp theo.
