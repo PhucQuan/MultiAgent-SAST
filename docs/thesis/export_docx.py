@@ -14,6 +14,14 @@ ORDERED_RE = re.compile(r"^\d+\.\s+(.*)$")
 INLINE_TOKEN_RE = re.compile(r"(\*\*.*?\*\*|`.*?`)")
 
 
+from docx.shared import Pt, RGBColor
+
+
+BLACK = RGBColor(0, 0, 0)
+FONT_PRIMARY = "Times New Roman"
+FONT_CODE = "Consolas"
+
+
 def clear_document(document: Document) -> None:
     body = document._body._element
     for child in list(body):
@@ -30,20 +38,29 @@ def add_inline_runs(paragraph: Paragraph, text: str) -> None:
     cursor = 0
     for match in INLINE_TOKEN_RE.finditer(text):
         if match.start() > cursor:
-            paragraph.add_run(text[cursor : match.start()])
+            run = paragraph.add_run(text[cursor : match.start()])
+            run.font.color.rgb = BLACK
+            run.font.name = FONT_PRIMARY
         token = match.group(0)
         if token.startswith("**") and token.endswith("**"):
             run = paragraph.add_run(token[2:-2])
             run.bold = True
+            run.font.color.rgb = BLACK
+            run.font.name = FONT_PRIMARY
         elif token.startswith("`") and token.endswith("`"):
             run = paragraph.add_run(token[1:-1])
-            run.font.name = "Consolas"
+            run.font.name = FONT_CODE
+            run.font.color.rgb = BLACK
         else:
-            paragraph.add_run(token)
+            run = paragraph.add_run(token)
+            run.font.color.rgb = BLACK
+            run.font.name = FONT_PRIMARY
         cursor = match.end()
 
     if cursor < len(text):
-        paragraph.add_run(text[cursor:])
+        run = paragraph.add_run(text[cursor:])
+        run.font.color.rgb = BLACK
+        run.font.name = FONT_PRIMARY
 
 
 def split_table_row(line: str) -> list[str]:
@@ -157,6 +174,46 @@ def parse_markdown(document: Document, markdown_text: str) -> None:
         add_paragraph(document, " ".join(paragraph_lines))
 
 
+def enforce_black_theme(document: Document) -> None:
+    # Update style definitions
+    for style_name in [
+        "Title",
+        "Heading 1",
+        "Heading 2",
+        "Heading 3",
+        "Heading 4",
+        "Heading 5",
+        "Heading 6",
+        "Normal",
+        "List Bullet",
+        "List Number",
+    ]:
+        if style_name in document.styles:
+            style = document.styles[style_name]
+            try:
+                style.font.color.rgb = BLACK
+                style.font.name = FONT_PRIMARY
+            except Exception:
+                pass
+
+    # Ensure every single run in paragraphs is black
+    for paragraph in document.paragraphs:
+        for run in paragraph.runs:
+            run.font.color.rgb = BLACK
+            if run.font.name != FONT_CODE:
+                run.font.name = FONT_PRIMARY
+
+    # Ensure every single run in tables is black
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.color.rgb = BLACK
+                        if run.font.name != FONT_CODE:
+                            run.font.name = FONT_PRIMARY
+
+
 def export_markdown_to_docx(markdown_path: Path, output_path: Path, template_path: Path | None = None) -> None:
     if template_path and template_path.exists():
         document = Document(str(template_path))
@@ -167,6 +224,7 @@ def export_markdown_to_docx(markdown_path: Path, output_path: Path, template_pat
 
     clear_document(document)
     parse_markdown(document, markdown_path.read_text(encoding="utf-8"))
+    enforce_black_theme(document)
     document.save(output_path)
 
 
