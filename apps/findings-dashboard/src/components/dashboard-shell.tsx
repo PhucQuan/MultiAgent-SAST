@@ -10,15 +10,18 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
+import { ReviewWorkspace } from "@/components/review-workspace";
+import { ScanExplorer } from "@/components/scan-explorer";
+import { listBackendScans } from "@/lib/aegis-api";
 import { FindingDetail } from "@/components/finding-detail";
 import { FindingQueue, type QueueFilters } from "@/components/finding-queue";
 import { ReportSidebar, type ReportEntry } from "@/components/report-sidebar";
 import { AppRail } from "@/components/app-rail";
-import { ScanInventory, type ScannedTarget } from "@/components/scan-inventory";
+import { type ScannedTarget } from "@/components/scan-inventory";
 import { MetaTag } from "@/components/status-badge";
 import { TopBar } from "@/components/top-bar";
 import { DashboardOverviewPage } from "@/components/pages/dashboard-overview-page";
@@ -148,6 +151,8 @@ const emptyFilters: QueueFilters = {
   language: "all",
   family: "all",
   includeMuted: false,
+  page: 1,
+  sort: "default",
 };
 
 const defaultReportsMeta = {
@@ -190,19 +195,7 @@ function matchesSelectedPath(filePath: string, selectedPath: string): boolean {
     return true;
   }
 
-  // A report may contain paths relative to the scanned root while the
-  // inventory stores the absolute target path.
-  const selectedSegments = normalizedSelectedPath.split("/").filter(Boolean);
-  const selectedName = selectedSegments.at(-1);
-  if (!selectedName) {
-    return false;
-  }
-
-  return (
-    normalizedFilePath === selectedName ||
-    normalizedFilePath.startsWith(`${selectedName}/`) ||
-    normalizedFilePath.includes(`/${selectedName}/`)
-  );
+  return false;
 }
 
 function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["job"]> {
@@ -216,7 +209,7 @@ function backendJobToUiJob(job: BackendScanJob): NonNullable<ScanJobResponse["jo
   return {
     id: job.scan_id,
     status: (job.status as ScanJobStatus) || "queued",
-    targetPath: String(job.result?.summary.target ?? ""),
+    targetPath: String(job.target_path ?? job.result?.summary.target ?? ""),
     enableAi: job.result?.ai.enabled ?? false,
     maxDepth: 5,
     progressEvery: 1,
@@ -341,14 +334,31 @@ function useHydrated() {
 
 function readDashboardLocationState(searchParams: {
   get(name: string): string | null;
-}) {
-  const requestedReportId = searchParams.get("report")?.trim() || null;
+}, routeScanId?: string | null) {
+  const requestedReportId =
+    searchParams.get("report")?.trim() ||
+    (routeScanId ? `api:${routeScanId}` : null);
   const showArchiveReports =
     searchParams.get("archive") === "1" || requestedReportId !== null;
+  const page = Number.parseInt(searchParams.get("page") ?? "1", 10);
+  const requestedSort = searchParams.get("sort");
 
   return {
     requestedReportId,
     showArchiveReports,
+    selectedPath: searchParams.get("file")?.trim() || null,
+    filters: {
+      ...emptyFilters,
+      search: searchParams.get("search")?.trim() || "",
+      status: searchParams.get("status")?.trim() || "all",
+      severity: searchParams.get("severity")?.trim() || "all",
+      family: searchParams.get("family")?.trim() || "all",
+      page: Number.isFinite(page) && page > 0 ? page : 1,
+      sort:
+        requestedSort === "path" || requestedSort === "confidence"
+          ? requestedSort
+          : "default",
+    } satisfies QueueFilters,
   };
 }
 
@@ -468,9 +478,49 @@ function SelectedReportPanel({
 
 function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const routeParams = useParams<{ scanId?: string }>();
+  const routeScanId = typeof routeParams.scanId === "string" ? routeParams.scanId : null;
   const searchParams = useSearchParams();
-  const { requestedReportId, showArchiveReports: initialArchivePreference } =
-    readDashboardLocationState(searchParams);
+  const {
+    requestedReportId,
+    showArchiveReports: initialArchivePreference,
+    selectedPath: initialSelectedPath,
+    filters: initialFilters,
+  } = readDashboardLocationState(searchParams, routeScanId);
+  const initialSearch = initialFilters.search;
+  const initialStatus = initialFilters.status;
+  const initialSeverity = initialFilters.severity;
+  const initialFamily = initialFilters.family;
+  const [scanHistory, setScanHistory] = useState<BackendScanJob[]>([]);
+  const [loadingSavedScan, setLoadingSavedScan] = useState(false);
+  const [historyError, setHistoryError] = useState<string|null>(null);
+  const [manifests, setManifests] = useState<Record<string,string[]>>({});
+  const scanSelectionVersion = useRef(0);
+  useEffect(() => { let cancelled = false; listBackendScans().then(jobs => {if(!cancelled) setScanHistory(jobs);}).catch(error=>{if(!cancelled)setHistoryError(String(error));}); return ()=>{cancelled=true;}; }, []);
+  async function selectSavedScan(job: BackendScanJob) {
+    const version = ++scanSelectionVersion.current;
+    setLoadingSavedScan(job.status === "completed");
+    setSelectedFindingKey(null); setSelectedPath(null); setFilters(emptyFilters);
+    setSelectedReportId(`api:${job.scan_id}`); setLoadedWorkspaceReport(null); setReportError(null);
+    if(job.status !== "completed") {
+      setReportError(job.error || `Scan ${job.status}`);
+      if(job.status === "queued" || job.status === "running") {
+        setScanJobId(job.scan_id); setScanJobStatus(job.status);
+        setScanTargetPath(job.target_path || ""); setScanSheetOpen(true);
+      }
+      return;
+    }
+    try {
+      const result = await getBackendScanResults(job.scan_id);
+      if(version !== scanSelectionVersion.current) return;
+      const report = normalizeBackendScanResult(result);
+      setImportedReports(current=>[report,...current.filter(r=>r.id!==report.id)]);
+      if(result.scanned_files) setManifests(current=>({...current,[report.id]:result.scanned_files!}));
+      setSelectedReportId(report.id);
+    } catch(error) {if(version===scanSelectionVersion.current)setReportError(String(error));}
+    finally {if(version===scanSelectionVersion.current)setLoadingSavedScan(false);}
+  }
   const [workspaceReports, setWorkspaceReports] = useState<ReportSummaryCard[]>([]);
   const [importedReports, setImportedReports] = useState<NormalizedReport[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(
@@ -497,6 +547,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [selectedQuickFamily, setSelectedQuickFamily] = useState<string | null>(null);
   const [scanSheetOpen, setScanSheetOpen] = useState(false);
   const [scanTargetPath, setScanTargetPath] = useState("");
+  const [scanEngine, setScanEngine] = useState<"semgrep"|"deterministic">("semgrep");
+  const [scanProfile, setScanProfile] = useState<"auto"|"semgrep-python-core4"|"semgrep-oss-full">("auto");
   const [scanEnableAi, setScanEnableAi] = useState(false);
   const [scanMaxDepth, setScanMaxDepth] = useState("5");
   const [scanJobId, setScanJobId] = useState<string | null>(null);
@@ -507,6 +559,42 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const [scanJobResult, setScanJobResult] =
     useState<ScanApiResponse["scan"] | null>(null);
   const [scanJobError, setScanJobError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!routeScanId || importedReports.some((report) => report.id === `api:${routeScanId}`)) {
+      return;
+    }
+
+    let cancelled = false;
+    void getBackendScanResults(routeScanId)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        const report = normalizeBackendScanResult(result);
+        setImportedReports((current) => [
+          report,
+          ...current.filter((item) => item.id !== report.id),
+        ]);
+        if (result.scanned_files) {
+          setManifests((current) => ({ ...current, [report.id]: result.scanned_files ?? [] }));
+        }
+        setReportError(null);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setReportError(error instanceof Error ? error.message : "Unable to load scan results.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingSavedScan(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [importedReports, routeScanId]);
   // Keep the server snapshot and the client's first render identical. Persisted
   // inventory is loaded after hydration so it cannot change button/div shape
   // during React's hydration pass.
@@ -516,37 +604,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   const handledScanJobRef = useRef<string | null>(null);
   const appliedLocationStateRef = useRef<string | null>(null);
   const missingLinkedReportRef = useRef<string | null>(null);
-  const scannedTargetsLoadedRef = useRef(false);
   const deferredSearch = useDeferredValue(filters.search);
   const scanRunning = scanJobStatus === "queued" || scanJobStatus === "running";
-
-  useEffect(() => {
-    if (!hydrated || scannedTargetsLoadedRef.current) {
-      return;
-    }
-
-    scannedTargetsLoadedRef.current = true;
-    try {
-      const stored = window.localStorage.getItem("aegis-scan-inventory");
-      const parsed = stored ? JSON.parse(stored) : [];
-      if (Array.isArray(parsed)) {
-        setScannedTargets(parsed as ScannedTarget[]);
-      }
-    } catch {
-      // Ignore malformed persisted inventory and keep the empty initial state.
-    }
-  }, [hydrated]);
-
-  useEffect(() => {
-    if (!hydrated || !scannedTargetsLoadedRef.current) {
-      return;
-    }
-
-    window.localStorage.setItem(
-      "aegis-scan-inventory",
-      JSON.stringify(scannedTargets),
-    );
-  }, [hydrated, scannedTargets]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -573,9 +632,28 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     startTransition(() => {
       setSelectedReportId(requestedReportId);
       setSelectedFindingKey(null);
-      setFilters(emptyFilters);
+      setSelectedPath(initialSelectedPath);
+      setFilters({
+        ...emptyFilters,
+        search: initialSearch,
+        status: initialStatus,
+        severity: initialSeverity,
+        family: initialFamily,
+        page: initialFilters.page,
+        sort: initialFilters.sort,
+      });
     });
-  }, [initialArchivePreference, requestedReportId]);
+  }, [
+    initialArchivePreference,
+    initialFamily,
+    initialSearch,
+    initialSeverity,
+    initialStatus,
+    initialSelectedPath,
+    initialFilters.page,
+    initialFilters.sort,
+    requestedReportId,
+  ]);
 
   async function refreshWorkspaceReports(
     showToast = false,
@@ -721,10 +799,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     });
   }, [loadingWorkspaceReports, reportEntries, requestedReportId]);
 
-  const effectiveSelectedReportId =
-    selectedReportId && reportEntries.some((report) => report.id === selectedReportId)
-      ? selectedReportId
-      : reportEntries[0]?.id ?? null;
+  const effectiveSelectedReportId = selectedReportId ?? reportEntries[0]?.id ?? null;
 
   const selectedImportedReport =
     importedReports.find((report) => report.id === effectiveSelectedReportId) ?? null;
@@ -776,6 +851,9 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
       setScanJobProgress(finalProgress);
       setScanJobResult({ ...job.result, summary: result.summary });
       const apiReport = normalizeBackendScanResult(result);
+      setScanHistory(await listBackendScans());
+      if(result.scanned_files) setManifests(current=>({...current,[apiReport.id]:result.scanned_files!}));
+      setSelectedPath(null);
       const targetPath = result.summary.target;
       const targetName = targetPath.split(/[\\/]/).filter(Boolean).pop() || targetPath;
       setScannedTargets((current) => [
@@ -867,6 +945,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           return;
         }
 
+        setScanHistory(current=>[backendJob,...current.filter(j=>j.scan_id!==backendJob.scan_id)]);
         applyScanJob(data);
 
         if (data.status === "completed") {
@@ -957,7 +1036,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     (loadedWorkspaceReport?.id === effectiveSelectedReportId
       ? loadedWorkspaceReport
       : null);
-  const loadingSelectedReport = Boolean(
+  const loadingSelectedReport = loadingSavedScan || Boolean(
     effectiveSelectedReportId &&
       !selectedImportedReport &&
       selectedWorkspaceReport &&
@@ -1009,7 +1088,8 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         return false;
       }
 
-      if (filters.status !== "all" && finding.status !== filters.status) {
+      if (filters.status === "actionable" && !["confirmed", "likely"].includes(finding.status)) return false;
+      if (filters.status !== "all" && filters.status !== "actionable" && finding.status !== filters.status) {
         return false;
       }
 
@@ -1031,6 +1111,9 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
       const haystack = [
         finding.id,
+        finding.cweId ?? "",
+        finding.ruleId,
+        finding.sinkFunction ?? "",
         finding.family,
         finding.message,
         finding.filePath,
@@ -1053,13 +1136,15 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     selectedFindingKey &&
     filteredFindings.some((finding) => finding.key === selectedFindingKey)
       ? selectedFindingKey
-      : filteredFindings[0]?.key ?? null;
+      : null;
 
   const selectedFinding =
     filteredFindings.find((finding) => finding.key === effectiveSelectedFindingKey) ??
     null;
 
   function handleSelectReport(reportId: string) {
+    scanSelectionVersion.current++;
+    setLoadingSavedScan(false);
     startTransition(() => {
       setSelectedReportId(reportId);
       setSelectedFindingKey(null);
@@ -1078,6 +1163,26 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
     setSelectedPath((current) => (current === path ? null : path));
     setSelectedFindingKey(null);
     setFilters(emptyFilters);
+    const scanId = effectiveSelectedReportId?.replace(/^api:/, "");
+    if (scanId) {
+      router.replace(
+        `/scans/${encodeURIComponent(scanId)}/findings?report=${encodeURIComponent(effectiveSelectedReportId ?? "")}${path ? `&file=${encodeURIComponent(path)}` : ""}`,
+      );
+    }
+  }
+
+  function handleExplorerPath(path: string | null) {
+    if (path) {
+      handleSelectPath(path);
+      return;
+    }
+    setSelectedPath(null);
+    setSelectedFindingKey(null);
+    setFilters(emptyFilters);
+    const scanId = effectiveSelectedReportId?.replace(/^api:/, "");
+    if (scanId) {
+      router.replace(`/scans/${encodeURIComponent(scanId)}/findings?report=${encodeURIComponent(effectiveSelectedReportId ?? "")}`);
+    }
   }
 
   function handleOpenPath(path: string) {
@@ -1086,12 +1191,59 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
   }
 
   function handleSelectFinding(findingKey: string) {
+    const scanId = effectiveSelectedReportId?.replace(/^api:/, "");
+    if (scanId) {
+      const returnParams = new URLSearchParams();
+      returnParams.set("report", effectiveSelectedReportId ?? "");
+      if (selectedPath) returnParams.set("file", selectedPath);
+      if (filters.search) returnParams.set("search", filters.search);
+      if (filters.status !== "all") returnParams.set("status", filters.status);
+      if (filters.severity !== "all") returnParams.set("severity", filters.severity);
+      if (filters.family !== "all") returnParams.set("family", filters.family);
+      if (filters.page > 1) returnParams.set("page", String(filters.page));
+      if (filters.sort !== "default") returnParams.set("sort", filters.sort);
+      router.push(
+        `/scans/${encodeURIComponent(scanId)}/findings/${encodeURIComponent(findingKey)}?return=${encodeURIComponent(`/scans/${encodeURIComponent(scanId)}/findings?${returnParams.toString()}`)}`,
+      );
+      return;
+    }
+
     startTransition(() => {
       setSelectedFindingKey(findingKey);
     });
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setDetailOpen(true);
     }
+  }
+
+  function handleFiltersChange(nextFilters: QueueFilters) {
+    const filtersChanged =
+      nextFilters.search !== filters.search ||
+      nextFilters.status !== filters.status ||
+      nextFilters.severity !== filters.severity ||
+      nextFilters.family !== filters.family ||
+      nextFilters.language !== filters.language ||
+      nextFilters.includeMuted !== filters.includeMuted ||
+      nextFilters.sort !== filters.sort;
+    const persistedFilters = filtersChanged
+      ? { ...nextFilters, page: 1 }
+      : nextFilters;
+    setFilters(persistedFilters);
+    const scanId = effectiveSelectedReportId?.replace(/^api:/, "");
+    if (!scanId) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("report", effectiveSelectedReportId ?? "");
+    if (selectedPath) params.set("file", selectedPath);
+    if (persistedFilters.search) params.set("search", persistedFilters.search);
+    if (persistedFilters.status !== "all") params.set("status", persistedFilters.status);
+    if (persistedFilters.severity !== "all") params.set("severity", persistedFilters.severity);
+    if (persistedFilters.family !== "all") params.set("family", persistedFilters.family);
+    if (persistedFilters.page > 1) params.set("page", String(persistedFilters.page));
+    if (persistedFilters.sort !== "default") params.set("sort", persistedFilters.sort);
+    router.replace(`/scans/${encodeURIComponent(scanId)}/findings?${params.toString()}`);
   }
 
   function handleImportRequest() {
@@ -1165,11 +1317,13 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         config: {
           enable_ai_verification: scanEnableAi,
           max_analysis_depth: maxDepth,
-          scan_engine: "semgrep",
-          rule_profile: "auto",
+          scan_engine: scanEngine,
+          rule_profile: scanProfile,
           rules_path: null,
+          allow_deterministic_fallback: false,
         },
       });
+      setScanHistory(current=>[backendJob,...current.filter(j=>j.scan_id!==backendJob.scan_id)]);
       applyScanJob(backendJobToUiJob(backendJob));
       toast("Backend scan started", {
         description: "Progress and logs will update live in this panel.",
@@ -1413,7 +1567,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
       reports={reportEntries}
       selectedReportId={effectiveSelectedReportId}
       onSelectReport={handleSelectReport}
-      onRefresh={() => void refreshWorkspaceReports(true)}
+      onRefresh={() => {void refreshWorkspaceReports(true);void listBackendScans().then(setScanHistory).catch(error=>setHistoryError(String(error)));}}
       onImportRequest={handleImportRequest}
       onExportFeedback={handleExportFeedback}
       onClearMemory={handleClearMemory}
@@ -1498,8 +1652,12 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           onSelectFamily={handleSelectQuickFamily}
           onImport={handleImportRequest}
           onCopyLink={() => void handleCopyReportLink()}
-          onRefresh={() => void refreshWorkspaceReports(true)}
-          onExport={handleExportFeedback}
+          onRefresh={() => {void refreshWorkspaceReports(true);void listBackendScans().then(setScanHistory).catch(error=>setHistoryError(String(error)));}}
+          onExport={() => {
+            if(!selectedReport) return;
+            const url=URL.createObjectURL(new Blob([JSON.stringify(selectedReport,null,2)],{type:"application/json"}));
+            const link=document.createElement("a");link.href=url;link.download="aegis-scan.json";link.click();URL.revokeObjectURL(url);
+          }}
           onExportSarif={handleExportSarif}
           onExportPatch={handleExportPatch}
           onRunScan={handleOpenScanSheet}
@@ -1566,29 +1724,14 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
           <SettingsPage />
           ) : (
           /* Default: 3-Column Tri-Pane Workbench (Scans) */
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* Column 1: Scan Inventory */}
-            <div className="hidden w-[260px] shrink-0 lg:flex">
-              <ScanInventory
-                reports={reportEntries}
-                selectedReportId={effectiveSelectedReportId}
-                onSelectReport={(r) => handleSelectReport(r.sourcePath)}
-                activeReport={selectedReportSummary}
-                scannedTargets={scannedTargets}
-                selectedPath={selectedPath}
-                onSelectPath={handleSelectPath}
-                onOpenPath={handleOpenPath}
-              />
-            </div>
-
-            {/* Column 2: Findings Queue Table */}
-            <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
+          <ReviewWorkspace explorer={<ScanExplorer jobs={scanHistory} activeId={effectiveSelectedReportId?.replace(/^api:/, "") ?? null} files={manifests[effectiveSelectedReportId ?? ""]} findings={allFindings} selectedPath={selectedPath} onScan={job=>void selectSavedScan(job)} onPath={handleExplorerPath} error={historyError}/>} findings={<>
+              <button className="text-xs p-2 text-left" onClick={()=>setSelectedFindingKey(null)}>Clear finding selection</button>
               <FindingQueue
                 findings={filteredFindings}
                 total={allFindings.length}
                 feedbackStore={reviewStore}
                 filters={filters}
-                onFiltersChange={setFilters}
+                onFiltersChange={handleFiltersChange}
                 selectedFindingKey={effectiveSelectedFindingKey}
                 onSelectFinding={handleSelectFinding}
                 languages={languageOptions}
@@ -1598,10 +1741,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
                 loading={loadingSelectedReport}
                 error={reportError}
               />
-            </div>
-
-            {/* Column 3: Persistent detail on desktop; a sheet on mobile. */}
-            <div className="hidden w-[440px] shrink-0 lg:flex">
+            </>} details={(expand)=>
               <FindingDetail
                 key={selectedFinding?.key ?? "empty-detail"}
                 finding={selectedFinding}
@@ -1610,14 +1750,13 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
                 currentIndex={currentFindingIndex}
                 totalCount={filteredFindings.length}
                 onNavigate={handleNavigateFinding}
-                onExpand={() => setActiveAppTab("vulnerabilities")}
+                onExpand={expand}
                 onDisposition={(disposition) => selectedFinding && handleSetDisposition(selectedFinding.key, disposition)}
                 onMuteToggle={() => selectedFinding && handleSetMuted(selectedFinding.key, !reviewStore[selectedFinding.key]?.muted)}
                 onSaveNote={(note) => selectedFinding && handleSaveNote(selectedFinding.key, note)}
                 onReset={() => selectedFinding && handleClearFeedback(selectedFinding.key)}
               />
-            </div>
-          </div>
+            } />
         )}
       </div>
 
@@ -1778,7 +1917,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
 
               <div className="space-y-2">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Target path
+                  Target path (local file, folder, or repository)
                 </div>
                 <Input
                   autoFocus
@@ -1788,6 +1927,9 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
                   className="h-11 rounded-lg border-border bg-surface text-[13px]"
                   disabled={scanRunning}
                 />
+                <label className="block mt-3">Engine <select aria-label="Engine" value={scanEngine} onChange={e=>setScanEngine(e.target.value as typeof scanEngine)}><option value="semgrep">Semgrep</option><option value="deterministic">Deterministic</option></select></label>
+                <label className="block mt-3">Rule profile <select aria-label="Rule profile" value={scanProfile} onChange={e=>setScanProfile(e.target.value as typeof scanProfile)}><option value="auto">Auto</option><option value="semgrep-python-core4">Python core</option><option value="semgrep-oss-full">OSS full</option></select></label>
+
                 <p className="text-[12px] leading-5 text-muted-foreground">
                   Relative paths resolve from the Aegis-SAST repo root.
                 </p>
@@ -1888,7 +2030,7 @@ function DashboardShellContent({ hydrated }: { hydrated: boolean }) {
         </div>
       ) : null}
 
-      <Toaster position="bottom-right" />
+      <Toaster position="bottom-left" />
     </div>
   );
 }

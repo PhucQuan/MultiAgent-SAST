@@ -1,5 +1,6 @@
 "use client";
 
+import { TaintInvestigation } from "@/components/taint-investigation";
 import { useState } from "react";
 import {
   AlertOctagon,
@@ -26,6 +27,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatLabel, shortenPath } from "@/lib/dashboard-ui";
 import type {
+  TaintFlowStep,
   NormalizedFinding,
   ReviewerDisposition,
   ReviewerFeedback,
@@ -33,6 +35,7 @@ import type {
 
 interface FindingDetailProps {
   finding: NormalizedFinding | null;
+  initialTab?: "overview" | "graph" | "taint" | "code" | "ai" | "remediation" | "references";
   feedback?: ReviewerFeedback;
   loading?: boolean;
   onDisposition?: (disposition: ReviewerDisposition) => void;
@@ -45,24 +48,32 @@ interface FindingDetailProps {
   onExpand?: () => void;
 }
 
+function HighlightedCode({code}: {code:string}) {
+  const parts=code.split(/("[^"\n]*"|'[^'\n]*'|#[^\n]*|\b(?:def|return|import|from|if|else|class|const|let|function|await|async|for|in|None|True|False)\b|\b\d+\b)/g);
+  return <pre className="whitespace-pre overflow-x-auto">{parts.map((part,index)=><span key={index} className={index%2 ? part.startsWith("#") ? "text-slate-500" : part.startsWith('"') || part.startsWith("'") ? "text-emerald-400" : "text-violet-400" : ""}>{part}</span>)}</pre>;
+}
+
 export function FindingDetail({
   finding,
+  initialTab = "overview",
   feedback,
   loading,
   onDisposition,
   currentIndex = 1,
-  totalCount = 30,
+  totalCount = 0,
   onNavigate,
   onExpand,
 }: FindingDetailProps) {
   const [activeTab, setActiveTab] = useState<
-    "overview" | "taint" | "code" | "ai" | "remediation" | "references"
-  >("overview");
+    "overview" | "graph" | "taint" | "code" | "ai" | "remediation" | "references"
+  >(initialTab);
+  const [showAllSteps, setShowAllSteps] = useState(false);
   const [taintTraceOpen, setTaintTraceOpen] = useState(true);
+  const [tracePathId, setTracePathId] = useState("");
 
   if (!finding) {
     return (
-      <div className="flex h-full w-[490px] shrink-0 flex-col items-center justify-center border-l border-border bg-slate-50/50 p-6 text-center text-slate-400 dark:bg-slate-900/40">
+      <div className="flex h-full w-full min-w-0 shrink-0 flex-col items-center justify-center border-l border-border bg-slate-50/50 p-6 text-center text-slate-400 dark:bg-slate-900/40">
         <Shield className="h-10 w-10 text-slate-300 dark:text-slate-700" />
         <p className="mt-3 text-[13px]">Select a finding to inspect exploit path and remediation.</p>
       </div>
@@ -76,7 +87,44 @@ export function FindingDetail({
   if (sevUpper === "MEDIUM") sevBadgeClass = "bg-amber-500 text-white";
   if (sevUpper === "LOW") sevBadgeClass = "bg-slate-500 text-white";
 
-  const steps = finding.taintFlowSteps || [];
+  const graphPaths = finding.evidenceGraph?.paths ?? [];
+  const selectedTracePath =
+    graphPaths.find((path) => path.id === tracePathId) ?? graphPaths[0];
+  const graphNodeMap = new Map(
+    (finding.evidenceGraph?.nodes ?? []).map((node) => [node.id, node]),
+  );
+  const graphSteps: TaintFlowStep[] = selectedTracePath
+    ? selectedTracePath.node_ids.flatMap((nodeId, index) => {
+        const node = graphNodeMap.get(nodeId);
+        if (!node) {
+          return [];
+        }
+
+        const role: TaintFlowStep["role"] =
+          node.kind === "source"
+            ? "source"
+            : node.kind === "sink"
+              ? "sink"
+              : node.kind === "sanitizer"
+                ? "sanitizer"
+                : node.kind === "assignment"
+                  ? "assignment"
+                  : "propagation";
+
+        return [{
+          stepNumber: index + 1,
+          role,
+          label: node.label,
+          subLabel: `${node.kind.replaceAll("_", " ")} · ${node.origin ?? "backend evidence"}`,
+          file: node.file,
+          line: node.line,
+          column: node.column,
+          codeSnippet: node.snippet,
+          description: node.context?.join(" · ") || "Loaded from the selected backend evidence path.",
+        }];
+      })
+    : [];
+  const steps = graphSteps.length ? graphSteps : finding.taintFlowSteps || [];
   const patch = finding.remediationPatch;
   const ledger = finding.multiAgentLedger;
 
@@ -86,9 +134,9 @@ export function FindingDetail({
   };
 
   return (
-    <div className="flex h-full w-[490px] shrink-0 flex-col overflow-y-auto border-l border-border bg-white dark:bg-slate-900">
+    <div className="flex h-full w-full min-w-0 shrink-0 flex-col overflow-y-auto border-l border-border bg-white dark:bg-slate-900">
       {/* Top Navigation Bar */}
-      <div className="flex items-center justify-between border-b border-border px-5 py-3 text-[12.5px]">
+      <div className="sticky top-0 z-10 bg-background flex flex-wrap items-center justify-between border-b border-border px-5 py-3 text-[12.5px]">
         <h2 className="font-bold text-slate-900 dark:text-slate-100">
           Vulnerability Details & Exploit Path
         </h2>
@@ -136,7 +184,8 @@ export function FindingDetail({
           </span>
           <div>
             <h1 className="text-[16px] font-bold text-slate-900 dark:text-slate-100">
-              {finding.cweId}: {formatLabel(finding.family)} in {finding.sinkFunction || "cursor.execute"}
+              {finding.cweId}: {formatLabel(finding.family)}
+              {finding.sinkFunction ? ` in ${finding.sinkFunction}` : ""}
             </h1>
             <p className="mt-1 text-[12px] leading-5 text-slate-600 dark:text-slate-400">
               {finding.message ||
@@ -146,10 +195,11 @@ export function FindingDetail({
         </div>
 
         {/* Tab Navigation */}
-        <div className="mt-4 flex items-center gap-1 border-b border-border/80 overflow-x-auto">
+        <div className="mt-4 flex flex-wrap items-center gap-1 border-b border-border/80">
           {(
             [
               "overview",
+              "graph",
               "taint",
               "code",
               "ai",
@@ -169,6 +219,8 @@ export function FindingDetail({
             >
               {tab === "overview"
                 ? "Overview"
+                : tab === "graph"
+                ? "Taint Graph"
                 : tab === "taint"
                 ? "Taint Flow"
                 : tab === "code"
@@ -201,7 +253,7 @@ export function FindingDetail({
               <div className="rounded-lg border border-border bg-slate-50/70 p-2.5 dark:bg-slate-800/40">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Sink Function</span>
                 <div className="mt-0.5 font-mono font-medium text-blue-600 dark:text-blue-400 truncate">
-                  {finding.sinkFunction || "dangerous_sink()"}
+                  {finding.sinkFunction || "Not available"}
                 </div>
               </div>
             </div>
@@ -217,7 +269,7 @@ export function FindingDetail({
                     Taint Flow Trace
                   </span>
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                    {steps.length || 3} Steps
+                    {steps.length} {steps.length === 1 ? "Step" : "Steps"}
                   </span>
                 </div>
                 {taintTraceOpen ? (
@@ -229,7 +281,7 @@ export function FindingDetail({
 
               {taintTraceOpen && (
                 <div className="space-y-3 p-4">
-                  {steps.map((step, idx) => (
+                  {steps.length > 0 ? steps.map((step) => (
                     <div key={step.stepNumber} className="relative flex items-start gap-3">
                       <div className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold text-white shadow-xs bg-blue-600">
                         {step.stepNumber}
@@ -242,11 +294,15 @@ export function FindingDetail({
                           <span className="text-[10.5px] text-slate-400">Line {step.line}</span>
                         </div>
                         <div className="mt-1 rounded border border-border bg-slate-50 p-2 font-mono text-[11px] text-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                          {step.codeSnippet}
+                          <HighlightedCode code={step.codeSnippet}/>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-[12px] leading-5 text-slate-500">
+                      No verified taint trace is available for this finding.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -261,11 +317,11 @@ export function FindingDetail({
                   </span>
                 </div>
                 <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10.5px] font-bold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-                  {ledger?.confidenceText || "95% confidence"}
+                  {ledger?.confidenceText || "AI confidence unavailable"}
                 </span>
               </div>
               <p className="mt-2 text-[11.5px] leading-relaxed text-slate-700 dark:text-slate-300">
-                {ledger?.summary || "Auditor validated offensive exploit path. Skeptic confirmed absence of sanitizers."}
+                {ledger?.summary || "No AI review evidence recorded."}
               </p>
             </div>
           </div>
@@ -276,6 +332,33 @@ export function FindingDetail({
         {/* ========================================================================= */}
         {activeTab === "taint" && (
           <div className="space-y-4">
+            {graphPaths.length > 1 && (
+              <div className="rounded-xl border border-border bg-slate-50/60 p-3 dark:bg-slate-800/40">
+                <label className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200">
+                  Detailed trace path
+                  <select
+                    className="mt-1 block w-full rounded border border-border bg-white p-2 text-[11.5px] dark:bg-slate-900"
+                    value={selectedTracePath?.id ?? ""}
+                    onChange={(event) => {
+                      setTracePathId(event.target.value);
+                      setShowAllSteps(false);
+                    }}
+                  >
+                    {graphPaths.map((path, index) => (
+                      <option key={path.id} value={path.id}>
+                        Path {index + 1} · {path.trace_completeness} ·{" "}
+                        {path.verified ? "verified" : "partial"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedTracePath && (
+                  <p className="mt-2 text-[10.5px] text-slate-500">
+                    {selectedTracePath.analysis_limitations.join(" ")}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between pb-3 border-b border-border/80">
                 <div className="flex items-center gap-2">
@@ -283,19 +366,24 @@ export function FindingDetail({
                     Data-Flow Path (Source to Sink)
                   </span>
                   <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10.5px] font-bold text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
-                    {steps.length || 3} Nodes
+                    {steps.length} {steps.length === 1 ? "Node" : "Nodes"}
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-400">Inter-procedural flow</span>
+                <span className="text-[11px] text-slate-400">
+                  {finding.traceCompleteness === "complete" ? "Complete trace" : steps.length ? "Partial trace" : "Trace unavailable"}
+                </span>
               </div>
 
+              {steps.length > 8 && <button onClick={()=>setShowAllSteps(!showAllSteps)}>{showAllSteps ? "Collapse trace" : `Show all ${steps.length} steps`}</button>}
               <div className="space-y-4 p-2 pt-4">
-                {steps.map((step, idx) => {
+                {steps.length > 0 ? (showAllSteps ? steps : steps.slice(0,8)).map((step, idx) => {
                   const isLast = idx === steps.length - 1;
                   let circleClass = "bg-amber-500 text-white";
                   let codeBgClass = "bg-slate-50 border-slate-200 dark:bg-slate-950 dark:border-slate-800";
-                  if (step.role === "propagation") {
+                  if (step.role === "propagation" || step.role === "assignment") {
                     circleClass = "bg-blue-600 text-white";
+                  } else if (step.role === "sanitizer") {
+                    circleClass = "bg-emerald-600 text-white";
                   } else if (step.role === "sink") {
                     circleClass = "bg-rose-600 text-white";
                     codeBgClass = "bg-rose-50/50 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/40";
@@ -314,7 +402,7 @@ export function FindingDetail({
                         )}
                       </div>
 
-                      <div className="flex-1 pb-1">
+                      <div className="min-w-0 flex-1 pb-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[12.5px] font-bold text-slate-900 dark:text-slate-100">
                             {step.label}
@@ -327,29 +415,37 @@ export function FindingDetail({
                         <div
                           className={`mt-1.5 rounded-lg border p-2.5 font-mono text-[11.5px] leading-relaxed text-slate-900 dark:text-slate-100 ${codeBgClass}`}
                         >
-                          {step.codeSnippet}
+                          <HighlightedCode code={step.codeSnippet}/>
                         </div>
 
                         <div className="mt-1 text-[11px] text-slate-500">
-                          Line {step.line} | in{" "}
-                          <span className="font-mono text-slate-700 dark:text-slate-300">
-                            {shortenPath(step.file, 3)}
+                          <button onClick={()=>setActiveTab("code")}>Jump to code: line {step.line}</button> | in{" "}
+                          <span title={step.file} className="font-mono break-all text-slate-700 dark:text-slate-300">
+                            {step.file}
                           </span>
                         </div>
                       </div>
                     </div>
                   );
-                })}
+                }) : (
+                  <p className="p-2 text-[12px] leading-5 text-slate-500">
+                    The analyzer did not reconstruct a verified source-to-sink path.
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="rounded-xl border border-border bg-slate-50/60 p-3.5 text-[11.5px] text-slate-600 dark:bg-slate-800/40 dark:text-slate-300">
-              <span className="font-semibold text-slate-900 dark:text-slate-100">Taint Invariant:</span> Tainted data origin enters at Source, travels along variable assignment without sanitizer intercept, and directly triggers Sink execution.
+              <span className="font-semibold text-slate-900 dark:text-slate-100">Trace status:</span>{" "}
+              {steps.length > 0
+                ? "Only locations present in backend evidence are shown."
+                : "No verified source-to-sink path is available."}
             </div>
           </div>
         )}
 
         {/* ========================================================================= */}
+        {activeTab === "graph" && <TaintInvestigation finding={finding} />}
         {/* TAB 3: CODE CONTEXT (Vulnerable Code & File Location) */}
         {/* ========================================================================= */}
         {activeTab === "code" && (
@@ -379,14 +475,14 @@ export function FindingDetail({
                   <span className="uppercase">{finding.language || "python"}</span>
                 </div>
 
-                <div className="p-3 space-y-1.5">
+                <div className="p-3 space-y-1.5 overflow-x-auto">
                   {steps.map((step) => (
                     <div key={step.stepNumber} className="space-y-0.5">
                       <div className="text-[10px] text-slate-500">
                         # Line {step.line}: {step.label}
                       </div>
                       <div className={`rounded px-2 py-1 ${step.role === "sink" ? "bg-rose-950/60 border border-rose-800/40 text-rose-300" : "bg-slate-900 text-slate-300"}`}>
-                        {step.codeSnippet}
+                        <HighlightedCode code={step.codeSnippet}/>
                       </div>
                     </div>
                   ))}
@@ -395,7 +491,7 @@ export function FindingDetail({
             </div>
 
             <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-[11.5px] text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-              <span className="font-bold">Dangerous Sink:</span> Function <code className="font-mono">{finding.sinkFunction || "cursor.execute"}</code> is invoked without parameter binding or input sanitization.
+              <span className="font-bold">Dangerous Sink:</span> Function <code className="font-mono">{finding.sinkFunction || "Not available"}</code> - see the recorded evidence for validation details.
             </div>
           </div>
         )}
@@ -427,8 +523,7 @@ export function FindingDetail({
                   </div>
                   <ul className="mt-2 space-y-1 text-[11.5px] text-slate-700 dark:text-slate-300 list-disc list-inside">
                     {(ledger?.auditorChecks || [
-                      "Validated exploit payload reaches dangerous sink without sanitization.",
-                      "High security impact (Arbitrary code execution or data exposure).",
+                      "No auditor evidence recorded.",
                     ]).map((check, i) => (
                       <li key={i}>{check}</li>
                     ))}
@@ -448,8 +543,7 @@ export function FindingDetail({
                   </div>
                   <ul className="mt-2 space-y-1 text-[11.5px] text-slate-700 dark:text-slate-300 list-disc list-inside">
                     {(ledger?.skepticChecks || [
-                      "No guardrails, sanitization or allowlists detected in call scope.",
-                      "Confirmed as a real vulnerability (Not a False Positive).",
+                      "No skeptic evidence recorded.",
                     ]).map((check, i) => (
                       <li key={i}>{check}</li>
                     ))}
@@ -464,11 +558,11 @@ export function FindingDetail({
                       <span className="text-[12.5px]">{ledger?.finalVerdictStatus || finding.status}</span>
                     </div>
                     <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
-                      {ledger?.confidenceText || "95% confidence"}
+                      {ledger?.confidenceText || "AI confidence unavailable"}
                     </span>
                   </div>
                   <p className="mt-2 text-[11.5px] leading-relaxed text-slate-700 dark:text-slate-300">
-                    {ledger?.summary || "Consensus reached: Finding confirmed as an authentic security risk requiring remediation."}
+                    {ledger?.summary || "No AI review evidence recorded."}
                   </p>
                 </div>
               </div>

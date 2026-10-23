@@ -17,6 +17,7 @@ from aegis_sast.orchestration.state import RepoProfile, ScanWorkflowState
 from aegis_sast.orchestration.workflow import ScanWorkflow
 from aegis_sast.reporting.json_exporter import JSONExporter
 from aegis_sast.reporting.markdown_exporter import MarkdownExporter
+from aegis_sast.rule_profiles import resolve_reviewed_rule_profile
 from aegis_sast.triage import AITriageRunner, TriageRecord
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -39,6 +40,7 @@ class ScanPipelineRequest:
     export_reports: bool = True
     scan_engine: str = "semgrep"
     rule_profile: str = "auto"
+    allow_deterministic_fallback: bool = False
 
     def __post_init__(self) -> None:
         """Normalize filesystem inputs and list values."""
@@ -59,6 +61,10 @@ class ScanPipelineRequest:
         self.output_formats = [value.lower() for value in self.output_formats]
         self.scan_engine = (self.scan_engine or "semgrep").strip().lower()
         self.rule_profile = (self.rule_profile or "auto").strip().lower()
+        if self.scan_engine not in {"semgrep", "deterministic"}:
+            raise ValueError(
+                "scan_engine must be one of: semgrep, deterministic"
+            )
 
 
 @dataclass
@@ -165,7 +171,7 @@ class ScanPipelineService:
 
         if scan_result is None:
             engine_metadata.setdefault("scan_engine_used", "deterministic")
-            if request.scan_engine == "semgrep":
+            if request.scan_engine == "semgrep" and request.allow_deterministic_fallback:
                 engine_metadata.setdefault("scan_fallback", True)
             detector = self._build_detector(request, config)
             scan_result = self._run_scan_with_progress(
@@ -174,6 +180,14 @@ class ScanPipelineService:
                 progress_callback=progress_callback,
                 progress_every=progress_every,
             )
+        from aegis_sast.analysis.investigation_graph import enrich_scan
+        self._emit_progress(progress_callback, {"event": "stage", "stage": "investigation-evidence",
+                                               "message": "Retaining bounded Python dependency paths."})
+        investigation = enrich_scan(scan_result, max_depth=request.max_analysis_depth)
+        engine_metadata["investigation_analysis"] = {
+            "paths": len(investigation.paths), "nodes": len(investigation.nodes),
+            "limitations": sorted(investigation.limitations),
+        }
         repo_profile.files_scanned = scan_result.files_scanned or repo_profile.files_scanned
         repo_profile.metadata.setdefault("actual_files_scanned", scan_result.files_scanned)
         self._emit_progress(
@@ -258,6 +272,10 @@ class ScanPipelineService:
                 workflow_state.triage_records = list(triage_records)
                 workflow_state.findings = [record.finding for record in triage_records]
                 workflow_state.metadata = dict(workflow_metadata)
+        # AI overlays can change triage text, but deterministic graph evidence is
+        # reattached from the analyzer, never accepted from model-generated output.
+        for record in triage_records:
+            investigation.enrich(record.finding)
         workflow_metadata = {**engine_metadata, **workflow_metadata}
 
         exported_reports: dict[str, Path] = {}
@@ -355,6 +373,7 @@ class ScanPipelineService:
             end_time=end_time,
             vulnerabilities=vulnerabilities,
             files_scanned=1,
+            scanned_files=[str(target.resolve())],
         )
         self._emit_progress(
             progress_callback,
@@ -407,15 +426,23 @@ class ScanPipelineService:
             )
 
             start_time = datetime.now()
-            # Build the full set of rule paths: explicit override + profile append rules.
-            # This is the key fix: append_rules_paths (from reviewed rule profiles used
-            # by the benchmark runner) were previously silently ignored here.
+            profile = resolve_reviewed_rule_profile(
+                None if request.rule_profile == "auto" else request.rule_profile
+            )
+            profile_paths = (
+                list(profile.semgrep_config_paths) + list(profile.append_rules_paths)
+                if profile
+                else []
+            )
             append_rule_strs = [
-                str(p) for p in request.append_rules_paths if p
+                str(p)
+                for p in [*profile_paths, *request.append_rules_paths]
+                if p
             ]
             runner = SemgrepRunner(
                 rules_path=str(request.rules_path) if request.rules_path else None,
                 append_rules_paths=append_rule_strs if append_rule_strs else None,
+                rule_profile="auto",
             )
             matches = runner.run(
                 str(request.target_path),
@@ -424,26 +451,7 @@ class ScanPipelineService:
             )
 
             if runner.last_error:
-                fallback_reason = runner.last_error
-                self._emit_progress(
-                    progress_callback,
-                    {
-                        "event": "semgrep-fallback",
-                        "message": (
-                            "Semgrep failed; using the deterministic YAML/Tree-sitter "
-                            f"fallback: {fallback_reason}"
-                        ),
-                    },
-                )
-                return None, {
-                    "scan_engine_requested": "semgrep",
-                    "scan_engine_used": "deterministic",
-                    "scan_fallback": True,
-                    "scan_fallback_reason": fallback_reason,
-                    "rule_profile": runner.config_description,
-                    "semgrep_command": runner.last_command,
-                    "semgrep_match_count": getattr(runner, "last_match_count", 0),
-                }
+                raise RuntimeError(runner.last_error)
 
             self._emit_progress(
                 progress_callback,
@@ -463,7 +471,7 @@ class ScanPipelineService:
             findings = bridge.bridge_matches(matches, project_root=project_root)
 
             # Pha 2: Inter-procedural Cross-File Taint Engine
-            if request.target_path.is_dir() or project_root.exists():
+            if request.target_path.is_dir():
                 try:
                     from aegis_sast.analysis.cross_file_taint import CrossFileTaintEngine
 
@@ -499,10 +507,8 @@ class ScanPipelineService:
                 ImportedNormalizedVulnerability(finding=f) for f in findings
             ]
 
-            files_scanned = 1
-            if request.target_path.is_dir():
-                py_count = len(list(request.target_path.rglob("*.py")))
-                files_scanned = py_count or len({m.file_path for m in matches}) or 1
+            scanned_files = [str(Path(path).resolve()) for path in getattr(runner, "scanned_files", [])]
+            files_scanned = len(scanned_files)
 
             end_time = datetime.now()
             return ScanResult(
@@ -511,55 +517,50 @@ class ScanPipelineService:
                 end_time=end_time,
                 vulnerabilities=vulnerabilities,
                 files_scanned=files_scanned,
+                scanned_files=scanned_files,
             ), {
                 "scan_engine_requested": "semgrep",
                 "scan_engine_used": "semgrep",
                 "scan_fallback": False,
-                "rule_profile": runner.config_description,
+                "rule_profile": request.rule_profile,
+                "semgrep_config": runner.config_description,
                 "semgrep_command": runner.last_command,
                 "semgrep_match_count": runner.last_match_count,
             }
         except RuntimeError as exc:
-            # RuntimeError from SemgrepRunner means semgrep binary is missing or
-            # a rule file path does not exist.  These are actionable setup errors –
-            # fall back with a loud warning so the user knows to fix the environment.
-            import warnings
-            warnings.warn(
-                f"[ScanPipelineService] Semgrep bridge failed: {exc}\n"
-                f"  Falling back to deterministic detector.  "
-                f"Fix the issue above to get full Semgrep OSS coverage.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
             self._emit_progress(
                 progress_callback,
                 {
-                    "event": "semgrep-fallback",
-                    "message": f"Semgrep bridge failed: {exc}. Falling back to deterministic detector.",
+                    "event": "semgrep-error",
+                    "message": f"Semgrep failed: {exc}",
                 },
             )
-            return None, {
-                "scan_engine_requested": "semgrep",
-                "scan_engine_used": "deterministic",
-                "scan_fallback": True,
-                "scan_fallback_reason": str(exc),
-                "rule_profile": request.rule_profile,
-            }
+            if request.allow_deterministic_fallback:
+                return None, {
+                    "scan_engine_requested": "semgrep",
+                    "scan_engine_used": "deterministic",
+                    "scan_fallback": True,
+                    "scan_fallback_reason": str(exc),
+                    "rule_profile": request.rule_profile,
+                }
+            raise
         except Exception as exc:
             self._emit_progress(
                 progress_callback,
                 {
-                    "event": "semgrep-fallback",
-                    "message": f"Semgrep bridge notice: {exc}. Falling back to deterministic detector.",
+                    "event": "semgrep-error",
+                    "message": f"Semgrep bridge failed: {exc}",
                 },
             )
-            return None, {
-                "scan_engine_requested": "semgrep",
-                "scan_engine_used": "deterministic",
-                "scan_fallback": True,
-                "scan_fallback_reason": str(exc),
-                "rule_profile": request.rule_profile,
-            }
+            if request.allow_deterministic_fallback:
+                return None, {
+                    "scan_engine_requested": "semgrep",
+                    "scan_engine_used": "deterministic",
+                    "scan_fallback": True,
+                    "scan_fallback_reason": str(exc),
+                    "rule_profile": request.rule_profile,
+                }
+            raise
 
     @staticmethod
     def _prepare_config(request: ScanPipelineRequest) -> AegisConfig:
@@ -680,6 +681,7 @@ class ScanPipelineService:
             end_time=end_time,
             vulnerabilities=vulnerabilities,
             files_scanned=1,
+            scanned_files=[str(target.resolve())],
         )
 
     @staticmethod

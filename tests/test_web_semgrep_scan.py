@@ -88,6 +88,14 @@ def test_web_scan_defaults_to_semgrep_and_executes_process(monkeypatch, tmp_path
     assert finding.severity.value == "HIGH"
     assert finding.metadata["cwe"] == ["CWE-78"]
     assert finding.evidence.sink.code_snippet
+    assert all(
+        "propagated into sink" not in step.code_snippet
+        for step in finding.evidence.intermediate_steps
+    )
+    assert finding.evidence.metadata["trace_completeness"] in {
+        "complete",
+        "unavailable",
+    }
 
 
 def test_web_scan_contract_defaults_to_semgrep():
@@ -137,6 +145,7 @@ def test_web_scan_reports_deterministic_fallback_when_semgrep_fails(monkeypatch,
             enable_ai_verification=False,
             export_reports=False,
             scan_engine="semgrep",
+            allow_deterministic_fallback=True,
         )
     )
 

@@ -77,7 +77,7 @@ export interface AgentReview {
 
 export interface TaintFlowStep {
   stepNumber: number;
-  role: "source" | "propagation" | "sink";
+  role: "source" | "assignment" | "propagation" | "sanitizer" | "sink";
   label: string;
   subLabel: string;
   file: string;
@@ -116,6 +116,8 @@ export interface MultiAgentLedger {
 }
 
 export interface NormalizedFinding {
+  evidenceGraph?: InvestigationGraph | null;
+  evidenceDiagnostic?: string | null;
   id: string;
   key: string;
   ruleId: string;
@@ -150,9 +152,63 @@ export interface NormalizedFinding {
   agentReviews: AgentReview[];
   reasoningNotes: string[];
   manualReviewRequired: boolean;
+  traceCompleteness?: "complete" | "partial" | "unavailable";
   taintFlowSteps: TaintFlowStep[];
   remediationPatch: RemediationPatch | null;
   multiAgentLedger: MultiAgentLedger | null;
+}
+
+export interface InvestigationNode {
+  id: string;
+  kind: string;
+  label: string;
+  file: string;
+  line: number;
+  column: number;
+  snippet: string;
+  context?: string[];
+  origin?: string;
+}
+
+export interface InvestigationEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  kind: "data" | "control";
+  verified: boolean;
+}
+
+export interface InvestigationPath {
+  id: string;
+  source: string;
+  sink: string;
+  node_ids: string[];
+  edge_ids: string[];
+  control_node_ids: string[];
+  control_edge_ids: string[];
+  sanitizers: string[];
+  trace_completeness: "complete" | "partial" | "unavailable";
+  verified: boolean;
+  confidence: string;
+  analysis_limitations: string[];
+}
+
+export interface InvestigationGraph {
+  schema_version: string;
+  analysis_engine: string;
+  evidence_mode: "verified_path" | "partial_path" | "sink_only" | "pattern_only" | "no_evidence";
+  nodes: InvestigationNode[];
+  edges: InvestigationEdge[];
+  paths: InvestigationPath[];
+  sources: string[];
+  sinks: string[];
+  sanitizers: string[];
+  trace_completeness: string;
+  analysis_limitations: string[];
+  truncated?: boolean;
+  sink_function?: string;
+  sink_missing_reason?: string;
 }
 
 export interface BackendEvidenceBundle {

@@ -176,13 +176,13 @@ def main():
     parser.add_argument(
         "--target",
         type=Path,
-        default=Path(r"D:\BenchmarkPython\testcode"),
+        default=Path(r"C:\2026-2027\NCKH\owasp-benchmark-python\testcode"),
         help="Path to OWASP BenchmarkPython testcode directory",
     )
     parser.add_argument(
         "--expected-results",
         type=Path,
-        default=Path(r"D:\BenchmarkPython\expectedresults-0.1.csv"),
+        default=Path(r"C:\2026-2027\NCKH\owasp-benchmark-python\expectedresults-0.1.csv"),
         help="Path to expectedresults-0.1.csv",
     )
     parser.add_argument(

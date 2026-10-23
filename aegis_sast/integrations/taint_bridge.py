@@ -195,17 +195,6 @@ class TaintBridge:
                     # Intermediate propagation steps are the nodes in between
                     if len(trace_nodes) > 1:
                         intermediate_steps = [node.location for node in trace_nodes[1:]]
-                    else:
-                        # Synthesize 1 intermediate propagation step if direct definition
-                        var_name = root_source_node.writes[0] if root_source_node.writes else "data"
-                        intermediate_steps = [
-                            CodeLocation(
-                                file_path=match.file_path,
-                                line_number=root_source_node.location.line_number,
-                                column_number=root_source_node.location.column_number,
-                                code_snippet=f"Tainted variable '{var_name}' propagated into sink",
-                            )
-                        ]
 
                     # 3. Check for sanitizers along the trace and enclosing scope
                     sanitizers = self._find_sanitizers_in_trace(trace_nodes, [sink_node], graph=graph)
@@ -254,6 +243,13 @@ class TaintBridge:
             "column": match.end_col,
         }
         evidence_meta["dfg_trace_success"] = dfg_trace_success
+        evidence_meta["trace_completeness"] = (
+            "complete" if dfg_trace_success else "unavailable"
+        )
+        evidence_meta["source_verified"] = bool(
+            dfg_trace_success and source_loc and source_loc != sink_loc
+        )
+        evidence_meta["sink_verified"] = True
         evidence_meta["metavars"] = match.metavars
 
         evidence = EvidenceBundle(

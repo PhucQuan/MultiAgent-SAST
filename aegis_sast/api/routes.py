@@ -1,6 +1,7 @@
 """FastAPI endpoints for asynchronous Aegis-SAST scans."""
 
 import json
+import logging
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -49,8 +50,9 @@ class ScanPipelineConfig(BaseModel):
         ]
     )
     exclude_globs: list[str] = Field(default_factory=list)
-    scan_engine: str = "semgrep"
+    scan_engine: str = Field(default="semgrep", pattern="^(semgrep|deterministic)$")
     rule_profile: str = "auto"
+    allow_deterministic_fallback: bool = False
 
 
 class ScanPipelineRequestModel(BaseModel):
@@ -74,6 +76,9 @@ class ScanJob(BaseModel):
     """Serializable state shared by status and results endpoints."""
 
     scan_id: str
+    target_path: str | None = None
+    target_type: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
     status: str
     progress: list[dict[str, Any]] = Field(default_factory=list)
     result: dict[str, Any] | None = None
@@ -112,6 +117,10 @@ class ScanJobStore:
                     with open(file_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     job = ScanJob.model_validate(data)
+                    if job.status in {"queued", "running"}:
+                        job.status = "failed"
+                        job.error = "Scan interrupted by backend restart. Start a new scan."
+                        job.finished_at = _now()
                     self.jobs[job.scan_id] = job
                 except Exception:
                     continue
@@ -122,15 +131,21 @@ class ScanJobStore:
         try:
             self.storage_dir.mkdir(parents=True, exist_ok=True)
             file_path = self.storage_dir / f"{job.scan_id}.json"
-            with open(file_path, "w", encoding="utf-8") as f:
+            temporary = file_path.with_suffix(".tmp")
+            with open(temporary, "w", encoding="utf-8") as f:
                 json.dump(job.model_dump(), f, indent=2, ensure_ascii=False)
+            temporary.replace(file_path)
         except Exception:
-            pass
+            logging.exception("Unable to persist scan %s", job.scan_id)
+            raise
 
     def create(self, payload: ScanPipelineRequestModel) -> ScanJob:
         scan_id = str(uuid.uuid4())
         job = ScanJob(
             scan_id=scan_id,
+            target_path=str(Path(payload.resolved_path()).expanduser().resolve()),
+            target_type="file" if Path(payload.resolved_path()).expanduser().is_file() else "repository" if (Path(payload.resolved_path()).expanduser() / ".git").exists() else "folder",
+            config=payload.config.model_dump(),
             status="queued",
             started_at=_now(),
             progress=[{"event": "stage", "stage": "queued", "message": "Scan queued."}],
@@ -166,7 +181,7 @@ class ScanJobStore:
                 raise FileNotFoundError(f"Target path does not exist: {target}")
 
             config = payload.config
-            reports_dir = Path("reports")
+            reports_dir = self.storage_dir / scan_id
             request = ScanPipelineRequest(
                 target_path=target,
                 rules_path=(
@@ -188,6 +203,7 @@ class ScanJobStore:
                 output_dir=reports_dir,
                 scan_engine=config.scan_engine,
                 rule_profile=config.rule_profile,
+                allow_deterministic_fallback=config.allow_deterministic_fallback,
             )
             service = ScanPipelineService()
             result = service.run(
@@ -219,6 +235,12 @@ class ScanJobStore:
                 job.finished_at = _now()
                 job.result = {
                     "scan_id": scan_id,
+                    "scanned_files": result.scan_result.scanned_files,
+                    "finding_counts": {
+                        "total": len(findings),
+                        "actionable": sum(1 for record in triage_records if record.get("decision", {}).get("status") in ("confirmed", "likely")),
+                        "suppressed": sum(1 for record in triage_records if record.get("decision", {}).get("status") == "suppressed"),
+                    },
                     "summary": result.scan_result.get_summary(),
                     "repo_profile": result.repo_profile.to_dict(),
                     "findings": findings,
@@ -292,16 +314,7 @@ def export_sarif(scan_id: str) -> Response:
     if sarif_path_str and Path(sarif_path_str).exists():
         content = Path(sarif_path_str).read_text(encoding="utf-8")
     else:
-        # Generate on the fly
-        from aegis_sast.integrations.sarif_formatter import SARIFFormatter
-        from aegis_sast.core.models import ScanResult
-        formatter = SARIFFormatter(output_dir=Path("reports"))
-        scan_result = ScanResult(
-            target_path=job.result.get("repo_profile", {}).get("target_path", "unknown"),
-            vulnerabilities=[],
-        )
-        report_data = formatter._build_report(scan_result, None, job.result.get("workflow_metadata"))
-        content = json.dumps(report_data, indent=2, ensure_ascii=False)
+        raise HTTPException(status_code=404, detail="SARIF artifact unavailable for this scan.")
 
     return Response(
         content=content,
@@ -412,7 +425,7 @@ def get_reviewer_memory() -> dict[str, Any]:
 app = FastAPI(title="Aegis-SAST API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3100"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

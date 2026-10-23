@@ -283,6 +283,7 @@ def _evidence_bundle_from_mapping(payload: Any) -> EvidenceBundle:
     payload = payload if isinstance(payload, dict) else {}
     metadata = dict(payload.get("metadata") or {})
     return EvidenceBundle(
+        graph=dict(payload.get("graph") or {}),
         source=_location_from_mapping(payload.get("source")),
         sink=_location_from_mapping(payload.get("sink")),
         intermediate_steps=[

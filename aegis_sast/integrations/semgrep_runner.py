@@ -72,6 +72,7 @@ class SemgrepRunner:
         self.last_error: Optional[str] = None
         self.last_command: List[str] = []
         self.last_match_count = 0
+        self.scanned_files: List[str] = []
         self.config_description = ""
 
     @staticmethod
@@ -176,6 +177,7 @@ class SemgrepRunner:
             silent fallback issues on machines where semgrep is not installed).
         """
         self.last_error = None
+        self.scanned_files = []
         config_args = self._resolve_config_args()
         self.config_description = ", ".join(
             config_args[index + 1]
@@ -219,6 +221,7 @@ class SemgrepRunner:
                 )
                 return []
 
+            self.scanned_files = output.get("paths", {}).get("scanned", [])
             matches: List[SemgrepMatch] = []
             for r in output.get("results", []):
                 extra = r.get("extra", {})

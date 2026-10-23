@@ -1,8 +1,6 @@
-from datetime import datetime
 from pathlib import Path
 
 from aegis_sast.api.routes import ScanPipelineRequestModel
-from aegis_sast.core.models import ScanResult
 from aegis_sast.orchestration.service import ScanPipelineRequest, ScanPipelineService
 from aegis_sast.orchestration.state import RepoProfile
 
@@ -13,20 +11,16 @@ def test_scan_request_accepts_legacy_repo_path_alias():
     assert request.resolved_path() == "examples/vulnerable_owasp_top10.py"
 
 
-def test_semgrep_empty_result_uses_deterministic_detector(tmp_path, monkeypatch):
+def test_semgrep_empty_result_does_not_use_deterministic_detector(tmp_path, monkeypatch):
     target = tmp_path / "demo.py"
     target.write_text("user = input()\nopen(user)\n", encoding="utf-8")
-    fallback_result = ScanResult(
-        target_path=str(target),
-        start_time=datetime.now(),
-        end_time=datetime.now(),
-        vulnerabilities=[],
-        files_scanned=1,
-    )
-    calls = {"fallback": 0}
-
     class EmptySemgrep:
-        def __init__(self, rules_path=None):
+        last_error = None
+        config_description = "test-config"
+        last_command = []
+        last_match_count = 0
+
+        def __init__(self, **kwargs):
             pass
 
         def run(self, target_path, *, exclude_dir_names=None, exclude_globs=None):
@@ -34,9 +28,7 @@ def test_semgrep_empty_result_uses_deterministic_detector(tmp_path, monkeypatch)
 
     class FallbackDetector:
         def analyze_file(self, target_path, project_root=None):
-            calls["fallback"] += 1
-            assert project_root == target.parent
-            return []
+            raise AssertionError("deterministic detector must not run")
 
     monkeypatch.setattr(
         "aegis_sast.integrations.semgrep_runner.SemgrepRunner",
@@ -68,4 +60,5 @@ def test_semgrep_empty_result_uses_deterministic_detector(tmp_path, monkeypatch)
     )
 
     assert result.scan_result is not None
-    assert calls["fallback"] == 1
+    assert result.workflow_metadata["scan_engine_used"] == "semgrep"
+    assert result.scan_result.total_vulnerabilities == 0

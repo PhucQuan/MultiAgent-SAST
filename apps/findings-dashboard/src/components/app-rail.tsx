@@ -28,11 +28,11 @@ interface AppRailProps {
 export function AppRail({
   activeTab = "scans",
   onTabChange,
-  findingsCount = 30,
-  activeProjectName = "vulnerable-python-suite",
-  lastScanDuration = "4.2s",
+  findingsCount = 0,
+  activeProjectName = "No scan selected",
+  lastScanDuration = "Unavailable",
 }: AppRailProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -41,7 +41,7 @@ export function AppRail({
       id: "vulnerabilities",
       label: "Vulnerabilities",
       icon: AlertTriangle,
-      badge: String(findingsCount || 30),
+      badge: String(findingsCount),
       badgeColor: "bg-rose-500/15 text-rose-600 dark:text-rose-400 font-bold",
     },
     { id: "code", label: "Code Browser", icon: Code2 },

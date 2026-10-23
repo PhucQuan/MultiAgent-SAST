@@ -164,3 +164,9 @@ code {
 .rounded-2xl {
   border-radius: 0.5rem;
 }
+
+.investigation-root { container-type: inline-size; }
+.investigation-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@container (min-width: 1000px) {
+  .investigation-grid { grid-template-columns: 220px minmax(0, 1fr) 280px; }
+}

@@ -10,7 +10,13 @@ export interface BackendScanConfig {
   exclude_dir_names?: string[];
   exclude_globs?: string[];
   scan_engine?: "deterministic" | "semgrep";
-  rule_profile?: "auto" | "semgrep-oss" | "semgrep-oss-full";
+  rule_profile?:
+    | "auto"
+    | "semgrep-python-core4"
+    | "semgrep-python-ssrf"
+    | "semgrep-oss-full"
+    | "semgrep-community-python";
+  allow_deterministic_fallback?: boolean;
 }
 
 export type BackendScanStatus = "queued" | "running" | "completed" | "failed";
@@ -24,11 +30,16 @@ export interface StartBackendScanRequest {
 
 export interface BackendScanJob {
   scan_id: string;
+  scanned_files?: string[];
+  target_path?: string;
+  target_type?: string;
+  config?: BackendScanConfig;
   status: BackendScanStatus;
   started_at: string;
   finished_at?: string | null;
   progress: Array<Record<string, unknown>>;
   result?: {
+    finding_counts?: {total:number;actionable:number;suppressed:number};
     summary: {
       target: string;
       files_scanned: number;
@@ -49,6 +60,7 @@ export interface BackendScanJob {
 
 export interface BackendScanResult {
   scan_id: string;
+  scanned_files?: string[];
   summary: {
     target: string;
     files_scanned: number;
@@ -187,3 +199,8 @@ export async function syncReviewerDisposition(
   }
 }
 
+export async function listBackendScans(): Promise<BackendScanJob[]> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/scans`, {cache: "no-store"});
+  if (!response.ok) throw new Error("Unable to load scan history");
+  return response.json();
+}

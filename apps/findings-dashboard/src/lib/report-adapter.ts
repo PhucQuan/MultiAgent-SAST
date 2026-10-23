@@ -1,3 +1,4 @@
+import { readInvestigationGraph } from "@/lib/investigation-evidence";
 import type {
   AgentReview,
   EvidenceContext,
@@ -607,12 +608,10 @@ function deriveOwaspCategory(family: string): string {
   return "A04:2021-Insecure Design";
 }
 
+function formatOperation(value: string): string { return value.replaceAll("_", " "); }
+
 function buildTaintFlowSteps(
-  rawFinding: JsonRecord,
-  filePath: string,
-  line: number | null,
-  family: string,
-  sinkFn: string | null
+  rawFinding: JsonRecord
 ): TaintFlowStep[] {
   const evidence = asRecord(rawFinding.evidence);
   const steps: TaintFlowStep[] = [];
@@ -621,327 +620,59 @@ function buildTaintFlowSteps(
   const rawSink = asRecord(evidence?.sink);
   const rawIntermediates = asArray(evidence?.intermediate_steps);
 
-  const upperFam = family.toUpperCase();
-  let defaultSourceSnippet = `filename = request.args.get('file')`;
-  let defaultSourceSubLabel = "User-controlled input from HTTP request";
-  if (upperFam.includes("SSRF")) {
-    defaultSourceSnippet = `target_url = request.args.get('url')`;
-    defaultSourceSubLabel = "Untrusted URL query parameter 'url'";
-  } else if (upperFam.includes("COMMAND")) {
-    defaultSourceSnippet = `user_ip = request.args.get('ip')`;
-    defaultSourceSubLabel = "Untrusted host parameter 'ip'";
-  } else if (upperFam.includes("SQL")) {
-    defaultSourceSnippet = `user_id = request.args.get('id')`;
-    defaultSourceSubLabel = "Untrusted parameter 'id' from query string";
-  } else if (upperFam.includes("DESER")) {
-    defaultSourceSnippet = `raw_payload = request.data`;
-    defaultSourceSubLabel = "Untrusted serialized blob from request body";
-  }
-
-  const sourceFile = firstString([rawSource?.file, filePath]) ?? filePath;
-  const sourceLine = firstNumber([rawSource?.line]) ?? (line ? Math.max(1, line - 15) : 12);
-  const sourceSnippet = firstString([rawSource?.snippet]) ?? defaultSourceSnippet;
-  steps.push({
-    stepNumber: 1,
-    role: "source",
-    label: "Source (Untrusted Input)",
-    subLabel: defaultSourceSubLabel,
-    file: sourceFile,
-    line: sourceLine,
-    column: firstNumber([rawSource?.column]),
-    codeSnippet: sourceSnippet,
-    description: "External untrusted parameter entering the application context.",
-  });
-
-  let propFile = sourceFile;
-  let propLine = line ? Math.max(sourceLine + 2, line - 5) : 28;
-  let propSnippet = `target_path = os.path.join(UPLOAD_DIR, filename)`;
-  let propDesc = "Taint flows through variable assignment and concatenation (without validation).";
-
-  if (rawIntermediates.length > 0) {
-    const firstInter = asRecord(rawIntermediates[0]);
-    if (firstInter) {
-      propFile = firstString([firstInter.file, propFile]) ?? propFile;
-      propLine = firstNumber([firstInter.line]) ?? propLine;
-      propSnippet = firstString([firstInter.snippet]) ?? propSnippet;
+  const addEvidenceLocation = (
+    location: JsonRecord | null,
+    role: TaintFlowStep["role"],
+    label: string,
+  ): void => {
+    if (!location) {
+      return;
     }
-  } else {
-    const upper = family.toUpperCase();
-    if (upper.includes("SSRF")) {
-      propSnippet = `url = target`;
-      propDesc = "Untrusted destination URL passed to HTTP client without allowlist validation.";
-    } else if (upper.includes("COMMAND")) {
-      propSnippet = `cmd = f"ping -c 1 {user_ip}"`;
-      propDesc = "User input formatted directly into shell command string.";
-    } else if (upper.includes("SQL")) {
-      propSnippet = `query = f"SELECT * FROM users WHERE id = '{user_id}'"`;
-      propDesc = "Untrusted input interpolated into raw SQL query.";
-    } else if (upper.includes("DESER")) {
-      propSnippet = `payload = base64.b64decode(raw_payload)`;
-      propDesc = "Encoded untrusted byte buffer passed into deserializer.";
-    } else {
-      propSnippet = `target_path = os.path.join(UPLOAD_DIR, filename)`;
-      propDesc = "Taint flows through variable assignment and concatenation (without validation).";
+    const snippet = firstString([location.snippet]);
+    const locationFile = firstString([location.file, location.path]);
+    const locationLine = firstNumber([location.line]);
+    if (!snippet || !locationFile || locationLine === null) {
+      return;
     }
+    steps.push({
+      stepNumber: steps.length + 1,
+      role,
+      label,
+      subLabel: role === "source" ? "Verified source location" : "Verified code location",
+      file: locationFile,
+      line: locationLine,
+      column: firstNumber([location.column]),
+      codeSnippet: snippet,
+      description: "Loaded from backend evidence; no synthetic step was added.",
+    });
+  };
+
+  if (getPath(evidence, ["metadata", "source_verified"]) === true) {
+    addEvidenceLocation(rawSource, "source", "Source");
   }
-
-  const propSubLabel = upperFam.includes("SSRF")
-    ? "Untrusted URL passed to outbound HTTP client without validation"
-    : upperFam.includes("COMMAND")
-    ? "Shell string concatenation without escaping"
-    : upperFam.includes("SQL")
-    ? "String interpolation into raw SQL query"
-    : "Taint flows through path concatenation (without validation)";
-
-  steps.push({
-    stepNumber: 2,
-    role: "propagation",
-    label: "Propagation (Taint Flow)",
-    subLabel: propSubLabel,
-    file: propFile,
-    line: propLine,
-    codeSnippet: propSnippet,
-    description: propDesc,
+  rawIntermediates.forEach((rawIntermediate) => {
+    const location = asRecord(rawIntermediate);
+    const operation = firstString([location?.operation, location?.operation_type, location?.kind]);
+    addEvidenceLocation(location, operation === "sanitizer" ? "sanitizer" : operation === "assignment" ? "assignment" : "propagation", operation ? formatOperation(operation) : "Data-flow step");
   });
-
-  const sinkFile = firstString([rawSink?.file, filePath]) ?? filePath;
-  const sinkLine = firstNumber([rawSink?.line, line]) ?? (line ?? 54);
-  let sinkSnippet = firstString([rawSink?.snippet]);
-  if (!sinkSnippet) {
-    const fn = sinkFn ?? "send_file()";
-    sinkSnippet = `return ${fn}(target_path)`;
-  }
-
-  const sinkSubLabel = upperFam.includes("SSRF")
-    ? `Outbound HTTP request (${sinkFn || "requests.get"})`
-    : upperFam.includes("COMMAND")
-    ? `Operating system command execution (${sinkFn || "os.system"})`
-    : upperFam.includes("SQL")
-    ? `Database query execution (${sinkFn || "cursor.execute"})`
-    : `Arbitrary file access (${sinkFn || "File Read/Execute"})`;
-
-  steps.push({
-    stepNumber: 3,
-    role: "sink",
-    label: "Sink (Vulnerable Function)",
-    subLabel: sinkSubLabel,
-    file: sinkFile,
-    line: sinkLine,
-    column: firstNumber([rawSink?.column]),
-    codeSnippet: sinkSnippet,
-    description: "Dangerous sink executes with unvalidated tainted data.",
-  });
-
+  addEvidenceLocation(rawSink, "sink", "Sink");
   return steps;
 }
 
-function buildRemediationPatch(
-  family: string,
-  filePath: string,
-  line: number | null,
-  sinkSnippet?: string
-): RemediationPatch {
-  const upper = family.toUpperCase();
-  const ln = line ?? 42;
-
-  if (upper.includes("SSRF")) {
-    return {
-      filePath,
-      diffLines: [
-        { type: "context", lineNum: ln - 2, text: "from urllib.parse import urlparse" },
-        { type: "context", lineNum: ln - 1, text: "target = request.args.get('url')" },
-        { type: "remove", lineNum: ln, text: "- response = requests.get(target, timeout=3)" },
-        { type: "add", lineNum: ln, text: "+ # Secure: validate destination URL against domain allowlist" },
-        { type: "add", lineNum: ln + 1, text: "+ if not is_safe_external_url(target):" },
-        { type: "add", lineNum: ln + 2, text: "+     raise SecurityException('SSRF blocked: host not allowed')" },
-        { type: "add", lineNum: ln + 3, text: "+ response = requests.get(target, timeout=3, allow_redirects=False)" },
-      ],
-      explanation: "Validate outbound URLs against a domain allowlist and block requests to internal IP ranges (127.0.0.1, 10.0.0.0/8, 192.168.0.0/16).",
-    };
-  }
-
-  if (upper.includes("PATH_TRAVERSAL")) {
-    return {
-      filePath,
-      diffLines: [
-        { type: "context", lineNum: ln - 2, text: "@app.route('/download')" },
-        { type: "context", lineNum: ln - 1, text: "def download_file():" },
-        { type: "context", lineNum: ln, text: "    filename = request.args.get('path')" },
-        { type: "add", lineNum: ln + 1, text: "    # Secure: resolve and validate path" },
-        { type: "add", lineNum: ln + 2, text: "    safe_path = os.path.abspath(os.path.join(BASE_DIR, filename))" },
-        { type: "add", lineNum: ln + 3, text: "    # Prevent directory traversal" },
-        { type: "add", lineNum: ln + 4, text: "    if not safe_path.startswith(os.path.abspath(BASE_DIR)):" },
-        { type: "add", lineNum: ln + 5, text: "        raise SecurityException(\"Directory Traversal detected\")" },
-        { type: "remove", lineNum: ln + 6, text: "    filepath = os.path.join(BASE_DIR, filename)" },
-        { type: "remove", lineNum: ln + 7, text: "    return send_file(filepath)" },
-        { type: "add", lineNum: ln + 8, text: "    return send_file(safe_path)" },
-      ],
-      explanation: "This patch uses path normalization and directory boundary validation to prevent path traversal.",
-    };
-  }
-
-  if (upper.includes("COMMAND")) {
-    return {
-      filePath,
-      diffLines: [
-        { type: "context", lineNum: ln - 2, text: "import subprocess, shlex" },
-        { type: "context", lineNum: ln - 1, text: "user_ip = request.form.get('ip')" },
-        { type: "remove", lineNum: ln, text: "- os.system(f'ping -c 1 {user_ip}')" },
-        { type: "add", lineNum: ln, text: "+ # Secure: execute with argv array without shell=True" },
-        { type: "add", lineNum: ln + 1, text: "+ subprocess.run(['ping', '-c', '1', user_ip], check=True, shell=False)" },
-      ],
-      explanation: "Execute external commands via argument lists instead of shell strings to eliminate command injection.",
-    };
-  }
-
-  if (upper.includes("SQL")) {
-    return {
-      filePath,
-      diffLines: [
-        { type: "context", lineNum: ln - 1, text: "user_id = request.args.get('id')" },
-        { type: "remove", lineNum: ln, text: "- cursor.execute(f'SELECT * FROM users WHERE id = {user_id}')" },
-        { type: "add", lineNum: ln, text: "+ # Secure: parameterized query" },
-        { type: "add", lineNum: ln + 1, text: "+ cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))" },
-      ],
-      explanation: "Adopt parameterized query binding to guarantee user input cannot alter SQL syntax.",
-    };
-  }
-
-  if (upper.includes("DESER")) {
-    return {
-      filePath,
-      diffLines: [
-        { type: "context", lineNum: ln - 1, text: "raw_data = request.get_data()" },
-        { type: "remove", lineNum: ln, text: "- obj = pickle.loads(raw_data)" },
-        { type: "add", lineNum: ln, text: "+ # Secure: use safe serialization format" },
-        { type: "add", lineNum: ln + 1, text: "+ obj = json.loads(raw_data.decode('utf-8'))" },
-      ],
-      explanation: "Replace unpickling with safe structured data interchange (JSON / Protocol Buffers).",
-    };
-  }
-
-  return {
-    filePath,
-    diffLines: [
-      { type: "remove", lineNum: ln, text: `- ${sinkSnippet || "vulnerable_call(input)"}` },
-      { type: "add", lineNum: ln, text: `+ # Secure: validate and sanitize input` },
-      { type: "add", lineNum: ln + 1, text: `+ sanitized_input = sanitize(input)` },
-      { type: "add", lineNum: ln + 2, text: `+ ${sinkSnippet ? sinkSnippet.replace("input", "sanitized_input") : "safe_call(sanitized_input)"}` },
-    ],
-    explanation: "Sanitize and validate all external user inputs prior to invocation of sensitive operations.",
-  };
-}
-
 function buildMultiAgentLedger(
-  rawFinding: JsonRecord,
-  family: string,
   status: TriageStatus,
-  confidence: number | null,
-  reviews: AgentReview[]
-): MultiAgentLedger {
-  const conf = confidence ?? 0.94;
-  const isConfirmed = status === "confirmed" || status === "likely";
-  const isSuppressed = status === "suppressed";
-  const upper = family.toUpperCase();
-
-  const auditorReview = reviews.find((r) => r.key === "auditor_review");
-  const skepticReview = reviews.find((r) => r.key === "skeptic_review");
-
-  // Clean raw tags (e.g. triage_input_schema=..., rule_coverage=...)
-  const filterCleanNotes = (notes?: string[]) =>
-    (notes ?? []).filter(
-      (n) =>
-        typeof n === "string" &&
-        !n.includes("=") &&
-        !n.startsWith("{") &&
-        n.length > 5
-    );
-
-  const cleanAuditor = filterCleanNotes(auditorReview?.notes);
-  const cleanSkeptic = filterCleanNotes(skepticReview?.notes);
-
-  const defaultAuditorChecks = upper.includes("SSRF")
-    ? [
-        "Untrusted URL parameter reaches outbound HTTP client.",
-        "Can target internal network ranges (127.0.0.1 or cloud metadata).",
-        "Reproducible in local environment.",
-        "High security impact (internal service reconnaissance / data leakage).",
-      ]
-    : upper.includes("COMMAND")
-    ? [
-        "Shell metacharacters (;, |, `) allow arbitrary command execution.",
-        "Input passed directly into system shell without sanitization.",
-        "High security impact (Remote Code Execution).",
-      ]
-    : upper.includes("SQL")
-    ? [
-        "Single quote payload alters query structure.",
-        "Database error or data extraction confirmed.",
-        "High security impact (Data breach).",
-      ]
-    : [
-        "Payload '../../etc/passwd' reliably bypasses weak join.",
-        "Can read arbitrary files on the server.",
-        "Reproducible in local environment.",
-        "High security impact (confidentiality breach).",
-      ];
-
-  const defaultSkepticChecks = isSuppressed
-    ? [
-        "Sanitization guard detected in call graph.",
-        "Input validation prevents dangerous sink invocation.",
-        "Confirmed as False Positive.",
-      ]
-    : upper.includes("SSRF")
-    ? [
-        "No domain or IP allowlist verification detected.",
-        "Outbound request client does not block private IP ranges.",
-        "Confirmed as a real security issue.",
-      ]
-    : [
-        "No sanitizers or early returns detected in scope.",
-        "Data flows directly from request args to dangerous sink.",
-        "No validation, allowlist, or path normalization found.",
-        "Confirmed as a real security issue.",
-      ];
-
-  const auditorChecks = cleanAuditor.length >= 2 ? cleanAuditor : defaultAuditorChecks;
-  const skepticChecks = cleanSkeptic.length >= 2 ? cleanSkeptic : defaultSkepticChecks;
-
-  const judgeReview = reviews.find((r) => r.key === "judge_review");
-  const verdictSummary =
-    firstString([
-      judgeReview?.summary,
-      rawFinding.explanation,
-      rawFinding.message,
-    ]) ||
-    (isSuppressed
-      ? "Skeptic validated defense guards. This is a false positive and safe to mute."
-      : "Validated exploit path. This is a real security issue and should be fixed.");
-
+  confidence: number | null, reviews: AgentReview[]
+): MultiAgentLedger | null {
+  if (!reviews.length || confidence === null) return null;
+  const auditor = reviews.find(r=>r.key === "auditor_review");
+  const skeptic = reviews.find(r=>r.key === "skeptic_review");
+  const judge = reviews.find(r=>r.key === "judge_review");
   return {
-    auditorTitle: "Auditor Agent (Exploit Analysis)",
-    auditorChecks,
-    skepticTitle: "Skeptic Agent (Verification)",
-    skepticChecks,
-    finalVerdictTitle: "Final Verdict",
-    finalVerdictStatus: isSuppressed ? "FALSE POSITIVE" : isConfirmed ? "CONFIRMED EXPLOIT" : "NEEDS REVIEW",
-    confidence: conf,
-    confidenceText: `High Confidence: ${conf.toFixed(2)}`,
-    summary: verdictSummary,
-    recommendations: upper.includes("SSRF")
-      ? [
-          "Validate outbound URLs against a strict whitelist of allowed domains.",
-          "Block requests to internal IP addresses (127.0.0.1, 169.254.169.254, 10.0.0.0/8).",
-          "Disable HTTP redirects on outbound request clients.",
-          "Run backend worker in a dedicated network zone with egress filtering.",
-        ]
-      : [
-          "Validate and normalize input using secure platform APIs.",
-          "Ensure resolved path/command is strictly constrained.",
-          "Adopt parameterized queries or safe APIs.",
-          "Add automated unit tests for attack payloads.",
-        ],
+    auditorChecks: auditor?.notes ?? [], skepticChecks: skeptic?.notes ?? [],
+    finalVerdictTitle: "Recorded review", finalVerdictStatus: status,
+    confidence, confidenceText: `${Math.round(confidence*100)}% confidence`,
+    summary: judge?.summary || auditor?.summary || "No review summary recorded.",
+    recommendations: [],
   };
 }
 
@@ -1033,7 +764,9 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
     getPath(rawFinding, ["evidence", "metadata", "detection", "source_type"]),
     getPath(rawFinding, ["metadata", "detection", "source_type"]),
   ]);
+  const evidenceGraph = readInvestigationGraph(getPath(rawFinding, ["evidence", "graph"]));
   const sinkFunction = firstString([
+    evidenceGraph?.sink_function,
     rawFinding.sink_function,
     getPath(rawFinding, ["metadata", "sink_function"]),
     getPath(rawFinding, ["evidence", "metadata", "detection", "sink_function"]),
@@ -1141,7 +874,7 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
     ]) ?? deriveCweId(family);
   const cvssScore = deriveCvssScore(severity, confidence);
   const owaspCategory = deriveOwaspCategory(family);
-  const taintFlowSteps = buildTaintFlowSteps(rawFinding, filePath, line, family, sinkFunction);
+  const taintFlowSteps = buildTaintFlowSteps(rawFinding);
   const rawPatch = (
     rawFinding.remediation_patch ||
     getPath(rawFinding, ["metadata", "remediation_patch"]) ||
@@ -1171,10 +904,8 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
       }),
       explanation: asString(rawPatch.explanation) || "AI-generated remediation patch.",
     };
-  } else {
-    remediationPatch = buildRemediationPatch(family, filePath, line, sinkFunction ?? undefined);
   }
-  const multiAgentLedger = buildMultiAgentLedger(rawFinding, family, finalStatus, confidence, agentReviews);
+  const multiAgentLedger = buildMultiAgentLedger(finalStatus, confidence, agentReviews);
 
   return {
     id,
@@ -1194,6 +925,8 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
     line,
     sourceType,
     sinkFunction,
+    evidenceGraph,
+    evidenceDiagnostic: evidenceGraph ? evidenceGraph.sink_missing_reason ?? null : "No valid structured graph is available in this report.",
     analysisEngine,
     pathLength,
     intermediateStepCount,
@@ -1211,6 +944,13 @@ function normalizeFinding(rawFinding: JsonRecord, reportId: string, reportTarget
     agentReviews,
     reasoningNotes,
     manualReviewRequired,
+    traceCompleteness:
+      evidenceGraph?.trace_completeness === "complete" ||
+      getPath(rawFinding, ["evidence", "metadata", "trace_completeness"]) === "complete"
+        ? "complete"
+        : evidenceGraph?.trace_completeness === "partial" || taintFlowSteps.length
+          ? "partial"
+          : "unavailable",
     taintFlowSteps,
     remediationPatch,
     multiAgentLedger,
@@ -1274,12 +1014,12 @@ function normalizeReportMetrics(rawReport: JsonRecord): ReportMetrics {
   const precision = firstNumber([
     getPath(rawReport, ["metrics", "precision"]),
     getPath(rawReport, ["benchmark", "precision"]),
-  ]) ?? 0.914;
+  ]);
   const owaspScore = firstNumber([
     getPath(rawReport, ["metrics", "owasp_score"]),
     getPath(rawReport, ["metrics", "owaspScore"]),
     getPath(rawReport, ["benchmark", "owasp_score"]),
-  ]) ?? 0.765;
+  ]);
   const filesScanned = firstNumber([
     getPath(rawReport, ["metrics", "files_scanned"]),
     getPath(rawReport, ["summary", "files_scanned"]),
@@ -1305,7 +1045,7 @@ export function normalizeReport(rawReport: unknown, sourcePath: string): Normali
   }
 
   const rawFindings = asArray(rawReport.findings).filter(isRecord);
-  if (!rawFindings.length) {
+  if (!Array.isArray(rawReport.findings)) {
     return null;
   }
 
@@ -1386,6 +1126,7 @@ export function normalizeBackendScanResult(
   const rawReport = {
     id: result.scan_id,
     target: result.summary.target,
+    summary: result.summary,
     findings,
     errors: result.summary.errors,
     workflow_summary: {

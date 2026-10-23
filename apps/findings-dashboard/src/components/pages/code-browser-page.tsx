@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -34,14 +34,9 @@ export function CodeBrowserPage({
 }: CodeBrowserPageProps) {
   // Collect unique files from findings
   const uniqueFiles = Array.from(new Set(findings.map((f) => f.filePath).filter(Boolean)));
-  const [selectedFile, setSelectedFile] = useState<string>(uniqueFiles[0] || "examples/vulnerable_ssrf.py");
+  const [fileChoice, setSelectedFile] = useState<string | null>(null);
+  const selectedFile = fileChoice && uniqueFiles.includes(fileChoice) ? fileChoice : selectedFilePath && uniqueFiles.includes(selectedFilePath) ? selectedFilePath : uniqueFiles[0] || "";
   const [searchFilter, setSearchFilter] = useState("");
-
-  useEffect(() => {
-    if (selectedFilePath && uniqueFiles.includes(selectedFilePath)) {
-      setSelectedFile(selectedFilePath);
-    }
-  }, [selectedFilePath, uniqueFiles]);
 
   const fileFindings = findings.filter((f) => f.filePath === selectedFile);
   const activeFinding = fileFindings[0] || findings[0];

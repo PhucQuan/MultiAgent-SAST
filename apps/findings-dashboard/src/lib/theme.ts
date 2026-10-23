@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 export type Theme = "light" | "dark";
 
 export function useTheme() {
-  const [theme, setTheme] = useState<Theme>("dark");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("aegis_theme") as Theme | null;
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
-      document.documentElement.classList.toggle("dark", saved === "dark");
-    } else {
-      // Default to dark mode for security workbench
-      setTheme("dark");
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
+  const theme = useSyncExternalStore(
+    (notify) => { window.addEventListener("aegis-theme", notify); return () => window.removeEventListener("aegis-theme", notify); },
+    () => localStorage.getItem("aegis_theme") === "light" ? "light" : "dark",
+    () => "dark" as Theme,
+  );
+  const setTheme = (next: Theme) => { localStorage.setItem("aegis_theme", next); window.dispatchEvent(new Event("aegis-theme")); };
+  useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
 
   const toggleTheme = () => {
     const nextTheme: Theme = theme === "dark" ? "light" : "dark";

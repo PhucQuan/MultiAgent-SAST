@@ -119,6 +119,7 @@ class EvidenceBundle:
     intermediate_steps: List[CodeLocation] = field(default_factory=list)
     sanitizers: List[Sanitizer] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    graph: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_sanitizers(self) -> bool:
@@ -255,6 +256,7 @@ class EvidenceBundle:
     def to_dict(self) -> Dict[str, Any]:
         """Convert the evidence bundle to a JSON-friendly dictionary."""
         return {
+            "graph": self.graph,
             "source": self._location_to_dict(self.source),
             "sink": self._location_to_dict(self.sink),
             "intermediate_steps": [
@@ -494,6 +496,7 @@ class Vulnerability:
             intermediate_steps=list(self.dataflow.intermediate_steps),
             sanitizers=list(self.dataflow.sanitizers),
             metadata=evidence_metadata,
+            graph=dict(self.dataflow.metadata.get("investigation_graph") or {}),
         )
 
     def to_normalized_finding(
@@ -608,6 +611,7 @@ class ScanResult:
     end_time: datetime
     vulnerabilities: List[Vulnerability] = field(default_factory=list)
     files_scanned: int = 0
+    scanned_files: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     
     @property
